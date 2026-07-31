@@ -1,0 +1,17 @@
+{
+  "name": "@gestion-boutique/core",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@gestion-boutique/database": "workspace:*",
+    "drizzle-orm": "^0.38.0",
+    "hash-wasm": "^4.11.0"
+  },
+  "devDependencies": {
+    "@gestion-boutique/config": "workspace:*",
+    "typescript": "^5.7.0"
+  }
+}

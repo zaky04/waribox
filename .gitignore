@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.turbo/
+*.log
+.env
+.env.local
+.DS_Store
+*.sqlite
+*.sqlite3
+apps/desktop/src-tauri/target/
+apps/web/public/sqlite-wasm/
+apps/desktop/src-tauri/gen/
+releases/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+~$*

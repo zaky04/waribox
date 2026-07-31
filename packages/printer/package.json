@@ -1,0 +1,16 @@
+{
+  "name": "@gestion-boutique/printer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "jsbarcode": "^3.11.6",
+    "jspdf": "^2.5.2"
+  },
+  "devDependencies": {
+    "@gestion-boutique/config": "workspace:*",
+    "typescript": "^5.7.0"
+  }
+}

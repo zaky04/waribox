@@ -1,0 +1,131 @@
+import { createUser, ensureDefaultRoles } from "@gestion-boutique/core";
+import { useState, type FormEvent } from "react";
+import { useDatabase } from "../../app/DatabaseProvider";
+import { useSessionStore } from "../../stores/session";
+import { authCardStyle, authInputStyle, authPrimaryButtonStyle } from "./styles";
+
+export function SetupAdminScreen() {
+  const db = useDatabase();
+  const setUser = useSessionStore((s) => s.setUser);
+
+  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setError(null);
+
+    if (!username.trim()) {
+      setError("Le pseudo est requis.");
+      return;
+    }
+    if (password.length < 8) {
+      setError("Le mot de passe doit contenir au moins 8 caractères.");
+      return;
+    }
+    if (!/^\d{4}$/.test(pin)) {
+      setError("Le code PIN doit contenir exactement 4 chiffres.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const roles = await ensureDefaultRoles(db);
+      const admin = await createUser(
+        db,
+        {
+          fullName,
+          username,
+          email: email.trim() || undefined,
+          password,
+          pin,
+          roleId: roles.admin,
+        },
+        {},
+      );
+      setUser(admin);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message.includes("UNIQUE") ? "Cet email est déjà utilisé." : message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <main style={{ maxWidth: 420, margin: "60px auto", padding: 24 }}>
+      <h1>Bienvenue</h1>
+      <p style={{ color: "var(--color-text-muted)" }}>
+        Aucun compte n'existe encore. Crée le compte administrateur du commerce.
+      </p>
+
+      <form onSubmit={handleSubmit} style={authCardStyle}>
+        <label>
+          Nom complet
+          <input
+            style={authInputStyle}
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            required
+          />
+        </label>
+
+        <label>
+          Pseudo
+          <input
+            style={authInputStyle}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+          />
+        </label>
+
+        <label>
+          Email (optionnel)
+          <input
+            type="email"
+            style={authInputStyle}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </label>
+
+        <label>
+          Mot de passe
+          <input
+            type="password"
+            style={authInputStyle}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={8}
+          />
+        </label>
+
+        <label>
+          Code PIN (4 chiffres) — pour le verrouillage rapide
+          <input
+            style={authInputStyle}
+            inputMode="numeric"
+            pattern="\d{4}"
+            maxLength={4}
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            required
+          />
+        </label>
+
+        {error && <p style={{ color: "#f87171" }}>{error}</p>}
+
+        <button type="submit" style={authPrimaryButtonStyle} disabled={loading}>
+          {loading ? "Création..." : "Créer le compte administrateur"}
+        </button>
+      </form>
+    </main>
+  );
+}

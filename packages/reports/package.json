@@ -1,0 +1,16 @@
+{
+  "name": "@gestion-boutique/reports",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "jspdf": "^2.5.2",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@gestion-boutique/config": "workspace:*",
+    "typescript": "^5.7.0"
+  }
+}

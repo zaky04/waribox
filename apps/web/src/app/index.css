@@ -1,0 +1,110 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-bg: #0f172a;
+  --color-bg-elevated: #1e293b;
+  --color-border: #334155;
+  --color-text: #f1f5f9;
+  --color-text-muted: #94a3b8;
+
+  /* Accent — bleu -> indigo, réutilisé partout (boutons, onglets actifs,
+     anneaux de focus) via ce dégradé plutôt qu'une teinte plate. */
+  --color-accent: #38bdf8;
+  --color-accent-2: #818cf8;
+  --gradient-accent: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-2) 100%);
+  --color-accent-soft: rgba(56, 189, 248, 0.16);
+
+  --radius-md: 14px;
+  --radius-lg: 20px;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  --shadow-card-strong: 0 4px 12px rgba(0, 0, 0, 0.45), 0 16px 40px -16px rgba(56, 189, 248, 0.25);
+
+  /* Halos décoratifs discrets en arrière-plan — profondeur sans gêner la
+     lecture, fixés (pas de répétition ni de défilement). */
+  --bg-glow: radial-gradient(circle at 12% -10%, rgba(56, 189, 248, 0.14), transparent 45%),
+    radial-gradient(circle at 100% 0%, rgba(129, 140, 248, 0.12), transparent 40%);
+}
+
+:root[data-theme="light"] {
+  --color-bg: #f8fafc;
+  --color-bg-elevated: #ffffff;
+  --color-border: #e2e8f0;
+  --color-text: #0f172a;
+  --color-text-muted: #64748b;
+
+  --color-accent-soft: rgba(56, 189, 248, 0.12);
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 20px -10px rgba(15, 23, 42, 0.12);
+  --shadow-card-strong: 0 4px 10px rgba(15, 23, 42, 0.06), 0 16px 32px -14px rgba(56, 189, 248, 0.2);
+
+  --bg-glow: radial-gradient(circle at 12% -10%, rgba(56, 189, 248, 0.1), transparent 45%),
+    radial-gradient(circle at 100% 0%, rgba(129, 140, 248, 0.08), transparent 40%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--color-bg) var(--bg-glow) no-repeat;
+  background-attachment: fixed;
+  color: var(--color-text);
+}
+
+/* Polish global — pas de className à ajouter par page : ces règles
+   s'appliquent partout via de simples sélecteurs de balises, cohérent avec
+   la convention "style inline" déjà utilisée dans toute l'app. */
+
+button {
+  transition: filter 0.15s ease, transform 0.05s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+button:not(:disabled) {
+  cursor: pointer;
+}
+button:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+button:not(:disabled):active {
+  transform: scale(0.97);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+input,
+select,
+textarea {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+table tbody tr {
+  transition: background-color 0.1s ease;
+}
+table tbody tr:hover {
+  background-color: var(--color-accent-soft);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}

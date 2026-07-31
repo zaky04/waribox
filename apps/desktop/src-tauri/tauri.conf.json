@@ -1,0 +1,50 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "WariBox",
+  "version": "0.1.0",
+  "identifier": "com.waribox.app",
+  "build": {
+    "beforeDevCommand": "pnpm --filter @gestion-boutique/web dev",
+    "beforeBuildCommand": "pnpm --filter @gestion-boutique/web build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "WariBox",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 700
+      }
+    ],
+    "security": {
+      "headers": {
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "Cross-Origin-Embedder-Policy": "require-corp"
+      },
+      "csp": {
+        "default-src": "'self'",
+        "script-src": ["'self'", "'wasm-unsafe-eval'", "https://accounts.google.com"],
+        "connect-src": [
+          "'self'",
+          "ipc:",
+          "http://ipc.localhost",
+          "https://accounts.google.com",
+          "https://www.googleapis.com",
+          "https://oauth2.googleapis.com"
+        ],
+        "frame-src": ["'self'", "https://accounts.google.com"],
+        "style-src": ["'self'", "'unsafe-inline'"],
+        "img-src": ["'self'", "data:"],
+        "worker-src": ["'self'"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
+  }
+}

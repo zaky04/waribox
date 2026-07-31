@@ -1,0 +1,24 @@
+{
+  "name": "gestion-boutique",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "turbo run dev --filter=@gestion-boutique/web",
+    "dev:desktop": "pnpm --filter @gestion-boutique/desktop tauri dev",
+    "build": "turbo run build",
+    "build:desktop": "pnpm --filter @gestion-boutique/desktop tauri build",
+    "collect:releases": "node scripts/collect-releases.mjs",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "db:generate": "pnpm --filter @gestion-boutique/database db:generate",
+    "db:migrate": "pnpm --filter @gestion-boutique/database db:migrate"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0"
+  }
+}

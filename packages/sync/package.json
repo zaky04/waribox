@@ -1,0 +1,12 @@
+{
+  "name": "@gestion-boutique/sync",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "devDependencies": {
+    "@gestion-boutique/config": "workspace:*",
+    "typescript": "^5.7.0"
+  }
+}
