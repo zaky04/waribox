@@ -73,7 +73,7 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export function QuotesPage() {
   const db = useDatabase();
-  const { user } = useAuth();
+  const { user, currentStoreId } = useAuth();
   const canManage = hasPermission(user?.permissions ?? {}, "manage_quotes");
   const canEdit = hasPermission(user?.permissions ?? {}, "edit_quotes");
 
@@ -104,22 +104,27 @@ export function QuotesPage() {
       listProducts(db),
       listAllVariants(db),
       listCustomers(db),
-      listLocations(db),
+      listLocations(db, currentStoreId ?? undefined),
       getSettings(db),
-      listQuotes(db),
+      listQuotes(db, currentStoreId ?? undefined),
     ]);
     setProducts(productsRows);
     setVariants(variantsRows);
     setCustomers(customersRows);
     setBusinessSettings(settings);
     setQuotes(quoteRows);
-    const surface = locations.find((l) => l.type === "surface_vente");
+    const surface = locations.find((l) => l.type === "surface_vente" || l.type.startsWith("surface_vente#"));
     setSurfaceLocationId(surface?.id ?? null);
-  }, [db]);
+  }, [db, currentStoreId]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Voir SalesPage.resolveTaxRate — même logique (TVA désactivée -> 0, sinon
+  // taux du produit ou, à défaut, taux par défaut de l'entreprise).
+  const resolveTaxRate = (product: Product) =>
+    businessSettings?.taxEnabled ? (product.taxRate ?? businessSettings.defaultTaxRate ?? 0) : 0;
 
   const addToCart = (product: Product) => {
     const variant = variants.find((v) => v.productId === product.id);
@@ -138,7 +143,7 @@ export function QuotesPage() {
           productName: product.name,
           unitPrice: variant.priceOverride ?? product.salePrice,
           quantity: 1,
-          taxRate: product.taxRate ?? 0,
+          taxRate: resolveTaxRate(product),
         },
       ];
     });
@@ -156,9 +161,13 @@ export function QuotesPage() {
     setCart((prev) => prev.filter((line) => line.variantId !== variantId));
   };
 
+  // Prix TTC — voir SalesPage.tsx pour le détail du modèle.
   const subtotal = cart.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
-  const taxTotal = cart.reduce((sum, line) => sum + line.quantity * line.unitPrice * (line.taxRate / 100), 0);
-  const total = subtotal + taxTotal;
+  const taxTotal = cart.reduce((sum, line) => {
+    const gross = line.quantity * line.unitPrice;
+    return sum + (line.taxRate > 0 ? gross * (line.taxRate / (100 + line.taxRate)) : 0);
+  }, 0);
+  const total = subtotal;
 
   const customerName = (id: number | null) => customers.find((c) => c.id === id)?.fullName ?? "—";
 
@@ -181,6 +190,7 @@ export function QuotesPage() {
         })),
         validUntil: validUntil || undefined,
         createdBy: user?.id,
+        storeId: currentStoreId ?? undefined,
       });
       setCart([]);
       setCustomerId("");
@@ -216,7 +226,10 @@ export function QuotesPage() {
         };
       }),
       subtotal: items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0),
-      tax: items.reduce((sum, i) => sum + i.quantity * i.unitPrice * (i.taxRate / 100), 0),
+      tax: items.reduce((sum, i) => {
+        const gross = i.quantity * i.unitPrice;
+        return sum + (i.taxRate > 0 ? gross * (i.taxRate / (100 + i.taxRate)) : 0);
+      }, 0),
       total: quote.total,
     });
     downloadBlob(blob, `devis-${quote.number}-${timestampForFilename()}.pdf`);
@@ -235,7 +248,7 @@ export function QuotesPage() {
 
   const handleConvert = async (quote: Quote) => {
     setConvertError(null);
-    if (!user || !surfaceLocationId) return;
+    if (!user || !surfaceLocationId || !currentStoreId) return;
     setConverting(true);
     try {
       await convertQuoteToSale(db, quote.id, {
@@ -243,6 +256,7 @@ export function QuotesPage() {
         paymentMethod: convertPaymentMethod,
         amountPaid: convertAmountPaid === "" ? undefined : Number(convertAmountPaid),
         userId: user.id,
+        storeId: currentStoreId,
       });
       setExpandedQuoteId(null);
       await refresh();

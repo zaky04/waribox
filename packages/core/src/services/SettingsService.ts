@@ -34,6 +34,7 @@ export interface UpdateSettingsInput {
   saleInterfaceMode?: string;
   currency?: string;
   defaultTaxRate?: number;
+  taxEnabled?: boolean;
   loyaltyPointsRatio?: number;
   backupFrequency?: string;
   googleDriveClientId?: string;
@@ -53,6 +54,11 @@ export interface UpdateSettingsInput {
   enableSuppliers?: boolean;
   enablePurchases?: boolean;
   modulesConfigured?: boolean;
+  multiStoreEnabled?: boolean;
+  loyaltyTierSilverThreshold?: number;
+  loyaltyTierGoldThreshold?: number;
+  loyaltyTierSilverMultiplier?: number;
+  loyaltyTierGoldMultiplier?: number;
 }
 
 export async function updateSettings(db: Database, input: UpdateSettingsInput, actingPermissions: PermissionSet) {

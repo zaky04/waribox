@@ -93,6 +93,63 @@ export async function createProduct(db: Database, input: ProductInput): Promise<
   return { product, defaultVariant };
 }
 
+export interface UpdateProductInput {
+  name?: string;
+  categoryId?: number | null;
+  unit?: string;
+  purchasePrice?: number;
+  salePrice?: number;
+  taxRate?: number | null;
+  lowStockThreshold?: number;
+  trackExpiry?: boolean;
+  updatedBy?: number;
+}
+
+export async function updateProduct(db: Database, productId: number, input: UpdateProductInput) {
+  const updates: Partial<typeof schema.products.$inferInsert> = {};
+  if (input.name !== undefined) updates.name = input.name;
+  if (input.categoryId !== undefined) updates.categoryId = input.categoryId;
+  if (input.unit !== undefined) updates.unit = input.unit;
+  if (input.purchasePrice !== undefined) updates.purchasePrice = input.purchasePrice;
+  if (input.salePrice !== undefined) updates.salePrice = input.salePrice;
+  if (input.taxRate !== undefined) updates.taxRate = input.taxRate;
+  if (input.lowStockThreshold !== undefined) updates.lowStockThreshold = input.lowStockThreshold;
+  if (input.trackExpiry !== undefined) updates.trackExpiry = input.trackExpiry;
+
+  const updated = await db
+    .update(schema.products)
+    .set(updates)
+    .where(eq(schema.products.id, productId))
+    .returning()
+    .get();
+  if (!updated) {
+    throw new Error("Produit introuvable.");
+  }
+
+  if (input.updatedBy) {
+    await logAction(db, {
+      userId: input.updatedBy,
+      action: "update_product",
+      entity: "product",
+      entityId: productId,
+      metadata: { name: updated.name, salePrice: updated.salePrice },
+    });
+  }
+
+  return updated;
+}
+
+// Le code-barres vit sur la variante par défaut, pas sur le produit — voir
+// createProduct, qui crée toujours une variante "de base" sans attribut.
+export async function updateVariantBarcode(db: Database, variantId: number, barcode: string | null) {
+  return db
+    .update(schema.productVariants)
+    .set({ barcode })
+    .where(eq(schema.productVariants.id, variantId))
+    .returning()
+    .get();
+}
+
 export interface VariantInput {
   productId: number;
   attributes: Record<string, string>;

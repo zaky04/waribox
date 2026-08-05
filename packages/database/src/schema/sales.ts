@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { customers } from "./customers";
 import { productVariants } from "./products";
+import { stores } from "./stores";
 import { users } from "./users";
 
 export const sales = sqliteTable("sales", {
@@ -11,6 +12,10 @@ export const sales = sqliteTable("sales", {
   userId: integer("user_id")
     .notNull()
     .references(() => users.id),
+  // Nullable au niveau colonne (ajoutée par migration, rétro-remplie vers la
+  // boutique par défaut) — toujours renseigné pour toute vente créée après
+  // l'introduction du multi-boutique.
+  storeId: integer("store_id").references(() => stores.id),
   saleMode: text("sale_mode").notNull(), // 'pos' | 'form'
   status: text("status").notNull().default("completed"), // 'draft' | 'completed' | 'cancelled' | 'refunded'
   subtotal: real("subtotal").notNull(),
@@ -43,5 +48,10 @@ export const payments = sqliteTable("payments", {
   method: text("method").notNull(), // 'cash' | 'card' | 'mobile_money' | 'credit'
   amount: real("amount").notNull(),
   receivedBy: integer("received_by").references(() => users.id),
+  // Renseigné pour les paiements de vente/achat/remboursement (ceux qui ont
+  // une boutique d'origine) — sert à borner le calcul de l'écart de caisse
+  // par boutique (voir CashSessionService.getExpectedCashAmount). Laissé nul
+  // pour les autres types de référence (dépense, remboursement de créance...).
+  storeId: integer("store_id").references(() => stores.id),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

@@ -5,6 +5,7 @@ import { BusinessHeader } from "./BusinessHeader";
 import { AccountingPage } from "../features/accounting/AccountingPage";
 import { AuthGate } from "../features/auth/AuthGate";
 import { TopBar } from "../features/auth/TopBar";
+import { useAuth } from "../features/auth/useAuth";
 import { useIdleLock } from "../features/auth/useIdleLock";
 import { CreditsPage } from "../features/credits/CreditsPage";
 import { CustomersPage } from "../features/customers/CustomersPage";
@@ -37,6 +38,7 @@ const DEFAULT_ENABLED_MODULES: Record<ModuleTab, boolean> = {
 
 function MainContent() {
   const db = useDatabase();
+  const { user } = useAuth();
   const [tab, setTab] = useState<NavTab>("dashboard");
   const [businessName, setBusinessName] = useState<string | null>(null);
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
@@ -44,6 +46,14 @@ function MainContent() {
   const [autoLockMinutes, setAutoLockMinutes] = useState(0);
   useBackupScheduler();
   useIdleLock(autoLockMinutes);
+
+  // Repart sur Accueil à chaque changement d'identité (connexion normale,
+  // impersonation par un Admin, retour à son propre compte) — évite de
+  // rester bloqué sur un onglet que le nouveau compte n'a plus le droit de
+  // voir (ex: Utilisateurs après avoir basculé sur un compte Vendeur).
+  useEffect(() => {
+    setTab("dashboard");
+  }, [user?.id]);
 
   // Un seul getSettings() par changement d'onglet, partagé par le bandeau
   // d'en-tête et la Nav (au lieu de plusieurs lectures séparées).

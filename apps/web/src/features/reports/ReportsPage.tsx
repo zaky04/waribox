@@ -5,18 +5,26 @@ import {
   buildMarginsReportPdf,
   buildSalesReportExcel,
   buildSalesReportPdf,
+  buildTaxReportExcel,
+  buildTaxReportPdf,
 } from "@gestion-boutique/reports";
 import {
   getCashFlow,
   getMarginsSummary,
+  getProductMarginsBreakdown,
   getSalesSummary,
+  getSettings,
+  getTaxCollected,
   getTopProducts,
   hasPermission,
+  listStores,
   projectCashFlow,
   type CashFlow,
   type CashFlowProjection,
   type MarginsSummary,
+  type ProductMarginBreakdown,
   type SalesSummary,
+  type TaxCollectedSummary,
   type TopProduct,
 } from "@gestion-boutique/core";
 import { useCallback, useEffect, useState } from "react";
@@ -33,7 +41,7 @@ import {
 } from "../../components/sharedStyles";
 import { useAuth } from "../auth/useAuth";
 
-type SubTab = "sales" | "margins" | "cashflow";
+type SubTab = "sales" | "margins" | "cashflow" | "tax";
 
 function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -48,6 +56,24 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+const ABC_COLORS: Record<"A" | "B" | "C", { bg: string; fg: string }> = {
+  A: { bg: "rgba(34, 197, 94, 0.18)", fg: "#22c55e" },
+  B: { bg: "rgba(234, 179, 8, 0.18)", fg: "#eab308" },
+  C: { bg: "rgba(148, 163, 184, 0.2)", fg: "#94a3b8" },
+};
+
+function abcBadgeStyle(abcClass: "A" | "B" | "C") {
+  return {
+    display: "inline-block",
+    padding: "2px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+    background: ABC_COLORS[abcClass].bg,
+    color: ABC_COLORS[abcClass].fg,
+  } as const;
+}
+
 const secondaryButtonStyle = {
   ...primaryButtonStyle,
   background: "transparent",
@@ -59,7 +85,7 @@ const secondaryButtonStyle = {
 
 export function ReportsPage() {
   const db = useDatabase();
-  const { user } = useAuth();
+  const { user, currentStoreId } = useAuth();
   const canViewMargins = user ? hasPermission(user.permissions, "view_margins") : false;
 
   const [subTab, setSubTab] = useState<SubTab>("sales");
@@ -75,26 +101,58 @@ export function ReportsPage() {
   const [salesSummary, setSalesSummary] = useState<SalesSummary | null>(null);
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
   const [marginsSummary, setMarginsSummary] = useState<MarginsSummary | null>(null);
+  const [productMargins, setProductMargins] = useState<ProductMarginBreakdown[]>([]);
   const [cashFlow, setCashFlow] = useState<CashFlow | null>(null);
   const [projection, setProjection] = useState<CashFlowProjection | null>(null);
+  const [taxEnabled, setTaxEnabled] = useState(false);
+  const [taxSummary, setTaxSummary] = useState<TaxCollectedSummary | null>(null);
+
+  const [stores, setStores] = useState<Awaited<ReturnType<typeof listStores>>>([]);
+  const [multiStoreEnabled, setMultiStoreEnabled] = useState(false);
+  // Vide = "Toutes les boutiques" (agrégé) — seul Admin/Propriétaire
+  // (switch_store) voient ce sélecteur ; les autres rôles restent toujours
+  // sur leur boutique assignée (currentStoreId), sans choix possible.
+  const [reportStoreFilter, setReportStoreFilter] = useState("");
+  const canSwitchStore = hasPermission(user?.permissions ?? {}, "switch_store");
+
+  useEffect(() => {
+    (async () => {
+      const [storeRows, settings] = await Promise.all([listStores(db), getSettings(db)]);
+      setStores(storeRows);
+      setMultiStoreEnabled(settings.multiStoreEnabled);
+    })();
+  }, [db]);
+
+  const effectiveStoreId = canSwitchStore
+    ? reportStoreFilter === ""
+      ? undefined
+      : Number(reportStoreFilter)
+    : (currentStoreId ?? undefined);
 
   const range = { from: fromDate, to: toDate };
 
   const refresh = useCallback(async () => {
-    const [sales, products, margins, flow, proj] = await Promise.all([
-      getSalesSummary(db, range),
-      getTopProducts(db, range),
-      getMarginsSummary(db, range),
-      getCashFlow(db, range),
-      projectCashFlow(db, { years, growthRate }),
+    const storeId = effectiveStoreId;
+    const [sales, products, margins, productBreakdown, flow, proj, settings, tax] = await Promise.all([
+      getSalesSummary(db, range, storeId),
+      getTopProducts(db, range, 10, storeId),
+      getMarginsSummary(db, range, storeId),
+      getProductMarginsBreakdown(db, range, storeId),
+      getCashFlow(db, range, storeId),
+      projectCashFlow(db, { years, growthRate, storeId }),
+      getSettings(db),
+      getTaxCollected(db, range, storeId),
     ]);
     setSalesSummary(sales);
     setTopProducts(products);
     setMarginsSummary(margins);
+    setProductMargins(productBreakdown);
     setCashFlow(flow);
     setProjection(proj);
+    setTaxEnabled(settings?.taxEnabled ?? false);
+    setTaxSummary(tax);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, fromDate, toDate, years, growthRate]);
+  }, [db, fromDate, toDate, years, growthRate, effectiveStoreId]);
 
   useEffect(() => {
     refresh();
@@ -114,13 +172,23 @@ export function ReportsPage() {
 
   const exportMarginsPdf = () => {
     if (!marginsSummary) return;
-    const blob = buildMarginsReportPdf({ from: fromDate, to: toDate, ...marginsSummary });
+    const blob = buildMarginsReportPdf({
+      from: fromDate,
+      to: toDate,
+      ...marginsSummary,
+      productBreakdown: productMargins,
+    });
     downloadBlob(blob, `rapport-marges-${fromDate}-${toDate}.pdf`);
   };
 
   const exportMarginsExcel = () => {
     if (!marginsSummary) return;
-    const blob = buildMarginsReportExcel({ from: fromDate, to: toDate, ...marginsSummary });
+    const blob = buildMarginsReportExcel({
+      from: fromDate,
+      to: toDate,
+      ...marginsSummary,
+      productBreakdown: productMargins,
+    });
     downloadBlob(blob, `rapport-marges-${fromDate}-${toDate}.xlsx`);
   };
 
@@ -136,9 +204,22 @@ export function ReportsPage() {
     downloadBlob(blob, `rapport-tresorerie-${fromDate}-${toDate}.xlsx`);
   };
 
+  const exportTaxPdf = () => {
+    if (!taxSummary) return;
+    const blob = buildTaxReportPdf({ from: fromDate, to: toDate, ...taxSummary });
+    downloadBlob(blob, `rapport-tva-${fromDate}-${toDate}.pdf`);
+  };
+
+  const exportTaxExcel = () => {
+    if (!taxSummary) return;
+    const blob = buildTaxReportExcel({ from: fromDate, to: toDate, ...taxSummary });
+    downloadBlob(blob, `rapport-tva-${fromDate}-${toDate}.xlsx`);
+  };
+
   const subTabs: { key: SubTab; label: string }[] = [{ key: "sales", label: "Ventes" }];
   if (canViewMargins) subTabs.push({ key: "margins", label: "Marges" });
   subTabs.push({ key: "cashflow", label: "Trésorerie" });
+  if (taxEnabled) subTabs.push({ key: "tax", label: "TVA" });
 
   return (
     <main style={pageStyle}>
@@ -176,6 +257,25 @@ export function ReportsPage() {
           Au
           <input style={inputStyle} type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
         </label>
+        {canSwitchStore && multiStoreEnabled && stores.filter((s) => s.isActive).length > 1 && (
+          <label>
+            Boutique
+            <select
+              style={inputStyle}
+              value={reportStoreFilter}
+              onChange={(e) => setReportStoreFilter(e.target.value)}
+            >
+              <option value="">Toutes les boutiques</option>
+              {stores
+                .filter((s) => s.isActive)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
       </div>
 
       {subTab === "sales" && salesSummary && (
@@ -271,6 +371,50 @@ export function ReportsPage() {
               Export Excel
             </button>
           </div>
+
+          <strong style={{ marginTop: 24, display: "block" }}>
+            Produits les plus rentables (analyse ABC)
+          </strong>
+          <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: "4px 0 12px" }}>
+            Classement par marge (pas par chiffre d'affaires) : Classe A = les produits qui, ensemble,
+            génèrent 80% de la marge totale — ceux à ne jamais laisser en rupture. Classe B = les 15%
+            suivants. Classe C = le reste, contribution marginale.
+          </p>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Produit</th>
+                <th style={thStyle}>Qté vendue</th>
+                <th style={thStyle}>Marge</th>
+                <th style={thStyle}>Taux</th>
+                <th style={thStyle}>Part cumulée</th>
+                <th style={thStyle}>Classe</th>
+              </tr>
+            </thead>
+            <tbody>
+              {productMargins.map((p) => (
+                <tr key={p.productId}>
+                  <td style={tdStyle}>{p.name}</td>
+                  <td style={tdStyle}>{p.quantity}</td>
+                  <td style={{ ...tdStyle, color: p.margin >= 0 ? "#86efac" : "#f87171" }}>
+                    {p.margin.toFixed(0)}
+                  </td>
+                  <td style={tdStyle}>{p.marginRate.toFixed(1)}%</td>
+                  <td style={tdStyle}>{p.cumulativeShare.toFixed(1)}%</td>
+                  <td style={tdStyle}>
+                    <span style={abcBadgeStyle(p.abcClass)}>{p.abcClass}</span>
+                  </td>
+                </tr>
+              ))}
+              {productMargins.length === 0 && (
+                <tr>
+                  <td style={tdStyle} colSpan={6}>
+                    Aucune vente sur cette période.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </>
       )}
 
@@ -347,6 +491,43 @@ export function ReportsPage() {
               </table>
             </>
           )}
+        </>
+      )}
+
+      {subTab === "tax" && taxEnabled && taxSummary && (
+        <>
+          <div style={{ display: "flex", gap: 16, marginTop: 24 }}>
+            <div style={cardStyle}>
+              <span style={{ color: "var(--color-text-muted)" }}>TVA nette collectée</span>
+              <strong style={{ fontSize: 22 }}>{taxSummary.totalTaxCollected.toFixed(0)}</strong>
+            </div>
+            <div style={cardStyle}>
+              <span style={{ color: "var(--color-text-muted)" }}>TVA sur ventes</span>
+              <strong style={{ fontSize: 22 }}>{taxSummary.salesTaxTotal.toFixed(0)}</strong>
+            </div>
+            <div style={cardStyle}>
+              <span style={{ color: "var(--color-text-muted)" }}>TVA remboursée</span>
+              <strong style={{ fontSize: 22 }}>{taxSummary.refundsTaxTotal.toFixed(0)}</strong>
+            </div>
+            <div style={cardStyle}>
+              <span style={{ color: "var(--color-text-muted)" }}>CA taxable (TTC net)</span>
+              <strong style={{ fontSize: 22 }}>{taxSummary.taxableRevenue.toFixed(0)}</strong>
+            </div>
+          </div>
+
+          <div style={cardStyle}>
+            <strong>TVA collectée par jour</strong>
+            <BarChart data={taxSummary.byDay.map((d) => ({ label: d.date.slice(5), value: d.taxCollected }))} />
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+            <button style={secondaryButtonStyle} onClick={exportTaxPdf}>
+              Export PDF
+            </button>
+            <button style={secondaryButtonStyle} onClick={exportTaxExcel}>
+              Export Excel
+            </button>
+          </div>
         </>
       )}
     </main>

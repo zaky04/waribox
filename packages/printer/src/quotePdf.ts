@@ -81,7 +81,7 @@ export function buildQuotePdf(data: QuotePdfData): Blob {
   doc.text(`Sous-total : ${data.subtotal.toFixed(0)}`, marginX + colWidth * 2.7, y);
   y += 6;
   if (data.tax > 0) {
-    doc.text(`Taxe : ${data.tax.toFixed(0)}`, marginX + colWidth * 2.7, y);
+    doc.text(`dont TVA : ${data.tax.toFixed(0)}`, marginX + colWidth * 2.7, y);
     y += 6;
   }
   doc.setFont("helvetica", "bold");

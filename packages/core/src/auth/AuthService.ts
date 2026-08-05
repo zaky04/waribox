@@ -14,6 +14,9 @@ export interface AuthenticatedUser {
   roleName: string;
   permissions: PermissionSet;
   isActive: boolean;
+  // Boutique à laquelle ce compte est cantonné (voir schema/users.ts) — nul
+  // pour Admin/Propriétaire ou en mono-boutique.
+  storeId: number | null;
 }
 
 async function toAuthenticatedUser(
@@ -30,6 +33,7 @@ async function toAuthenticatedUser(
     roleName: role?.name ?? "",
     permissions: role ? (JSON.parse(role.permissions) as PermissionSet) : {},
     isActive: user.isActive,
+    storeId: user.storeId,
   };
 }
 
@@ -78,6 +82,7 @@ export async function createUser(
     password: string;
     pin?: string;
     roleId: number;
+    storeId?: number | null;
     createdBy?: number;
   },
   actingPermissions: PermissionSet,
@@ -112,6 +117,7 @@ export async function createUser(
       passwordHash,
       pinHash,
       roleId: input.roleId,
+      storeId: input.storeId,
     })
     .returning()
     .get();
@@ -232,4 +238,128 @@ export async function getUserById(db: Database, userId: number): Promise<Authent
   const user = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get();
   if (!user) return null;
   return toAuthenticatedUser(db, user);
+}
+
+// Libre-service : n'importe quel utilisateur connecté change son propre mot
+// de passe, à condition de connaître l'actuel — aucune permission
+// particulière requise puisque ça ne touche que son propre compte.
+export async function changeOwnPassword(
+  db: Database,
+  userId: number,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const user = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get();
+  if (!user?.passwordHash) {
+    throw new Error("Compte introuvable.");
+  }
+
+  const lockedSeconds = remainingLockSeconds(user.lockedUntil);
+  if (lockedSeconds > 0) {
+    throw new Error(`Trop de tentatives. Réessaie dans ${lockedSeconds} seconde(s).`);
+  }
+
+  const valid = await verifySecret(currentPassword, user.passwordHash);
+  if (!valid) {
+    await registerFailedAttempt(db, userId, user.failedAttempts);
+    throw new Error("Mot de passe actuel incorrect.");
+  }
+  await clearFailedAttempts(db, userId);
+
+  const passwordHash = await hashSecret(newPassword);
+  await db.update(schema.users).set({ passwordHash }).where(eq(schema.users.id, userId)).run();
+}
+
+export interface UpdateUserInput {
+  fullName?: string;
+  username?: string;
+  email?: string;
+  roleId?: number;
+  storeId?: number | null;
+  // Réinitialisation par l'Admin — contrairement à changeOwnPassword, ne
+  // demande jamais l'ancien mot de passe (c'est justement l'intérêt : un
+  // utilisateur qui l'a oublié).
+  newPassword?: string;
+}
+
+// Édition par un Admin (permission manage_users) — distinct de
+// changeOwnPassword qui n'exige aucune permission mais ne peut modifier que
+// son propre compte, jamais celui d'un autre.
+export async function updateUser(
+  db: Database,
+  userId: number,
+  input: UpdateUserInput,
+  actingPermissions: PermissionSet,
+  updatedBy?: number,
+): Promise<AuthenticatedUser> {
+  requirePermission(actingPermissions, "manage_users");
+
+  const updates: Partial<typeof schema.users.$inferInsert> = {};
+  if (input.fullName !== undefined) updates.fullName = input.fullName;
+  if (input.email !== undefined) updates.email = input.email;
+  if (input.roleId !== undefined) updates.roleId = input.roleId;
+  if (input.storeId !== undefined) updates.storeId = input.storeId;
+
+  if (input.username !== undefined) {
+    const username = input.username.trim().toLowerCase();
+    const existing = await db.select().from(schema.users).where(eq(schema.users.username, username)).get();
+    if (existing && existing.id !== userId) {
+      throw new Error("Ce pseudo est déjà utilisé.");
+    }
+    updates.username = username;
+  }
+
+  if (input.newPassword) {
+    updates.passwordHash = await hashSecret(input.newPassword);
+  }
+
+  const updated = await db.update(schema.users).set(updates).where(eq(schema.users.id, userId)).returning().get();
+  if (!updated) {
+    throw new Error("Utilisateur introuvable.");
+  }
+
+  if (updatedBy) {
+    await logAction(db, {
+      userId: updatedBy,
+      action: "update_user",
+      entity: "user",
+      entityId: userId,
+      metadata: { fullName: updated.fullName, roleId: updated.roleId, passwordReset: !!input.newPassword },
+    });
+  }
+
+  return toAuthenticatedUser(db, updated);
+}
+
+// Permet à un Admin d'ouvrir une session en tant qu'un autre utilisateur
+// sans connaître son mot de passe (dépannage, vérification d'un rôle...) —
+// jamais l'inverse d'une connexion normale : aucun mot de passe n'est
+// vérifié ici, seule la permission manage_users de l'Admin l'autorise.
+// L'action est journalisée avec l'identité de l'Admin (userId) et celle du
+// compte visé (entityId) pour rester traçable.
+export async function impersonateUser(
+  db: Database,
+  targetUserId: number,
+  actingPermissions: PermissionSet,
+  actingUserId: number,
+): Promise<AuthenticatedUser> {
+  requirePermission(actingPermissions, "manage_users");
+
+  const target = await getUserById(db, targetUserId);
+  if (!target) {
+    throw new Error("Utilisateur introuvable.");
+  }
+  if (!target.isActive) {
+    throw new Error("Ce compte est désactivé.");
+  }
+
+  await logAction(db, {
+    userId: actingUserId,
+    action: "impersonate_user",
+    entity: "user",
+    entityId: targetUserId,
+    metadata: { targetFullName: target.fullName },
+  });
+
+  return target;
 }

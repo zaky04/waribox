@@ -1,13 +1,17 @@
 import {
   adjustPoints,
+  computeTier,
   createCustomer,
+  getSettings,
   hasPermission,
   listCustomerCredits,
   listCustomers,
+  TIER_LABELS,
   updateCustomer,
+  type LoyaltyTier,
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { useDatabase } from "../../app/DatabaseProvider";
 import {
   cardStyle,
@@ -29,6 +33,7 @@ export function CustomersPage() {
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [credits, setCredits] = useState<Credit[]>([]);
+  const [tierThresholds, setTierThresholds] = useState({ silver: 5000, gold: 20000 });
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -57,6 +62,32 @@ export function CustomersPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Seuils lus une seule fois (pas par client) — le palier lui-même est
+  // calculé côté client via computeTier, pas stocké en base.
+  useEffect(() => {
+    (async () => {
+      const settings = await getSettings(db);
+      setTierThresholds({ silver: settings.loyaltyTierSilverThreshold, gold: settings.loyaltyTierGoldThreshold });
+    })();
+  }, [db]);
+
+  const tierBadgeStyle = (tier: LoyaltyTier): CSSProperties => {
+    const colors: Record<LoyaltyTier, { bg: string; fg: string }> = {
+      bronze: { bg: "rgba(205, 127, 50, 0.18)", fg: "#cd7f32" },
+      silver: { bg: "rgba(148, 163, 184, 0.2)", fg: "#94a3b8" },
+      gold: { bg: "rgba(234, 179, 8, 0.18)", fg: "#eab308" },
+    };
+    return {
+      display: "inline-block",
+      padding: "2px 10px",
+      borderRadius: 999,
+      fontSize: 12,
+      fontWeight: 700,
+      background: colors[tier].bg,
+      color: colors[tier].fg,
+    };
+  };
 
   const creditBalance = (customerId: number) =>
     credits
@@ -197,6 +228,7 @@ export function CustomersPage() {
             <th style={thStyle}>Email</th>
             <th style={thStyle}>Solde créance</th>
             <th style={thStyle}>Points fidélité</th>
+            <th style={thStyle}>Palier</th>
             <th style={thStyle}></th>
           </tr>
         </thead>
@@ -210,6 +242,12 @@ export function CustomersPage() {
                 {creditBalance(c.id) > 0 ? creditBalance(c.id) : "—"}
               </td>
               <td style={tdStyle}>{c.loyaltyPoints}</td>
+              <td style={tdStyle}>
+                {(() => {
+                  const tier = computeTier(c.lifetimeLoyaltyPoints, tierThresholds.silver, tierThresholds.gold);
+                  return <span style={tierBadgeStyle(tier)}>{TIER_LABELS[tier]}</span>;
+                })()}
+              </td>
               <td style={tdStyle}>
                 <div style={{ display: "flex", gap: 8 }}>
                   {user && hasPermission(user.permissions, "edit_customers") && (
@@ -272,7 +310,7 @@ export function CustomersPage() {
           ))}
           {customers.length === 0 && (
             <tr>
-              <td style={tdStyle} colSpan={6}>
+              <td style={tdStyle} colSpan={7}>
                 Aucun client.
               </td>
             </tr>

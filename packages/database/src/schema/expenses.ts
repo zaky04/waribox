@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { stores } from "./stores";
 import { users } from "./users";
 
 // Dépenses/charges non liées à un achat de marchandise (loyer, salaires,
@@ -20,5 +21,6 @@ export const expenses = sqliteTable("expenses", {
   note: text("note"),
   paymentMethod: text("payment_method"), // 'cash' | 'card' | 'mobile_money' | 'bank_transfer' | 'other' | null
   userId: integer("user_id").references(() => users.id),
+  storeId: integer("store_id").references(() => stores.id),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

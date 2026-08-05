@@ -5,7 +5,7 @@ import { logAction } from "./AuditService";
 import { findOrCreateCustomerByName } from "./CustomersService";
 import { earnPoints, pointsToDiscount, redeemPoints } from "./LoyaltyService";
 import { getSettings } from "./SettingsService";
-import { getStockLevels, recordMovement } from "./StockService";
+import { consumeStockFefo, getStockLevels } from "./StockService";
 
 async function nextSaleNumber(db: Database): Promise<string> {
   const row = await db.select({ count: sql<number>`COUNT(*)` }).from(schema.sales).get();
@@ -35,12 +35,23 @@ export interface CreateSaleInput {
   paymentMethod: PaymentMethod;
   amountPaid?: number;
   surfaceLocationId: number;
+  storeId: number;
 }
 
+// Les prix saisis sont TTC (taxe déjà incluse, comme affiché en surface de
+// vente) — le total d'une ligne est donc simplement quantité×prix-remise,
+// sans rien ajouter. Le taux ne sert qu'à extraire la part de TVA contenue
+// dans ce montant pour l'affichage (voir computeTaxAmount).
 function computeItemTotal(item: SaleItemInput): number {
-  const gross = item.quantity * item.unitPrice - (item.discount ?? 0);
-  const tax = gross * ((item.taxRate ?? 0) / 100);
-  return gross + tax;
+  return item.quantity * item.unitPrice - (item.discount ?? 0);
+}
+
+// Extrait la TVA incluse dans un montant TTC : HT = TTC / (1 + taux/100),
+// TVA = TTC - HT — ne jamais utiliser gross * taux/100, qui ajouterait la
+// taxe au lieu de l'extraire.
+function computeTaxAmount(grossTtc: number, taxRate: number): number {
+  if (taxRate <= 0) return 0;
+  return grossTtc * (taxRate / (100 + taxRate));
 }
 
 export async function createSale(db: Database, input: CreateSaleInput) {
@@ -86,7 +97,7 @@ export async function createSale(db: Database, input: CreateSaleInput) {
   const subtotal = input.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const taxTotal = input.items.reduce((sum, item) => {
     const gross = item.quantity * item.unitPrice - (item.discount ?? 0);
-    return sum + gross * ((item.taxRate ?? 0) / 100);
+    return sum + computeTaxAmount(gross, item.taxRate ?? 0);
   }, 0);
   const itemsTotal = input.items.reduce((sum, item) => sum + computeItemTotal(item), 0);
   const redemptionDiscount = input.redeemPoints ? pointsToDiscount(input.redeemPoints, ratio) : 0;
@@ -112,6 +123,7 @@ export async function createSale(db: Database, input: CreateSaleInput) {
       number,
       customerId,
       userId: input.userId,
+      storeId: input.storeId,
       saleMode: input.saleMode,
       subtotal,
       discount,
@@ -133,10 +145,10 @@ export async function createSale(db: Database, input: CreateSaleInput) {
       total: computeItemTotal(item),
     });
 
-    await recordMovement(db, {
+    await consumeStockFefo(db, {
       variantId: item.variantId,
       locationId: input.surfaceLocationId,
-      quantityDelta: -item.quantity,
+      quantity: item.quantity,
       movementType: "sale",
       referenceType: "sale",
       referenceId: sale.id,
@@ -151,6 +163,7 @@ export async function createSale(db: Database, input: CreateSaleInput) {
       method: input.paymentMethod,
       amount: amountPaid,
       receivedBy: input.userId,
+      storeId: input.storeId,
     });
   }
 
@@ -158,6 +171,7 @@ export async function createSale(db: Database, input: CreateSaleInput) {
     await db.insert(schema.customerCredits).values({
       customerId: customerId!,
       saleId: sale.id,
+      storeId: input.storeId,
       originalAmount: total - amountPaid,
       remainingBalance: total - amountPaid,
       status: "open",

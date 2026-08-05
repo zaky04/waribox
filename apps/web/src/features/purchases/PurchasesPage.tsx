@@ -42,7 +42,7 @@ const PAYMENT_METHODS: { value: PurchasePaymentMethod; label: string }[] = [
 
 export function PurchasesPage() {
   const db = useDatabase();
-  const { user } = useAuth();
+  const { user, currentStoreId } = useAuth();
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -63,13 +63,13 @@ export function PurchasesPage() {
       listSuppliers(db),
       listProducts(db),
       listAllVariants(db),
-      listPurchases(db),
+      listPurchases(db, currentStoreId ?? undefined),
     ]);
     setSuppliers(supplierRows);
     setProducts(productRows);
     setVariants(variantRows);
     setPurchases(purchaseRows);
-  }, [db]);
+  }, [db, currentStoreId]);
 
   useEffect(() => {
     refresh();
@@ -132,7 +132,7 @@ export function PurchasesPage() {
 
   const handleSubmit = async () => {
     setError(null);
-    if (!user) return;
+    if (!user || !currentStoreId) return;
     if (!supplierId) {
       setError("Choisis un fournisseur.");
       return;
@@ -156,6 +156,7 @@ export function PurchasesPage() {
         paymentMethod,
         amountPaid: paidValue,
         dueDate: dueDate || undefined,
+        storeId: currentStoreId,
       });
 
       setLastPurchaseNumber(purchase.number);

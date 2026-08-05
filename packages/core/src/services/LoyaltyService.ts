@@ -2,11 +2,30 @@ import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { desc, eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { getSettings } from "./SettingsService";
 
 // Taux symétrique : `ratio` points gagnés par unité de devise dépensée, et
 // la valeur de rachat d'un point est l'inverse exact (1 / ratio en devise).
 export function pointsToDiscount(points: number, ratio: number): number {
   return ratio > 0 ? points / ratio : 0;
+}
+
+export type LoyaltyTier = "bronze" | "silver" | "gold";
+
+export const TIER_LABELS: Record<LoyaltyTier, string> = {
+  bronze: "Bronze",
+  silver: "Argent",
+  gold: "Or",
+};
+
+// Bronze = palier de base (aucun seuil requis) — Argent/Or sont atteints sur
+// le cumul à VIE des points (lifetimeLoyaltyPoints, jamais décrémenté par un
+// rachat), pas sur le solde dépensable, sinon un client perdrait son palier
+// en utilisant ses points.
+export function computeTier(lifetimePoints: number, silverThreshold: number, goldThreshold: number): LoyaltyTier {
+  if (lifetimePoints >= goldThreshold) return "gold";
+  if (lifetimePoints >= silverThreshold) return "silver";
+  return "bronze";
 }
 
 export async function listLoyaltyTransactions(db: Database, customerId: number) {
@@ -64,15 +83,31 @@ export interface EarnPointsInput {
 }
 
 export async function earnPoints(db: Database, input: EarnPointsInput) {
-  const points = input.amount * input.ratio;
-  if (points <= 0) return;
-
   const customer = await db
     .select()
     .from(schema.customers)
     .where(eq(schema.customers.id, input.customerId))
     .get();
   if (!customer) return;
+
+  // Le palier appliqué est celui déjà acquis AVANT cet achat (sur le cumul à
+  // vie existant) — un client doit déjà être Or pour bénéficier du bonus Or
+  // sur le nouvel achat qui, éventuellement, le fait grimper de palier.
+  const settings = await getSettings(db);
+  const tier = computeTier(
+    customer.lifetimeLoyaltyPoints,
+    settings.loyaltyTierSilverThreshold,
+    settings.loyaltyTierGoldThreshold,
+  );
+  const multiplier =
+    tier === "gold"
+      ? settings.loyaltyTierGoldMultiplier
+      : tier === "silver"
+        ? settings.loyaltyTierSilverMultiplier
+        : 1;
+
+  const points = input.amount * input.ratio * multiplier;
+  if (points <= 0) return;
 
   await db.insert(schema.loyaltyTransactions).values({
     customerId: input.customerId,
@@ -83,7 +118,10 @@ export async function earnPoints(db: Database, input: EarnPointsInput) {
 
   await db
     .update(schema.customers)
-    .set({ loyaltyPoints: customer.loyaltyPoints + points })
+    .set({
+      loyaltyPoints: customer.loyaltyPoints + points,
+      lifetimeLoyaltyPoints: customer.lifetimeLoyaltyPoints + points,
+    })
     .where(eq(schema.customers.id, input.customerId))
     .run();
 }

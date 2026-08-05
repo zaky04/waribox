@@ -3,6 +3,7 @@ import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { customers } from "./customers";
 import { sales } from "./sales";
 import { serviceOrders } from "./service-orders";
+import { stores } from "./stores";
 
 export const customerCredits = sqliteTable("customer_credits", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -13,6 +14,8 @@ export const customerCredits = sqliteTable("customer_credits", {
   // Nullable au même titre que saleId : une créance vient soit d'une vente,
   // soit d'un ordre de service, jamais des deux.
   serviceOrderId: integer("service_order_id").references(() => serviceOrders.id),
+  // Dénormalisé depuis la vente/l'ordre de service d'origine à la création.
+  storeId: integer("store_id").references(() => stores.id),
   originalAmount: real("original_amount").notNull(),
   remainingBalance: real("remaining_balance").notNull(),
   dueDate: text("due_date"),

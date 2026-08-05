@@ -99,6 +99,45 @@ export const MIGRATION_SQL: string[] = [
   "ALTER TABLE users ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE users ADD COLUMN locked_until TEXT",
   "ALTER TABLE business_settings ADD COLUMN auto_lock_minutes INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE business_settings ADD COLUMN tax_enabled INTEGER NOT NULL DEFAULT 0",
+  // Multi-boutique : une boutique par défaut existe toujours, même
+  // désactivé (voir stores.ts) — créée ici avant les backfills ci-dessous,
+  // qui en ont besoin pour rattacher les lignes déjà existantes.
+  "INSERT INTO stores (name, is_active) SELECT 'Boutique principale', 1 WHERE NOT EXISTS (SELECT 1 FROM stores)",
+  "ALTER TABLE stock_locations ADD COLUMN store_id INTEGER REFERENCES stores(id)",
+  "UPDATE stock_locations SET store_id = (SELECT id FROM stores ORDER BY id LIMIT 1) WHERE store_id IS NULL",
+  "ALTER TABLE sales ADD COLUMN store_id INTEGER REFERENCES stores(id)",
+  "UPDATE sales SET store_id = (SELECT id FROM stores ORDER BY id LIMIT 1) WHERE store_id IS NULL",
+  "ALTER TABLE cash_sessions ADD COLUMN store_id INTEGER REFERENCES stores(id)",
+  "UPDATE cash_sessions SET store_id = (SELECT id FROM stores ORDER BY id LIMIT 1) WHERE store_id IS NULL",
+  "ALTER TABLE payments ADD COLUMN store_id INTEGER REFERENCES stores(id)",
+  "ALTER TABLE business_settings ADD COLUMN multi_store_enabled INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE users ADD COLUMN store_id INTEGER REFERENCES stores(id)",
+  // Indépendance totale des boutiques : achats, dettes fournisseurs, créances
+  // clients, dépenses, devis et tickets de service sont eux aussi rattachés à
+  // une boutique — rétro-remplis vers la boutique par défaut pour les lignes
+  // déjà existantes, exactement comme stock_locations/sales plus haut.
+  "ALTER TABLE purchases ADD COLUMN store_id INTEGER REFERENCES stores(id)",
+  "UPDATE purchases SET store_id = (SELECT id FROM stores ORDER BY id LIMIT 1) WHERE store_id IS NULL",
+  "ALTER TABLE supplier_debts ADD COLUMN store_id INTEGER REFERENCES stores(id)",
+  "UPDATE supplier_debts SET store_id = (SELECT id FROM stores ORDER BY id LIMIT 1) WHERE store_id IS NULL",
+  "ALTER TABLE customer_credits ADD COLUMN store_id INTEGER REFERENCES stores(id)",
+  "UPDATE customer_credits SET store_id = (SELECT id FROM stores ORDER BY id LIMIT 1) WHERE store_id IS NULL",
+  "ALTER TABLE expenses ADD COLUMN store_id INTEGER REFERENCES stores(id)",
+  "UPDATE expenses SET store_id = (SELECT id FROM stores ORDER BY id LIMIT 1) WHERE store_id IS NULL",
+  "ALTER TABLE quotes ADD COLUMN store_id INTEGER REFERENCES stores(id)",
+  "UPDATE quotes SET store_id = (SELECT id FROM stores ORDER BY id LIMIT 1) WHERE store_id IS NULL",
+  "ALTER TABLE service_orders ADD COLUMN store_id INTEGER REFERENCES stores(id)",
+  "UPDATE service_orders SET store_id = (SELECT id FROM stores ORDER BY id LIMIT 1) WHERE store_id IS NULL",
+  // Paliers de fidélité : le cumul à vie est rétro-rempli depuis l'historique
+  // des transactions de type "purchase" (jamais "redemption", qui ne doit
+  // pas faire redescendre un palier déjà acquis) — précis, pas approximatif.
+  "ALTER TABLE customers ADD COLUMN lifetime_loyalty_points REAL NOT NULL DEFAULT 0",
+  `UPDATE customers SET lifetime_loyalty_points = COALESCE((SELECT SUM(points_delta) FROM loyalty_transactions WHERE loyalty_transactions.customer_id = customers.id AND reason = 'purchase'), 0) WHERE lifetime_loyalty_points = 0`,
+  "ALTER TABLE business_settings ADD COLUMN loyalty_tier_silver_threshold REAL NOT NULL DEFAULT 5000",
+  "ALTER TABLE business_settings ADD COLUMN loyalty_tier_gold_threshold REAL NOT NULL DEFAULT 20000",
+  "ALTER TABLE business_settings ADD COLUMN loyalty_tier_silver_multiplier REAL NOT NULL DEFAULT 1.25",
+  "ALTER TABLE business_settings ADD COLUMN loyalty_tier_gold_multiplier REAL NOT NULL DEFAULT 1.5",
 ];
 
 export type Database = SqliteRemoteDatabase<typeof schema>;

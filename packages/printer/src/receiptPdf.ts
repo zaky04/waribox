@@ -89,7 +89,7 @@ export function buildReceiptPdf(data: ReceiptData): Blob {
 
   lines.push({ text: `Sous-total : ${data.subtotal.toFixed(0)}` });
   if (data.discount > 0) lines.push({ text: `Remise : -${data.discount.toFixed(0)}` });
-  if (data.tax > 0) lines.push({ text: `Taxe : ${data.tax.toFixed(0)}` });
+  if (data.tax > 0) lines.push({ text: `dont TVA : ${data.tax.toFixed(0)}` });
   lines.push({ text: `TOTAL : ${data.total.toFixed(0)}`, bold: true });
   lines.push({
     text: `Paiement (${PAYMENT_LABELS[data.paymentMethod] ?? data.paymentMethod}) : ${data.amountPaid.toFixed(0)}`,
@@ -136,7 +136,7 @@ export function buildServiceOrderTicketPdf(data: ServiceOrderTicketData): Blob {
   lines.push({ text: separator });
 
   lines.push({ text: `Sous-total : ${data.subtotal.toFixed(0)}` });
-  if (data.tax > 0) lines.push({ text: `Taxe : ${data.tax.toFixed(0)}` });
+  if (data.tax > 0) lines.push({ text: `dont TVA : ${data.tax.toFixed(0)}` });
   lines.push({ text: `TOTAL : ${data.total.toFixed(0)}`, bold: true });
   lines.push({ text: `Paye : ${data.amountPaid.toFixed(0)}` });
   const balance = data.total - data.amountPaid;

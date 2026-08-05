@@ -40,7 +40,7 @@ function isoDate(date: Date): string {
 
 export function ExpensesPage() {
   const db = useDatabase();
-  const { user } = useAuth();
+  const { user, currentStoreId } = useAuth();
   const canManage = user ? hasPermission(user.permissions, "manage_expenses") : false;
   const canEdit = user ? hasPermission(user.permissions, "edit_expenses") : false;
 
@@ -68,12 +68,13 @@ export function ExpensesPage() {
       to: filterTo || undefined,
       category: filterCategory || undefined,
       search: filterSearch || undefined,
+      storeId: currentStoreId ?? undefined,
     };
     const [expenseRows, userRows] = await Promise.all([listExpenses(db, filters), listUsers(db)]);
     setExpenses(expenseRows);
     setUsers(userRows);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, filterFrom, filterTo, filterCategory, filterSearch]);
+  }, [db, filterFrom, filterTo, filterCategory, filterSearch, currentStoreId]);
 
   useEffect(() => {
     refresh();
@@ -115,18 +116,25 @@ export function ExpensesPage() {
 
     setSaving(true);
     try {
-      const input = {
-        category: category.trim(),
-        amount: value,
-        expenseDate,
-        paymentMethod,
-        note: note.trim() || undefined,
-        userId: user?.id,
-      };
       if (editingId) {
-        await updateExpense(db, editingId, input);
+        await updateExpense(db, editingId, {
+          category: category.trim(),
+          amount: value,
+          expenseDate,
+          paymentMethod,
+          note: note.trim() || undefined,
+          userId: user?.id,
+        });
       } else {
-        await createExpense(db, input);
+        await createExpense(db, {
+          category: category.trim(),
+          amount: value,
+          expenseDate,
+          paymentMethod,
+          note: note.trim() || undefined,
+          userId: user?.id,
+          storeId: currentStoreId ?? undefined,
+        });
       }
       resetForm();
       await refresh();

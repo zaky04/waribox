@@ -5,6 +5,7 @@ import type {
   IncomeStatementReportData,
   MarginsReportData,
   SalesReportData,
+  TaxReportData,
 } from "./pdf";
 
 function buildWorkbookBlob(sheets: { name: string; rows: Record<string, unknown>[] }[]): Blob {
@@ -44,7 +45,7 @@ export function buildSalesReportExcel(data: SalesReportData): Blob {
 }
 
 export function buildMarginsReportExcel(data: MarginsReportData): Blob {
-  return buildWorkbookBlob([
+  const sheets: { name: string; rows: Record<string, unknown>[] }[] = [
     {
       name: "Résumé",
       rows: [
@@ -61,7 +62,22 @@ export function buildMarginsReportExcel(data: MarginsReportData): Blob {
       name: "Par jour",
       rows: data.byDay.map((d) => ({ Date: d.date, Marge: d.margin })),
     },
-  ]);
+  ];
+  if (data.productBreakdown && data.productBreakdown.length > 0) {
+    sheets.push({
+      name: "Produits (ABC)",
+      rows: data.productBreakdown.map((p) => ({
+        Produit: p.name,
+        Quantité: p.quantity,
+        Marge: p.margin,
+        "Taux (%)": p.marginRate,
+        "Part marge (%)": p.marginShare,
+        "Cumul (%)": p.cumulativeShare,
+        Classe: p.abcClass,
+      })),
+    });
+  }
+  return buildWorkbookBlob(sheets);
 }
 
 export function buildCashFlowReportExcel(data: CashFlowReportData): Blob {
@@ -112,6 +128,27 @@ export function buildIncomeStatementReportExcel(data: IncomeStatementReportData)
     {
       name: "Charges par catégorie",
       rows: data.expensesByCategory.map((e) => ({ Catégorie: e.category, Montant: e.amount })),
+    },
+  ]);
+}
+
+export function buildTaxReportExcel(data: TaxReportData): Blob {
+  return buildWorkbookBlob([
+    {
+      name: "Résumé",
+      rows: [
+        {
+          Période: `${data.from} → ${data.to}`,
+          "TVA ventes": data.salesTaxTotal,
+          "TVA remboursée": data.refundsTaxTotal,
+          "TVA nette collectée": data.totalTaxCollected,
+          "CA taxable (TTC net)": data.taxableRevenue,
+        },
+      ],
+    },
+    {
+      name: "Par jour",
+      rows: data.byDay.map((d) => ({ Date: d.date, "TVA collectée": d.taxCollected })),
     },
   ]);
 }

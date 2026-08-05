@@ -84,7 +84,7 @@ export async function buildServiceOrderTicket(data: ServiceOrderTicketData): Pro
   builder.text(separator).newline();
   builder.text(`Sous-total : ${data.subtotal.toFixed(0)}`).newline();
   if (data.tax > 0) {
-    builder.text(`Taxe : ${data.tax.toFixed(0)}`).newline();
+    builder.text(`dont TVA : ${data.tax.toFixed(0)}`).newline();
   }
   builder.bold(true).text(`TOTAL : ${data.total.toFixed(0)}`).newline().bold(false);
   builder.text(`Paye : ${data.amountPaid.toFixed(0)}`).newline();

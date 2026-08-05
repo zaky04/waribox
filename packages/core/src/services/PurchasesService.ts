@@ -26,6 +26,7 @@ export interface CreatePurchaseInput {
   paymentMethod: PurchasePaymentMethod;
   amountPaid?: number;
   dueDate?: string;
+  storeId: number;
 }
 
 export async function createPurchase(db: Database, input: CreatePurchaseInput) {
@@ -38,10 +39,10 @@ export async function createPurchase(db: Database, input: CreatePurchaseInput) {
     }
   }
 
-  const locations = await listLocations(db);
-  const reserve = locations.find((l) => l.type === "reserve");
+  const locations = await listLocations(db, input.storeId);
+  const reserve = locations.find((l) => l.type === "reserve" || l.type.startsWith("reserve#"));
   if (!reserve) {
-    throw new Error("Emplacement de réserve introuvable.");
+    throw new Error("Emplacement de réserve introuvable pour cette boutique.");
   }
 
   const total = input.items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
@@ -55,6 +56,7 @@ export async function createPurchase(db: Database, input: CreatePurchaseInput) {
       number,
       supplierId: input.supplierId,
       userId: input.userId,
+      storeId: input.storeId,
       total,
     })
     .returning()
@@ -86,6 +88,7 @@ export async function createPurchase(db: Database, input: CreatePurchaseInput) {
       method: input.paymentMethod,
       amount: amountPaid,
       receivedBy: input.userId,
+      storeId: input.storeId,
     });
   }
 
@@ -93,6 +96,7 @@ export async function createPurchase(db: Database, input: CreatePurchaseInput) {
     await db.insert(schema.supplierDebts).values({
       supplierId: input.supplierId,
       purchaseId: purchase.id,
+      storeId: input.storeId,
       originalAmount: total - amountPaid,
       remainingBalance: total - amountPaid,
       dueDate: input.dueDate,
@@ -111,8 +115,9 @@ export async function createPurchase(db: Database, input: CreatePurchaseInput) {
   return purchase;
 }
 
-export async function listPurchases(db: Database) {
-  return db.select().from(schema.purchases).orderBy(desc(schema.purchases.id));
+export async function listPurchases(db: Database, storeId?: number) {
+  const query = db.select().from(schema.purchases).orderBy(desc(schema.purchases.id));
+  return storeId ? query.where(eq(schema.purchases.storeId, storeId)) : query;
 }
 
 export async function listPurchaseItems(db: Database, purchaseId: number) {

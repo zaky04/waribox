@@ -1,18 +1,26 @@
 import {
+  getRefundTotalsBySale,
+  getSettings,
+  hasPermission,
   listAllVariants,
   listAuditLog,
+  listBatches,
   listCustomers,
   listLocations,
   listProducts,
   listSales,
   listStockMovements,
+  listStores,
   listUsers,
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDatabase } from "../../app/DatabaseProvider";
+import { useAuth } from "../auth/useAuth";
 import { FilterBar } from "../../components/FilterBar";
 import { inputStyle, pageStyle, primaryButtonStyle, tableStyle, tdStyle, thStyle } from "../../components/sharedStyles";
+import { RefundHistoryModal } from "./RefundHistoryModal";
+import { RefundModal } from "./RefundModal";
 
 type Sale = typeof schema.sales.$inferSelect;
 type StockMovement = typeof schema.stockMovements.$inferSelect;
@@ -20,6 +28,7 @@ type AuditEntry = typeof schema.auditLog.$inferSelect;
 type Product = typeof schema.products.$inferSelect;
 type Variant = typeof schema.productVariants.$inferSelect;
 type Location = typeof schema.stockLocations.$inferSelect;
+type Batch = typeof schema.stockBatches.$inferSelect;
 type Customer = typeof schema.customers.$inferSelect;
 type User = Awaited<ReturnType<typeof listUsers>>[number];
 
@@ -35,6 +44,7 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   transfer: "Transfert",
   adjustment: "Ajustement",
   loss: "Perte",
+  return: "Retour client",
 };
 
 // Pour les mouvements "loss", referenceType porte le motif (voir StockPage.tsx)
@@ -49,11 +59,14 @@ const LOSS_REASON_LABELS: Record<string, string> = {
 
 const ACTION_LABELS: Record<string, string> = {
   create_sale: "Vente enregistrée",
+  create_refund: "Remboursement enregistré",
   create_product: "Produit créé",
   create_category: "Catégorie créée",
   create_user: "Utilisateur créé",
+  update_user: "Utilisateur modifié",
   activate_user: "Utilisateur activé",
   deactivate_user: "Utilisateur désactivé",
+  impersonate_user: "Connexion en tant qu'un autre utilisateur",
   open_cash_session: "Caisse ouverte",
   close_cash_session: "Caisse fermée",
   create_customer: "Client créé",
@@ -82,6 +95,7 @@ interface SalesFilterState {
   paymentStatus: string;
   search: string;
   customerSearch: string;
+  storeId: string;
 }
 const EMPTY_SALES_FILTERS: SalesFilterState = {
   from: "",
@@ -90,6 +104,7 @@ const EMPTY_SALES_FILTERS: SalesFilterState = {
   paymentStatus: "",
   search: "",
   customerSearch: "",
+  storeId: "",
 };
 
 interface StockFilterState {
@@ -120,7 +135,12 @@ const EMPTY_ACTION_FILTERS: ActionFilterState = { from: "", to: "", userId: "", 
 
 export function JournalsPage() {
   const db = useDatabase();
+  const { user } = useAuth();
+  const canManageRefunds = hasPermission(user?.permissions ?? {}, "manage_refunds");
   const [tab, setTab] = useState<"sales" | "stock" | "actions">("sales");
+  const [refundingSale, setRefundingSale] = useState<Sale | null>(null);
+  const [historySale, setHistorySale] = useState<Sale | null>(null);
+  const [refundTotals, setRefundTotals] = useState<Record<number, number>>({});
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
@@ -128,26 +148,36 @@ export function JournalsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
+  const [batches, setBatches] = useState<Batch[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [stores, setStores] = useState<Awaited<ReturnType<typeof listStores>>>([]);
+  const [multiStoreEnabled, setMultiStoreEnabled] = useState(false);
 
   const [salesFilters, setSalesFilters] = useState<SalesFilterState>(EMPTY_SALES_FILTERS);
   const [stockFilters, setStockFilters] = useState<StockFilterState>(EMPTY_STOCK_FILTERS);
   const [actionFilters, setActionFilters] = useState<ActionFilterState>(EMPTY_ACTION_FILTERS);
 
   const refreshReference = useCallback(async () => {
-    const [productRows, variantRows, locationRows, userRows, customerRows] = await Promise.all([
-      listProducts(db),
-      listAllVariants(db),
-      listLocations(db),
-      listUsers(db),
-      listCustomers(db),
-    ]);
+    const [productRows, variantRows, locationRows, batchRows, userRows, customerRows, storeRows, settings] =
+      await Promise.all([
+        listProducts(db),
+        listAllVariants(db),
+        listLocations(db),
+        listBatches(db),
+        listUsers(db),
+        listCustomers(db),
+        listStores(db),
+        getSettings(db),
+      ]);
     setProducts(productRows);
     setVariants(variantRows);
     setLocations(locationRows);
+    setBatches(batchRows);
     setUsers(userRows);
     setCustomers(customerRows);
+    setStores(storeRows);
+    setMultiStoreEnabled(settings.multiStoreEnabled);
   }, [db]);
 
   useEffect(() => {
@@ -155,14 +185,18 @@ export function JournalsPage() {
   }, [refreshReference]);
 
   const refreshSales = useCallback(async () => {
-    const rows = await listSales(db, {
-      from: salesFilters.from || undefined,
-      to: salesFilters.to || undefined,
-      userId: salesFilters.userId ? Number(salesFilters.userId) : undefined,
-      paymentStatus: salesFilters.paymentStatus || undefined,
-      search: salesFilters.search || undefined,
-    });
+    const [rows, totals] = await Promise.all([
+      listSales(db, {
+        from: salesFilters.from || undefined,
+        to: salesFilters.to || undefined,
+        userId: salesFilters.userId ? Number(salesFilters.userId) : undefined,
+        paymentStatus: salesFilters.paymentStatus || undefined,
+        search: salesFilters.search || undefined,
+      }),
+      getRefundTotalsBySale(db),
+    ]);
     setSales(rows);
+    setRefundTotals(totals);
   }, [db, salesFilters]);
 
   useEffect(() => {
@@ -202,10 +236,20 @@ export function JournalsPage() {
   const userName = (userId: number | null) => users.find((u) => u.id === userId)?.fullName ?? "—";
   const locationName = (locationId: number) => locations.find((l) => l.id === locationId)?.name ?? "—";
   const customerName = (customerId: number | null) => customers.find((c) => c.id === customerId)?.fullName ?? null;
+  const storeName = (storeId: number | null) => stores.find((s) => s.id === storeId)?.name ?? "—";
   const variantLabel = (variantId: number) => {
     const variant = variants.find((v) => v.id === variantId);
     const product = products.find((p) => p.id === variant?.productId);
     return product?.name ?? "—";
+  };
+  // Traçabilité fine vente/remboursement ↔ lot précis — batchId n'est posé
+  // que sur les mouvements passés par consumeStockFefo ou par le retour
+  // batch-aware de RefundsService ; les autres (ex. approvisionnement
+  // manuel non lié à un lot) restent sans lot associé, d'où le "—".
+  const lotLabel = (batchId: number | null) => {
+    if (batchId == null) return "—";
+    const batch = batches.find((b) => b.id === batchId);
+    return batch?.lotNumber ?? `#${batchId}`;
   };
 
   // Filtre texte sur le nom de produit — côté client, la table stock_movements
@@ -218,14 +262,19 @@ export function JournalsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [movements, stockFilters.search, variants, products]);
 
-  // Filtre texte sur le nom du client — côté client, même raisonnement que
-  // pour le produit ci-dessus (sales ne stocke qu'un customerId).
+  // Filtre texte sur le nom du client (et, si multi-boutique, sur la
+  // boutique) — côté client, même raisonnement que pour le produit ci-dessus
+  // (sales ne stocke qu'un customerId).
   const filteredSales = useMemo(() => {
     const term = salesFilters.customerSearch.trim().toLowerCase();
-    if (!term) return sales;
-    return sales.filter((s) => (customerName(s.customerId) ?? "").toLowerCase().includes(term));
+    const storeId = salesFilters.storeId ? Number(salesFilters.storeId) : null;
+    return sales.filter((s) => {
+      if (term && !(customerName(s.customerId) ?? "").toLowerCase().includes(term)) return false;
+      if (storeId && s.storeId !== storeId) return false;
+      return true;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sales, salesFilters.customerSearch, customers]);
+  }, [sales, salesFilters.customerSearch, salesFilters.storeId, customers]);
 
   const knownActions = useMemo(() => Object.keys(ACTION_LABELS).sort(), []);
 
@@ -302,6 +351,23 @@ export function JournalsPage() {
                 placeholder="Nom du client..."
               />
             </label>
+            {multiStoreEnabled && (
+              <label>
+                Boutique
+                <select
+                  style={inputStyle}
+                  value={salesFilters.storeId}
+                  onChange={(e) => setSalesFilters((f) => ({ ...f, storeId: e.target.value }))}
+                >
+                  <option value="">Toutes</option>
+                  {stores.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </FilterBar>
 
           <table style={tableStyle}>
@@ -311,9 +377,11 @@ export function JournalsPage() {
                 <th style={thStyle}>Date</th>
                 <th style={thStyle}>Client</th>
                 <th style={thStyle}>Mode</th>
+                {multiStoreEnabled && <th style={thStyle}>Boutique</th>}
                 <th style={thStyle}>Total</th>
                 <th style={thStyle}>Paiement</th>
                 <th style={thStyle}>Caissier</th>
+                {canManageRefunds && <th style={thStyle}>Remboursement</th>}
               </tr>
             </thead>
             <tbody>
@@ -323,14 +391,56 @@ export function JournalsPage() {
                   <td style={tdStyle}>{sale.createdAt}</td>
                   <td style={tdStyle}>{customerName(sale.customerId) ?? "—"}</td>
                   <td style={tdStyle}>{sale.saleMode === "pos" ? "Caisse" : "Formulaire"}</td>
+                  {multiStoreEnabled && <td style={tdStyle}>{storeName(sale.storeId)}</td>}
                   <td style={tdStyle}>{sale.total}</td>
                   <td style={tdStyle}>{PAYMENT_STATUS_LABELS[sale.paymentStatus] ?? sale.paymentStatus}</td>
                   <td style={tdStyle}>{userName(sale.userId)}</td>
+                  {canManageRefunds && (
+                    <td style={{ ...tdStyle, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                      {sale.status === "refunded" && <span style={{ color: "#f87171" }}>Remboursée</span>}
+                      {sale.status !== "refunded" && (refundTotals[sale.id] ?? 0) > 0 && (
+                        <span style={{ color: "#fdba74" }}>Remboursée partiellement</span>
+                      )}
+                      {(refundTotals[sale.id] ?? 0) > 0 && (
+                        <button
+                          onClick={() => setHistorySale(sale)}
+                          style={{
+                            background: "transparent",
+                            border: "1px solid var(--color-border)",
+                            color: "var(--color-text)",
+                            borderRadius: "var(--radius-md)",
+                            padding: "6px 12px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Historique
+                        </button>
+                      )}
+                      {sale.status !== "refunded" && (
+                        <button
+                          onClick={() => setRefundingSale(sale)}
+                          style={{
+                            background: "transparent",
+                            border: "1px solid var(--color-border)",
+                            color: "var(--color-text)",
+                            borderRadius: "var(--radius-md)",
+                            padding: "6px 12px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Rembourser
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
               {filteredSales.length === 0 && (
                 <tr>
-                  <td style={tdStyle} colSpan={7}>
+                  <td
+                    style={tdStyle}
+                    colSpan={7 + (multiStoreEnabled ? 1 : 0) + (canManageRefunds ? 1 : 0)}
+                  >
                     Aucune vente pour cette sélection.
                   </td>
                 </tr>
@@ -338,6 +448,19 @@ export function JournalsPage() {
             </tbody>
           </table>
         </>
+      )}
+
+      {refundingSale && (
+        <RefundModal
+          sale={refundingSale}
+          variantLabel={variantLabel}
+          onClose={() => setRefundingSale(null)}
+          onDone={refreshSales}
+        />
+      )}
+
+      {historySale && (
+        <RefundHistoryModal sale={historySale} variantLabel={variantLabel} onClose={() => setHistorySale(null)} />
       )}
 
       {tab === "stock" && (
@@ -407,6 +530,7 @@ export function JournalsPage() {
                 <th style={thStyle}>Emplacement</th>
                 <th style={thStyle}>Type</th>
                 <th style={thStyle}>Motif</th>
+                <th style={thStyle}>Lot</th>
                 <th style={thStyle}>Quantité</th>
                 <th style={thStyle}>Utilisateur</th>
               </tr>
@@ -421,6 +545,7 @@ export function JournalsPage() {
                   <td style={tdStyle}>
                     {m.movementType === "loss" ? (LOSS_REASON_LABELS[m.referenceType ?? ""] ?? "—") : "—"}
                   </td>
+                  <td style={tdStyle}>{lotLabel(m.batchId)}</td>
                   <td style={{ ...tdStyle, color: m.quantityDelta < 0 ? "#f87171" : "#86efac" }}>
                     {m.quantityDelta > 0 ? "+" : ""}
                     {m.quantityDelta}
@@ -430,7 +555,7 @@ export function JournalsPage() {
               ))}
               {filteredMovements.length === 0 && (
                 <tr>
-                  <td style={tdStyle} colSpan={7}>
+                  <td style={tdStyle} colSpan={8}>
                     Aucun mouvement de stock pour cette sélection.
                   </td>
                 </tr>

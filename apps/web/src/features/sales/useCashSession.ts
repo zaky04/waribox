@@ -11,24 +11,24 @@ import { useAuth } from "../auth/useAuth";
 
 type CashSession = typeof schema.cashSessions.$inferSelect;
 
-export function useCashSession() {
+export function useCashSession(storeId: number | null) {
   const db = useDatabase();
   const { user } = useAuth();
   const [session, setSession] = useState<CashSession | null | undefined>(undefined);
 
   const refresh = useCallback(async () => {
-    if (!user) return;
-    const active = await getActiveSession(db, user.id);
+    if (!user || !storeId) return;
+    const active = await getActiveSession(db, user.id, storeId);
     setSession(active ?? null);
-  }, [db, user]);
+  }, [db, user, storeId]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
   const open = async (openingAmount: number) => {
-    if (!user) return;
-    const created = await openSession(db, { userId: user.id, openingAmount });
+    if (!user || !storeId) return;
+    const created = await openSession(db, { userId: user.id, storeId, openingAmount });
     setSession(created);
   };
 
