@@ -37,15 +37,20 @@ export interface CreateServiceOrderInput {
   notes?: string;
   paymentMethod: ServiceOrderPaymentMethod;
   amountPaid?: number;
+  storeId?: number;
 }
 
-// Même formule que SalesService.computeItemTotal — dupliquée volontairement :
+// Même modèle que SalesService.computeItemTotal — dupliquée volontairement :
 // module distinct (pas de stock à décrémenter), pas de couplage avec le code
-// de vente déjà testé. Voir le plan pour la justification.
+// de vente déjà testé. Voir le plan pour la justification. Prix TTC : le
+// taux extrait la TVA contenue dans le prix, il ne s'ajoute pas dessus.
 export function computeItemTotal(item: ServiceOrderItemInput): number {
-  const gross = item.quantity * item.unitPrice - (item.discount ?? 0);
-  const tax = gross * ((item.taxRate ?? 0) / 100);
-  return gross + tax;
+  return item.quantity * item.unitPrice - (item.discount ?? 0);
+}
+
+function computeTaxAmount(grossTtc: number, taxRate: number): number {
+  if (taxRate <= 0) return 0;
+  return grossTtc * (taxRate / (100 + taxRate));
 }
 
 export async function createServiceOrder(db: Database, input: CreateServiceOrderInput) {
@@ -67,7 +72,7 @@ export async function createServiceOrder(db: Database, input: CreateServiceOrder
   const subtotal = input.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const taxTotal = input.items.reduce((sum, item) => {
     const gross = item.quantity * item.unitPrice - (item.discount ?? 0);
-    return sum + gross * ((item.taxRate ?? 0) / 100);
+    return sum + computeTaxAmount(gross, item.taxRate ?? 0);
   }, 0);
   const itemsTotal = input.items.reduce((sum, item) => sum + computeItemTotal(item), 0);
   // Pas de remise ni de rachat de points au niveau de l'ordre dans ce premier
@@ -92,6 +97,7 @@ export async function createServiceOrder(db: Database, input: CreateServiceOrder
       number,
       customerId,
       userId: input.userId,
+      storeId: input.storeId,
       subtotal,
       discount,
       taxTotal,
@@ -122,6 +128,7 @@ export async function createServiceOrder(db: Database, input: CreateServiceOrder
       method: input.paymentMethod,
       amount: amountPaid,
       receivedBy: input.userId,
+      storeId: input.storeId,
     });
   }
 
@@ -129,6 +136,7 @@ export async function createServiceOrder(db: Database, input: CreateServiceOrder
     await db.insert(schema.customerCredits).values({
       customerId: customerId!,
       serviceOrderId: order.id,
+      storeId: input.storeId,
       originalAmount: total - amountPaid,
       remainingBalance: total - amountPaid,
       status: "open",
@@ -151,8 +159,9 @@ export async function createServiceOrder(db: Database, input: CreateServiceOrder
   return order;
 }
 
-export async function listServiceOrders(db: Database) {
-  return db.select().from(schema.serviceOrders).orderBy(desc(schema.serviceOrders.id));
+export async function listServiceOrders(db: Database, storeId?: number) {
+  const query = db.select().from(schema.serviceOrders).orderBy(desc(schema.serviceOrders.id));
+  return storeId ? query.where(eq(schema.serviceOrders.storeId, storeId)) : query;
 }
 
 export async function listServiceOrderItems(db: Database, serviceOrderId: number) {
@@ -323,7 +332,7 @@ export async function updateServiceOrderItem(
   const subtotal = siblings.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
   const taxTotal = siblings.reduce((sum, i) => {
     const gross = i.quantity * i.unitPrice - i.discount;
-    return sum + gross * (i.taxRate / 100);
+    return sum + computeTaxAmount(gross, i.taxRate);
   }, 0);
   const orderTotal = siblings.reduce((sum, i) => sum + i.total, 0);
 

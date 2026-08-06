@@ -72,16 +72,54 @@ export interface MarginsReportData {
   margin: number;
   marginRate: number;
   byDay: { date: string; margin: number }[];
+  productBreakdown?: {
+    name: string;
+    quantity: number;
+    margin: number;
+    marginRate: number;
+    marginShare: number;
+    cumulativeShare: number;
+    abcClass: "A" | "B" | "C";
+  }[];
 }
 
 export function buildMarginsReportPdf(data: MarginsReportData): Blob {
   const rows = data.byDay.map((d) => [d.date, d.margin.toFixed(0)]);
-  return buildReportPdf(
-    "Rapport des marges",
+  const doc = new jsPDF();
+  doc.setFontSize(16);
+  doc.setFont("helvetica", "bold");
+  doc.text("Rapport des marges", 14, 18);
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text(
     `Du ${data.from} au ${data.to} — Revenu : ${data.revenue.toFixed(0)} — Coût : ${data.cost.toFixed(0)} — Marge : ${data.margin.toFixed(0)} (${data.marginRate.toFixed(1)}%)`,
-    ["Date", "Marge"],
-    rows,
+    14,
+    26,
   );
+  let y = drawTable(doc, 36, ["Date", "Marge"], rows);
+
+  if (data.productBreakdown && data.productBreakdown.length > 0) {
+    y += 10;
+    if (y > 260) {
+      doc.addPage();
+      y = 20;
+    }
+    doc.setFont("helvetica", "bold");
+    doc.text("Produits les plus rentables (analyse ABC)", 14, y);
+    y += 8;
+    doc.setFont("helvetica", "normal");
+    const productRows = data.productBreakdown.map((p) => [
+      p.name,
+      p.quantity,
+      p.margin.toFixed(0),
+      `${p.marginRate.toFixed(1)}%`,
+      `${p.cumulativeShare.toFixed(1)}%`,
+      p.abcClass,
+    ]);
+    drawTable(doc, y, ["Produit", "Qté", "Marge", "Taux", "Cumul", "Classe"], productRows);
+  }
+
+  return doc.output("blob");
 }
 
 export interface CashFlowReportData {
@@ -148,6 +186,26 @@ export function buildIncomeStatementReportPdf(data: IncomeStatementReportData): 
     "Compte de résultat (simplifié)",
     `Du ${data.from} au ${data.to} — CA : ${data.revenue.toFixed(0)} — Coût des ventes : ${data.cogs.toFixed(0)} — Charges : ${data.expensesTotal.toFixed(0)} — Résultat net : ${data.netIncome.toFixed(0)}`,
     ["Catégorie de charge", "Montant"],
+    rows,
+  );
+}
+
+export interface TaxReportData {
+  from: string;
+  to: string;
+  totalTaxCollected: number;
+  salesTaxTotal: number;
+  refundsTaxTotal: number;
+  taxableRevenue: number;
+  byDay: { date: string; taxCollected: number }[];
+}
+
+export function buildTaxReportPdf(data: TaxReportData): Blob {
+  const rows = data.byDay.map((d) => [d.date, d.taxCollected.toFixed(0)]);
+  return buildReportPdf(
+    "Rapport TVA collectée",
+    `Du ${data.from} au ${data.to} — TVA ventes : ${data.salesTaxTotal.toFixed(0)} — TVA remboursée : ${data.refundsTaxTotal.toFixed(0)} — TVA nette : ${data.totalTaxCollected.toFixed(0)}`,
+    ["Date", "TVA collectée"],
     rows,
   );
 }

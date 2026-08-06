@@ -7,7 +7,21 @@ export const businessSettings = sqliteTable("business_settings", {
   saleInterfaceMode: text("sale_interface_mode").notNull().default("pos"), // 'pos' | 'form'
   currency: text("currency").notNull().default("XOF"),
   defaultTaxRate: real("default_tax_rate").notNull().default(0),
+  // Interrupteur global — quand désactivé, aucune TVA n'est calculée ni
+  // affichée nulle part (prix affichés = prix payés), quel que soit le taux
+  // configuré ci-dessus. Les prix saisis (produits, lignes de vente) sont
+  // toujours TTC — le taux sert à extraire la part de TVA pour l'affichage
+  // sur les reçus/devis, pas à l'ajouter au prix.
+  taxEnabled: integer("tax_enabled", { mode: "boolean" }).notNull().default(false),
   loyaltyPointsRatio: real("loyalty_points_ratio").notNull().default(0),
+  // Paliers de fidélité (Bronze = palier de base, sans seuil) — un client
+  // atteint Argent/Or quand son cumul à vie (lifetimeLoyaltyPoints) dépasse
+  // ces seuils, et gagne alors ses points au taux ci-dessus multiplié par le
+  // multiplicateur du palier (voir LoyaltyService.computeTier/earnPoints).
+  loyaltyTierSilverThreshold: real("loyalty_tier_silver_threshold").notNull().default(5000),
+  loyaltyTierGoldThreshold: real("loyalty_tier_gold_threshold").notNull().default(20000),
+  loyaltyTierSilverMultiplier: real("loyalty_tier_silver_multiplier").notNull().default(1.25),
+  loyaltyTierGoldMultiplier: real("loyalty_tier_gold_multiplier").notNull().default(1.5),
   backupFrequency: text("backup_frequency").notNull().default("weekly"),
   googleDriveClientId: text("google_drive_client_id"),
   logoDataUrl: text("logo_data_url"),
@@ -42,4 +56,8 @@ export const businessSettings = sqliteTable("business_settings", {
   enableSuppliers: integer("enable_suppliers", { mode: "boolean" }).notNull().default(true),
   enablePurchases: integer("enable_purchases", { mode: "boolean" }).notNull().default(true),
   modulesConfigured: integer("modules_configured", { mode: "boolean" }).notNull().default(true),
+  // Affiche/masque le sélecteur de boutique et la gestion des succursales —
+  // la table stores et le storeId sur stockLocations/sales/cashSessions/
+  // payments existent toujours en base, même désactivé (voir stores.ts).
+  multiStoreEnabled: integer("multi_store_enabled", { mode: "boolean" }).notNull().default(false),
 });

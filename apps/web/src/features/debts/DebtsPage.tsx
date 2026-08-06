@@ -35,7 +35,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 export function DebtsPage() {
   const db = useDatabase();
-  const { user } = useAuth();
+  const { user, currentStoreId } = useAuth();
 
   const [debts, setDebts] = useState<Debt[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -53,9 +53,9 @@ export function DebtsPage() {
   const refresh = useCallback(async () => {
     const [debtRows, supplierRows, purchaseRows, purchaseItemRows, variantRows, productRows] =
       await Promise.all([
-        listSupplierDebts(db),
+        listSupplierDebts(db, currentStoreId ?? undefined),
         listSuppliers(db),
-        listPurchases(db),
+        listPurchases(db, currentStoreId ?? undefined),
         db.select().from(schema.purchaseItems),
         listAllVariants(db),
         listProducts(db),
@@ -66,7 +66,7 @@ export function DebtsPage() {
     setPurchaseItems(purchaseItemRows);
     setVariants(variantRows);
     setProducts(productRows);
-  }, [db]);
+  }, [db, currentStoreId]);
 
   useEffect(() => {
     refresh();

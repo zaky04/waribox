@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { productVariants } from "./products";
+import { stores } from "./stores";
 import { suppliers } from "./suppliers";
 import { users } from "./users";
 
@@ -13,6 +14,7 @@ export const purchases = sqliteTable("purchases", {
   userId: integer("user_id")
     .notNull()
     .references(() => users.id),
+  storeId: integer("store_id").references(() => stores.id),
   status: text("status").notNull().default("received"), // 'ordered' | 'received' | 'cancelled'
   total: real("total").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -36,6 +38,9 @@ export const supplierDebts = sqliteTable("supplier_debts", {
     .notNull()
     .references(() => suppliers.id),
   purchaseId: integer("purchase_id").references(() => purchases.id),
+  // Dénormalisé depuis purchases.storeId à la création — évite une jointure
+  // pour filtrer les dettes par boutique.
+  storeId: integer("store_id").references(() => stores.id),
   originalAmount: real("original_amount").notNull(),
   remainingBalance: real("remaining_balance").notNull(),
   dueDate: text("due_date"),

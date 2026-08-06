@@ -27,6 +27,7 @@ import {
   thStyle,
 } from "../../components/sharedStyles";
 import { useAuth } from "../auth/useAuth";
+import { StoresSection } from "../stores/StoresSection";
 import { runGoogleDriveBackup, runLocalBackup } from "./backupRunner";
 import { resizeImageToDataUrl } from "./imageUtils";
 import { isTauriRuntime } from "./tauriRuntime";
@@ -70,6 +71,10 @@ export function SettingsPage() {
   const { user } = useAuth();
 
   const [loyaltyPointsRatio, setLoyaltyPointsRatio] = useState("0");
+  const [loyaltyTierSilverThreshold, setLoyaltyTierSilverThreshold] = useState("5000");
+  const [loyaltyTierGoldThreshold, setLoyaltyTierGoldThreshold] = useState("20000");
+  const [loyaltyTierSilverMultiplier, setLoyaltyTierSilverMultiplier] = useState("1.25");
+  const [loyaltyTierGoldMultiplier, setLoyaltyTierGoldMultiplier] = useState("1.5");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -79,6 +84,8 @@ export function SettingsPage() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [whatsappCountryCode, setWhatsappCountryCode] = useState("");
+  const [taxEnabled, setTaxEnabled] = useState(false);
+  const [defaultTaxRate, setDefaultTaxRate] = useState("0");
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [logoError, setLogoError] = useState<string | null>(null);
   const [receiptPreset, setReceiptPreset] = useState("32");
@@ -90,6 +97,7 @@ export function SettingsPage() {
   const [enableStock, setEnableStock] = useState(true);
   const [enableSuppliers, setEnableSuppliers] = useState(true);
   const [enablePurchases, setEnablePurchases] = useState(true);
+  const [multiStoreEnabled, setMultiStoreEnabled] = useState(false);
   const [autoLockMinutes, setAutoLockMinutes] = useState("0");
 
   const [frequencyPreset, setFrequencyPreset] = useState("weekly");
@@ -127,6 +135,10 @@ export function SettingsPage() {
     ]);
     setMaintenanceCodeSet(maintenanceCodeIsSet);
     setLoyaltyPointsRatio(String(settings.loyaltyPointsRatio));
+    setLoyaltyTierSilverThreshold(String(settings.loyaltyTierSilverThreshold));
+    setLoyaltyTierGoldThreshold(String(settings.loyaltyTierGoldThreshold));
+    setLoyaltyTierSilverMultiplier(String(settings.loyaltyTierSilverMultiplier));
+    setLoyaltyTierGoldMultiplier(String(settings.loyaltyTierGoldMultiplier));
     setGoogleDriveClientId(settings.googleDriveClientId ?? "");
     setBackups(backupRows);
     setFolderName(handle?.name ?? null);
@@ -136,6 +148,8 @@ export function SettingsPage() {
     setPhone(settings.phone ?? "");
     setEmail(settings.email ?? "");
     setWhatsappCountryCode(settings.whatsappCountryCode ?? "");
+    setTaxEnabled(settings.taxEnabled);
+    setDefaultTaxRate(String(settings.defaultTaxRate));
     setLogoDataUrl(settings.logoDataUrl ?? null);
     setEnableServiceOrders(settings.enableServiceOrders);
     setPrintPromisedDateOnTicket(settings.printPromisedDateOnTicket);
@@ -144,6 +158,7 @@ export function SettingsPage() {
     setEnableStock(settings.enableStock);
     setEnableSuppliers(settings.enableSuppliers);
     setEnablePurchases(settings.enablePurchases);
+    setMultiStoreEnabled(settings.multiStoreEnabled);
     setAutoLockMinutes(String(settings.autoLockMinutes));
 
     const isReceiptPreset = RECEIPT_PRESETS.some((p) => p.value === String(settings.receiptColumns));
@@ -176,6 +191,21 @@ export function SettingsPage() {
       return;
     }
 
+    const silverThreshold = Number(loyaltyTierSilverThreshold);
+    const goldThreshold = Number(loyaltyTierGoldThreshold);
+    const silverMultiplier = Number(loyaltyTierSilverMultiplier);
+    const goldMultiplier = Number(loyaltyTierGoldMultiplier);
+    if (
+      [silverThreshold, goldThreshold, silverMultiplier, goldMultiplier].some((n) => Number.isNaN(n) || n < 0)
+    ) {
+      setError("Les seuils et multiplicateurs de palier doivent être des nombres positifs ou nuls.");
+      return;
+    }
+    if (goldThreshold < silverThreshold) {
+      setError("Le seuil du palier Or doit être supérieur ou égal au seuil du palier Argent.");
+      return;
+    }
+
     const backupFrequency = frequencyPreset === "custom" ? customDays.trim() : frequencyPreset;
     if (frequencyPreset === "custom" && (!/^\d+$/.test(backupFrequency) || Number(backupFrequency) < 0)) {
       setError("Le délai personnalisé doit être un nombre de jours entier positif.");
@@ -197,12 +227,22 @@ export function SettingsPage() {
       return;
     }
 
+    const taxRateValue = Number(defaultTaxRate);
+    if (taxEnabled && (Number.isNaN(taxRateValue) || taxRateValue < 0 || taxRateValue >= 100)) {
+      setError("Le taux de TVA doit être un nombre entre 0 et 99.");
+      return;
+    }
+
     setSaving(true);
     try {
       await updateSettings(
         db,
         {
           loyaltyPointsRatio: ratio,
+          loyaltyTierSilverThreshold: silverThreshold,
+          loyaltyTierGoldThreshold: goldThreshold,
+          loyaltyTierSilverMultiplier: silverMultiplier,
+          loyaltyTierGoldMultiplier: goldMultiplier,
           backupFrequency,
           googleDriveClientId: googleDriveClientId.trim() || undefined,
           businessName: businessName.trim() || undefined,
@@ -210,6 +250,8 @@ export function SettingsPage() {
           phone: phone.trim() || undefined,
           email: email.trim() || undefined,
           whatsappCountryCode: whatsappCountryCode.trim() || undefined,
+          taxEnabled,
+          defaultTaxRate: taxRateValue,
           logoDataUrl,
           receiptColumns,
           enableServiceOrders,
@@ -219,6 +261,7 @@ export function SettingsPage() {
           enableStock,
           enableSuppliers,
           enablePurchases,
+          multiStoreEnabled,
           autoLockMinutes: autoLockValue,
         },
         user?.permissions ?? {},
@@ -445,6 +488,30 @@ export function SettingsPage() {
           notification WhatsApp (ex : ticket de service prêt).
         </p>
 
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input type="checkbox" checked={taxEnabled} onChange={(e) => setTaxEnabled(e.target.checked)} />
+          Appliquer la TVA
+        </label>
+        {taxEnabled && (
+          <label style={{ marginLeft: 24 }}>
+            Taux de TVA par défaut (%)
+            <input
+              style={inputStyle}
+              type="number"
+              min={0}
+              max={99}
+              value={defaultTaxRate}
+              onChange={(e) => setDefaultTaxRate(e.target.value)}
+            />
+          </label>
+        )}
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
+          Les prix saisis (produits, lignes de vente) sont toujours des prix TTC — le taux ne les
+          augmente pas, il sert uniquement à afficher le montant de TVA inclus sur les reçus, devis et
+          tickets de service (ligne "dont TVA"). Un produit peut avoir son propre taux dans sa fiche,
+          sinon ce taux par défaut s'applique.
+        </p>
+
         <div>
           <strong style={{ fontSize: 14 }}>Logo</strong>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
@@ -568,6 +635,24 @@ export function SettingsPage() {
       </div>
 
       <div style={cardStyle}>
+        <strong>Multi-boutique</strong>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={multiStoreEnabled}
+            onChange={(e) => setMultiStoreEnabled(e.target.checked)}
+          />
+          Activer plusieurs boutiques (succursales)
+        </label>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
+          Chaque boutique a son propre stock et ses propres ventes, dans la même base de données —
+          un sélecteur de boutique apparaît dans le menu du haut une fois activé et au moins deux
+          boutiques créées.
+        </p>
+        {multiStoreEnabled && <StoresSection />}
+      </div>
+
+      <div style={cardStyle}>
         <strong>Points de fidélité</strong>
         <label>
           Points gagnés par unité de devise dépensée
@@ -583,6 +668,57 @@ export function SettingsPage() {
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
           Ex : 0.1 = 1 point gagné tous les 10 [devise] dépensés. La valeur de rachat d'un point est
           l'inverse exact de ce taux. Mettre à 0 désactive le programme de fidélité.
+        </p>
+
+        <strong style={{ marginTop: 16, display: "block" }}>Paliers (Bronze / Argent / Or)</strong>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <label>
+            Seuil Argent (points cumulés à vie)
+            <input
+              style={inputStyle}
+              type="number"
+              min="0"
+              value={loyaltyTierSilverThreshold}
+              onChange={(e) => setLoyaltyTierSilverThreshold(e.target.value)}
+            />
+          </label>
+          <label>
+            Seuil Or (points cumulés à vie)
+            <input
+              style={inputStyle}
+              type="number"
+              min="0"
+              value={loyaltyTierGoldThreshold}
+              onChange={(e) => setLoyaltyTierGoldThreshold(e.target.value)}
+            />
+          </label>
+          <label>
+            Multiplicateur Argent
+            <input
+              style={inputStyle}
+              type="number"
+              step="0.01"
+              min="0"
+              value={loyaltyTierSilverMultiplier}
+              onChange={(e) => setLoyaltyTierSilverMultiplier(e.target.value)}
+            />
+          </label>
+          <label>
+            Multiplicateur Or
+            <input
+              style={inputStyle}
+              type="number"
+              step="0.01"
+              min="0"
+              value={loyaltyTierGoldMultiplier}
+              onChange={(e) => setLoyaltyTierGoldMultiplier(e.target.value)}
+            />
+          </label>
+        </div>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
+          Bronze est le palier de base (multiplicateur 1×, sans seuil). Un client passe Argent/Or dès
+          que son cumul de points à vie (jamais réduit par un rachat) dépasse ces seuils, et gagne
+          alors ses points au taux ci-dessus multiplié par le multiplicateur de son palier.
         </p>
       </div>
 

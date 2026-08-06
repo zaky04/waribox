@@ -24,6 +24,7 @@ import {
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { buildWhatsAppLink } from "../../lib/whatsapp";
+import { openExternalUrl } from "../../lib/openExternalUrl";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
   badgeStyle,
@@ -106,7 +107,7 @@ const PAYMENT_STATUS_LABELS: Record<string, string> = {
 
 export function ServiceOrdersPage() {
   const db = useDatabase();
-  const { user } = useAuth();
+  const { user, currentStoreId } = useAuth();
   const printer = usePrinter();
 
   const [view, setView] = useState<"new" | "track" | "history">("new");
@@ -158,10 +159,14 @@ export function ServiceOrdersPage() {
   }, [refreshCatalog]);
 
   const refreshTrack = useCallback(async () => {
-    const [orderRows, creditRows] = await Promise.all([listServiceOrders(db), listCustomerCredits(db)]);
+    const storeId = currentStoreId ?? undefined;
+    const [orderRows, creditRows] = await Promise.all([
+      listServiceOrders(db, storeId),
+      listCustomerCredits(db, storeId),
+    ]);
     setOrders(orderRows);
     setCredits(creditRows);
-  }, [db]);
+  }, [db, currentStoreId]);
 
   useEffect(() => {
     if (view === "track" || view === "history") refreshTrack();
@@ -175,7 +180,7 @@ export function ServiceOrdersPage() {
         description: "",
         unitPrice: 0,
         quantity: 1,
-        taxRate: businessSettings?.defaultTaxRate ?? 0,
+        taxRate: businessSettings?.taxEnabled ? (businessSettings.defaultTaxRate ?? 0) : 0,
       },
     ]);
     setNextLineKey((k) => k + 1);
@@ -194,9 +199,13 @@ export function ServiceOrdersPage() {
     setAmountPaid(method === "credit" ? "0" : "");
   };
 
+  // Prix TTC — voir SalesPage.tsx pour le détail du modèle.
   const subtotal = lines.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0);
-  const taxTotal = lines.reduce((sum, l) => sum + l.quantity * l.unitPrice * (l.taxRate / 100), 0);
-  const total = subtotal + taxTotal;
+  const taxTotal = lines.reduce((sum, l) => {
+    const gross = l.quantity * l.unitPrice;
+    return sum + (l.taxRate > 0 ? gross * (l.taxRate / (100 + l.taxRate)) : 0);
+  }, 0);
+  const total = subtotal;
 
   const paidValuePreview = amountPaid === "" ? total : Number(amountPaid);
   const needsCustomerIdentification = paymentMethod === "credit" || paidValuePreview < total;
@@ -232,6 +241,7 @@ export function ServiceOrdersPage() {
         notes: notes.trim() || undefined,
         paymentMethod,
         amountPaid: paidValue,
+        storeId: currentStoreId ?? undefined,
       });
 
       const selectedCustomer = customers.find((c) => c.id === Number(customerId));
@@ -254,7 +264,7 @@ export function ServiceOrdersPage() {
           description: l.description,
           quantity: l.quantity,
           unitPrice: l.unitPrice,
-          total: l.quantity * l.unitPrice * (1 + l.taxRate / 100),
+          total: l.quantity * l.unitPrice,
         })),
         subtotal,
         tax: taxTotal,
@@ -769,9 +779,8 @@ export function ServiceOrdersPage() {
                                 onClick={() => {
                                   const phone = customerPhone(order.customerId)!;
                                   const message = `Bonjour ${customerName(order.customerId)}, votre ticket ${order.number} est prêt à récupérer chez ${businessSettings?.businessName ?? "nous"}.`;
-                                  window.open(
+                                  void openExternalUrl(
                                     buildWhatsAppLink(phone, businessSettings?.whatsappCountryCode, message),
-                                    "_blank",
                                   );
                                 }}
                               >

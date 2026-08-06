@@ -1,12 +1,20 @@
 import { sql } from "drizzle-orm";
 import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { productVariants } from "./products";
+import { stores } from "./stores";
 import { users } from "./users";
 
 export const stockLocations = sqliteTable("stock_locations", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
-  type: text("type").notNull().unique(), // 'reserve' | 'surface_vente'
+  // Reste globalement unique pour compat avec les bases mono-boutique
+  // existantes ('reserve'/'surface_vente' pour la première boutique) — toute
+  // boutique additionnelle reçoit un type suffixé ("reserve#<storeId>"), voir
+  // StockService.ensureLocationsForStore.
+  type: text("type").notNull().unique(),
+  // Nullable au niveau colonne (ajoutée par migration, rétro-remplie vers la
+  // boutique par défaut) — toujours renseigné en pratique.
+  storeId: integer("store_id").references(() => stores.id),
 });
 
 export const stockBatches = sqliteTable("stock_batches", {
@@ -34,7 +42,7 @@ export const stockMovements = sqliteTable("stock_movements", {
     .references(() => stockLocations.id),
   batchId: integer("batch_id").references(() => stockBatches.id),
   quantityDelta: real("quantity_delta").notNull(),
-  movementType: text("movement_type").notNull(), // 'purchase' | 'sale' | 'transfer' | 'adjustment' | 'loss'
+  movementType: text("movement_type").notNull(), // 'purchase' | 'sale' | 'transfer' | 'adjustment' | 'loss' | 'return'
   referenceType: text("reference_type"), // 'sale' | 'purchase' | 'manual'
   referenceId: integer("reference_id"),
   createdBy: integer("created_by").references(() => users.id),

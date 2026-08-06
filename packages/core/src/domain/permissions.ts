@@ -3,6 +3,7 @@ export const PERMISSIONS = [
   "manage_products",
   "manage_stock",
   "manage_sales",
+  "manage_refunds",
   "manage_service_orders",
   "edit_service_orders",
   "manage_customers",
@@ -20,6 +21,7 @@ export const PERMISSIONS = [
   "manage_settings",
   "manage_users",
   "view_audit_logs",
+  "switch_store",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -76,14 +78,26 @@ export function mergeMissingPermissions(
   return { merged, changed };
 }
 
-export type DefaultRoleKey = "admin" | "gerant" | "vendeur" | "caissier";
+export type DefaultRoleKey = "admin" | "proprietaire" | "gerant" | "vendeur" | "caissier";
 
 // Les journaux (view_audit_logs) restent une exclusivité Admin — même le
-// Gérant n'y a pas accès par défaut.
+// Propriétaire n'y a pas accès par défaut (piste d'audit technique, pas une
+// donnée de gestion). Le Propriétaire a en revanche toutes les autres
+// permissions, y compris switch_store (accès à toutes les boutiques) —
+// contrairement à Gérant/Vendeur/Caissier, qui restent cantonnés à la
+// boutique qui leur est assignée (voir users.storeId).
+const PROPRIETAIRE_PERMISSIONS: PermissionSet = Object.fromEntries(
+  PERMISSIONS.filter((p) => p !== "view_audit_logs").map((permission) => [permission, true]),
+);
+
 export const DEFAULT_ROLES: Record<DefaultRoleKey, { name: string; permissions: PermissionSet }> = {
   admin: {
     name: "Admin",
     permissions: ALL_PERMISSIONS,
+  },
+  proprietaire: {
+    name: "Propriétaire",
+    permissions: PROPRIETAIRE_PERMISSIONS,
   },
   gerant: {
     name: "Gérant",
@@ -92,6 +106,7 @@ export const DEFAULT_ROLES: Record<DefaultRoleKey, { name: string; permissions: 
       manage_products: true,
       manage_stock: true,
       manage_sales: true,
+      manage_refunds: true,
       manage_service_orders: true,
       edit_service_orders: true,
       manage_customers: true,

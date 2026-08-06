@@ -24,6 +24,14 @@ export const BOOTSTRAP_SQL: string[] = [
     locked_until TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
+  `CREATE TABLE IF NOT EXISTS stores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    address TEXT,
+    phone TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
   `CREATE TABLE IF NOT EXISTS business_settings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     business_name TEXT,
@@ -137,6 +145,27 @@ export const BOOTSTRAP_SQL: string[] = [
     amount REAL NOT NULL,
     received_by INTEGER REFERENCES users(id),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS refunds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_id INTEGER NOT NULL REFERENCES sales(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    reason TEXT,
+    method TEXT NOT NULL,
+    subtotal REAL NOT NULL,
+    tax_total REAL NOT NULL DEFAULT 0,
+    total REAL NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS refund_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    refund_id INTEGER NOT NULL REFERENCES refunds(id),
+    sale_item_id INTEGER NOT NULL REFERENCES sale_items(id),
+    quantity REAL NOT NULL,
+    unit_price REAL NOT NULL,
+    tax_rate REAL NOT NULL DEFAULT 0,
+    total REAL NOT NULL,
+    restocked INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE TABLE IF NOT EXISTS customer_credits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

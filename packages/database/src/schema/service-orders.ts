@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { customers } from "./customers";
 import { productVariants } from "./products";
+import { stores } from "./stores";
 import { users } from "./users";
 
 // Ordre de service (dépôt/retrait différé) — pressing, cordonnerie, couture,
@@ -16,6 +17,7 @@ export const serviceOrders = sqliteTable("service_orders", {
   userId: integer("user_id")
     .notNull()
     .references(() => users.id),
+  storeId: integer("store_id").references(() => stores.id),
   subtotal: real("subtotal").notNull(),
   discount: real("discount").notNull().default(0),
   taxTotal: real("tax_total").notNull().default(0),

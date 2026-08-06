@@ -2,15 +2,19 @@ import {
   deriveOrderStatus,
   getLowStockProducts,
   getSalesSummary,
+  getSettings,
   hasPermission,
   listCustomerCredits,
+  listExpiringBatches,
   listServiceOrders,
+  listStores,
+  type ExpiringBatch,
   type LowStockEntry,
 } from "@gestion-boutique/core";
 import { schema, type Database } from "@gestion-boutique/database";
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useDatabase } from "../../app/DatabaseProvider";
-import { badgeStyle, pageStyle } from "../../components/sharedStyles";
+import { badgeStyle, inputStyle, pageStyle } from "../../components/sharedStyles";
 import { useAuth } from "../auth/useAuth";
 
 type ServiceOrder = typeof schema.serviceOrders.$inferSelect;
@@ -20,6 +24,10 @@ function todayRange() {
   const today = new Date().toISOString().slice(0, 10);
   return { from: today, to: today };
 }
+
+// Même fenêtre que StockPage.tsx (bannière "Péremptions proches") — les deux
+// doivent rester cohérents.
+const EXPIRY_WARNING_DAYS = 14;
 
 async function countReadyServiceOrders(db: Database, orders: ServiceOrder[]): Promise<number> {
   const openOrders = orders.filter((o) => !o.closedAt);
@@ -104,41 +112,73 @@ function KpiCard({
 
 export function DashboardPage() {
   const db = useDatabase();
-  const { user } = useAuth();
+  const { user, currentStoreId } = useAuth();
 
   const canViewReports = hasPermission(user?.permissions ?? {}, "view_reports");
   const canViewStock = hasPermission(user?.permissions ?? {}, "manage_stock");
   const canViewServiceOrders = hasPermission(user?.permissions ?? {}, "manage_service_orders");
   const canViewCredits = hasPermission(user?.permissions ?? {}, "manage_credits");
+  const canViewOwnSales = hasPermission(user?.permissions ?? {}, "manage_sales");
+  const canSwitchStore = hasPermission(user?.permissions ?? {}, "switch_store");
 
   const [todayRevenue, setTodayRevenue] = useState(0);
   const [todaySaleCount, setTodaySaleCount] = useState(0);
+  const [myTodayRevenue, setMyTodayRevenue] = useState(0);
+  const [myTodaySaleCount, setMyTodaySaleCount] = useState(0);
   const [lowStock, setLowStock] = useState<LowStockEntry[]>([]);
+  const [expiringBatches, setExpiringBatches] = useState<ExpiringBatch[]>([]);
   const [readyOrderCount, setReadyOrderCount] = useState(0);
   const [overdueCredits, setOverdueCredits] = useState<Credit[]>([]);
 
+  const [stores, setStores] = useState<Awaited<ReturnType<typeof listStores>>>([]);
+  const [multiStoreEnabled, setMultiStoreEnabled] = useState(false);
+  // Vide = "Toutes les boutiques" (agrégé) — voir ReportsPage, même logique.
+  const [dashboardStoreFilter, setDashboardStoreFilter] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      const [storeRows, settings] = await Promise.all([listStores(db), getSettings(db)]);
+      setStores(storeRows);
+      setMultiStoreEnabled(settings.multiStoreEnabled);
+    })();
+  }, [db]);
+
+  const effectiveStoreId = canSwitchStore
+    ? dashboardStoreFilter === ""
+      ? undefined
+      : Number(dashboardStoreFilter)
+    : (currentStoreId ?? undefined);
+
   const refresh = useCallback(async () => {
     const today = new Date().toISOString().slice(0, 10);
+    const storeId = effectiveStoreId;
 
     if (canViewReports) {
-      const summary = await getSalesSummary(db, todayRange());
+      const summary = await getSalesSummary(db, todayRange(), storeId);
       setTodayRevenue(summary.totalRevenue);
       setTodaySaleCount(summary.saleCount);
     }
+    if (canViewOwnSales && user) {
+      const mine = await getSalesSummary(db, todayRange(), storeId, user.id);
+      setMyTodayRevenue(mine.totalRevenue);
+      setMyTodaySaleCount(mine.saleCount);
+    }
     if (canViewStock) {
-      setLowStock(await getLowStockProducts(db));
+      setLowStock(await getLowStockProducts(db, storeId));
+      setExpiringBatches(await listExpiringBatches(db, EXPIRY_WARNING_DAYS, storeId));
     }
     if (canViewServiceOrders) {
-      const orders = await listServiceOrders(db);
+      const orders = await listServiceOrders(db, storeId);
       setReadyOrderCount(await countReadyServiceOrders(db, orders));
     }
     if (canViewCredits) {
-      const credits = await listCustomerCredits(db);
+      const credits = await listCustomerCredits(db, storeId);
       setOverdueCredits(
         credits.filter((c) => c.status !== "settled" && c.dueDate && c.dueDate < today),
       );
     }
-  }, [db, canViewReports, canViewStock, canViewServiceOrders, canViewCredits]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, canViewReports, canViewOwnSales, canViewStock, canViewServiceOrders, canViewCredits, user, effectiveStoreId]);
 
   useEffect(() => {
     refresh();
@@ -146,7 +186,28 @@ export function DashboardPage() {
 
   return (
     <main style={pageStyle}>
-      <h1>Accueil</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h1>Accueil</h1>
+        {canSwitchStore && multiStoreEnabled && stores.filter((s) => s.isActive).length > 1 && (
+          <label>
+            Boutique
+            <select
+              style={{ ...inputStyle, marginTop: 0 }}
+              value={dashboardStoreFilter}
+              onChange={(e) => setDashboardStoreFilter(e.target.value)}
+            >
+              <option value="">Toutes les boutiques</option>
+              {stores
+                .filter((s) => s.isActive)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
+      </div>
       <div
         style={{
           display: "grid",
@@ -161,10 +222,29 @@ export function DashboardPage() {
           </KpiCard>
         )}
 
+        {canViewOwnSales && (
+          <KpiCard icon="🧾" iconColor="#22c55e" title="Mes ventes aujourd'hui" value={myTodayRevenue.toFixed(0)}>
+            <span style={{ color: "var(--color-text-muted)" }}>{myTodaySaleCount} vente(s) par moi</span>
+          </KpiCard>
+        )}
+
         {canViewStock && (
           <KpiCard icon="📦" iconColor="#f59e0b" title="Stock bas" value={lowStock.length}>
             <span style={badgeStyle(lowStock.length > 0 ? "warning" : "ok")}>
               {lowStock.length > 0 ? "Produit(s) à réapprovisionner" : "Tout est en ordre"}
+            </span>
+          </KpiCard>
+        )}
+
+        {canViewStock && (
+          <KpiCard
+            icon="⏳"
+            iconColor="#f97316"
+            title={`Péremptions proches (≤ ${EXPIRY_WARNING_DAYS} j)`}
+            value={expiringBatches.length}
+          >
+            <span style={badgeStyle(expiringBatches.length > 0 ? "warning" : "ok")}>
+              {expiringBatches.length > 0 ? "Lot(s) à écouler ou retirer" : "Aucune"}
             </span>
           </KpiCard>
         )}

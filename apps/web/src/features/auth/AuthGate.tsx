@@ -1,4 +1,11 @@
-import { ensureDefaultLocations, ensureDefaultRoles, getSettings, hasAnyUser } from "@gestion-boutique/core";
+import {
+  ensureLocationsForStore,
+  ensureDefaultRoles,
+  getDefaultStore,
+  getSettings,
+  hasAnyUser,
+  hasPermission,
+} from "@gestion-boutique/core";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { useSessionStore } from "../../stores/session";
@@ -11,6 +18,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const db = useDatabase();
   const user = useSessionStore((s) => s.user);
   const isLocked = useSessionStore((s) => s.isLocked);
+  const currentStoreId = useSessionStore((s) => s.currentStoreId);
+  const setCurrentStore = useSessionStore((s) => s.setCurrentStore);
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
   const [bootstrapped, setBootstrapped] = useState(false);
   const [modulesConfigured, setModulesConfigured] = useState(false);
@@ -42,13 +51,40 @@ export function AuthGate({ children }: { children: ReactNode }) {
     // rôles déjà existants (installation déjà déployée) — voir RolesService.ts.
     // Le compte déjà connecté dans cette session garde ses permissions au
     // moment du login ; le rattrapage prend effet à la prochaine connexion.
-    Promise.all([ensureDefaultLocations(db), ensureDefaultRoles(db)])
+    getDefaultStore(db)
+      .then((store) => Promise.all([ensureLocationsForStore(db, store.id), ensureDefaultRoles(db)]))
       .then(() => getSettings(db))
       .then((settings) => {
         setModulesConfigured(settings.modulesConfigured);
         setBootstrapped(true);
       });
   }, [db, ready]);
+
+  // Détermine la boutique de travail à chaque changement d'identité (connexion,
+  // impersonation, retour à son propre compte) — pas seulement à la toute
+  // première connexion de la session navigateur, contrairement au bootstrap
+  // ci-dessus qui ne s'exécute qu'une fois. Admin/Propriétaire (switch_store)
+  // gardent la boutique déjà sélectionnée si elle existe, sinon partent sur la
+  // boutique par défaut ; les autres rôles sont forcés sur leur boutique
+  // assignée (users.storeId), sans jamais pouvoir en sortir eux-mêmes.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      if (hasPermission(user.permissions, "switch_store")) {
+        if (currentStoreId === null) {
+          const store = await getDefaultStore(db);
+          if (!cancelled) setCurrentStore(store.id);
+        }
+        return;
+      }
+      const target = user.storeId ?? (await getDefaultStore(db)).id;
+      if (!cancelled && currentStoreId !== target) setCurrentStore(target);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [db, user, currentStoreId, setCurrentStore]);
 
   if (needsSetup === null) {
     return <div style={{ padding: 24 }}>Chargement...</div>;

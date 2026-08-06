@@ -1,5 +1,6 @@
 import {
   createSale,
+  getExpectedCashAmount,
   getSettings,
   listCustomers,
   listLocations,
@@ -68,8 +69,8 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export function SalesPage() {
   const db = useDatabase();
-  const { user } = useAuth();
-  const { session, open, close } = useCashSession();
+  const { user, currentStoreId } = useAuth();
+  const { session, open, close } = useCashSession(currentStoreId);
   const printer = usePrinter();
 
   const [mode, setMode] = useState<"pos" | "form">("pos");
@@ -96,6 +97,7 @@ export function SalesPage() {
   const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
   const [showCloseSession, setShowCloseSession] = useState(false);
+  const [expectedCash, setExpectedCash] = useState<number | null>(null);
   const [showPrinterPanel, setShowPrinterPanel] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -103,7 +105,7 @@ export function SalesPage() {
       listProducts(db),
       listAllVariants(db),
       listCustomers(db),
-      listLocations(db),
+      listLocations(db, currentStoreId ?? undefined),
       getSettings(db),
     ]);
     setProducts(productsRows);
@@ -111,9 +113,9 @@ export function SalesPage() {
     setCustomers(customersRows);
     setLoyaltyRatio(settings.loyaltyPointsRatio);
     setBusinessSettings(settings);
-    const surface = locations.find((l) => l.type === "surface_vente");
+    const surface = locations.find((l) => l.type === "surface_vente" || l.type.startsWith("surface_vente#"));
     setSurfaceLocationId(surface?.id ?? null);
-  }, [db]);
+  }, [db, currentStoreId]);
 
   useEffect(() => {
     refresh();
@@ -124,6 +126,12 @@ export function SalesPage() {
     if (!term) return products;
     return products.filter((p) => p.name.toLowerCase().includes(term));
   }, [products, search]);
+
+  // TVA désactivée globalement -> toujours 0, quel que soit le taux
+  // configuré sur le produit. Sinon, taux du produit ou, à défaut, taux par
+  // défaut de l'entreprise.
+  const resolveTaxRate = (product: Product) =>
+    businessSettings?.taxEnabled ? (product.taxRate ?? businessSettings.defaultTaxRate ?? 0) : 0;
 
   const addVariantToCart = (variant: Variant, product: Product) => {
     setCart((prev) => {
@@ -140,7 +148,7 @@ export function SalesPage() {
           productName: product.name,
           unitPrice: variant.priceOverride ?? product.salePrice,
           quantity: 1,
-          taxRate: product.taxRate ?? 0,
+          taxRate: resolveTaxRate(product),
         },
       ];
     });
@@ -190,12 +198,15 @@ export function SalesPage() {
     setCashReceived("");
   };
 
+  // Prix TTC : le sous-total est déjà le montant payé par le client, la TVA
+  // n'est qu'extraite pour l'affichage (voir SalesService.computeTaxAmount),
+  // jamais ajoutée au total.
   const subtotal = cart.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
-  const taxTotal = cart.reduce(
-    (sum, line) => sum + line.quantity * line.unitPrice * (line.taxRate / 100),
-    0,
-  );
-  const totalBeforeRedemption = subtotal + taxTotal;
+  const taxTotal = cart.reduce((sum, line) => {
+    const gross = line.quantity * line.unitPrice;
+    return sum + (line.taxRate > 0 ? gross * (line.taxRate / (100 + line.taxRate)) : 0);
+  }, 0);
+  const totalBeforeRedemption = subtotal;
 
   const selectedCustomer = customers.find((c) => c.id === Number(customerId));
   const maxRedeemablePoints =
@@ -216,7 +227,7 @@ export function SalesPage() {
 
   const handleCheckout = async () => {
     setCheckoutError(null);
-    if (!user || !surfaceLocationId) return;
+    if (!user || !surfaceLocationId || !currentStoreId) return;
     if (cart.length === 0) {
       setCheckoutError("Le panier est vide.");
       return;
@@ -241,6 +252,7 @@ export function SalesPage() {
         paymentMethod,
         amountPaid: paidValue,
         surfaceLocationId,
+        storeId: currentStoreId,
       });
 
       const customerName =
@@ -262,7 +274,7 @@ export function SalesPage() {
           label: line.productName,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
-          total: line.quantity * line.unitPrice * (1 + line.taxRate / 100),
+          total: line.quantity * line.unitPrice,
         })),
         subtotal,
         discount: redemptionDiscount,
@@ -329,7 +341,14 @@ export function SalesPage() {
             Imprimante
           </button>
           <button
-            onClick={() => setShowCloseSession((v) => !v)}
+            onClick={async () => {
+              if (showCloseSession) {
+                setShowCloseSession(false);
+                return;
+              }
+              setExpectedCash(await getExpectedCashAmount(db, session));
+              setShowCloseSession(true);
+            }}
             style={{ background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)", borderRadius: 8, padding: "0 16px" }}
           >
             Fermer la caisse
@@ -339,9 +358,9 @@ export function SalesPage() {
 
       {showPrinterPanel && <PrinterPanel />}
 
-      {showCloseSession && (
+      {showCloseSession && expectedCash !== null && (
         <CloseCashSessionPanel
-          expectedAmount={session.openingAmount}
+          expectedAmount={expectedCash}
           onCancel={() => setShowCloseSession(false)}
           onClose={async (counted, expected) => {
             await close({ closingAmount: counted, expectedAmount: expected });

@@ -45,7 +45,7 @@ const LOSS_REASONS: { value: string; label: string }[] = [
 
 export function StockPage() {
   const db = useDatabase();
-  const { user } = useAuth();
+  const { user, currentStoreId } = useAuth();
   const canManage = hasPermission(user?.permissions ?? {}, "manage_stock");
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -82,14 +82,15 @@ export function StockPage() {
   const [lowStockOnly, setLowStockOnly] = useState(false);
 
   const refresh = useCallback(async () => {
+    const storeId = currentStoreId ?? undefined;
     const [productsRows, variantsRows, locationsRows, levelsRows, lowStockRows, expiringRows] =
       await Promise.all([
         listProducts(db),
         listAllVariants(db),
-        listLocations(db),
-        getStockLevels(db),
-        getLowStockProducts(db),
-        listExpiringBatches(db, EXPIRY_WARNING_DAYS),
+        listLocations(db, storeId),
+        getStockLevels(db, storeId),
+        getLowStockProducts(db, storeId),
+        listExpiringBatches(db, EXPIRY_WARNING_DAYS, storeId),
       ]);
     setProducts(productsRows);
     setVariants(variantsRows);
@@ -97,7 +98,7 @@ export function StockPage() {
     setLevels(levelsRows);
     setLowStock(lowStockRows);
     setExpiring(expiringRows);
-  }, [db]);
+  }, [db, currentStoreId]);
 
   useEffect(() => {
     refresh();

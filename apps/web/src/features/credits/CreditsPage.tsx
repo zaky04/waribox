@@ -38,7 +38,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 export function CreditsPage() {
   const db = useDatabase();
-  const { user } = useAuth();
+  const { user, currentStoreId } = useAuth();
 
   const [credits, setCredits] = useState<Credit[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -66,7 +66,7 @@ export function CreditsPage() {
       variantRows,
       productRows,
     ] = await Promise.all([
-      listCustomerCredits(db),
+      listCustomerCredits(db, currentStoreId ?? undefined),
       listCustomers(db),
       listSales(db),
       listServiceOrders(db),
@@ -83,7 +83,7 @@ export function CreditsPage() {
     setServiceOrderItems(serviceOrderItemRows);
     setVariants(variantRows);
     setProducts(productRows);
-  }, [db]);
+  }, [db, currentStoreId]);
 
   useEffect(() => {
     refresh();

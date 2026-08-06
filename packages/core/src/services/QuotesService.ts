@@ -20,10 +20,10 @@ export interface QuoteItemInput {
   taxRate?: number;
 }
 
+// Prix TTC, comme SalesService.computeItemTotal — voir ce fichier pour le
+// détail du modèle (le taux extrait la TVA, il ne l'ajoute pas).
 function computeItemTotal(item: QuoteItemInput): number {
-  const gross = item.quantity * item.unitPrice - (item.discount ?? 0);
-  const tax = gross * ((item.taxRate ?? 0) / 100);
-  return gross + tax;
+  return item.quantity * item.unitPrice - (item.discount ?? 0);
 }
 
 export interface CreateQuoteInput {
@@ -32,6 +32,7 @@ export interface CreateQuoteInput {
   items: QuoteItemInput[];
   validUntil?: string;
   createdBy?: number;
+  storeId?: number;
 }
 
 export async function createQuote(db: Database, input: CreateQuoteInput) {
@@ -51,7 +52,7 @@ export async function createQuote(db: Database, input: CreateQuoteInput) {
 
   const quote = await db
     .insert(schema.quotes)
-    .values({ number, customerId, total, validUntil: input.validUntil ?? null })
+    .values({ number, customerId, total, validUntil: input.validUntil ?? null, storeId: input.storeId })
     .returning()
     .get();
 
@@ -80,8 +81,9 @@ export async function createQuote(db: Database, input: CreateQuoteInput) {
   return quote;
 }
 
-export async function listQuotes(db: Database) {
-  return db.select().from(schema.quotes).orderBy(desc(schema.quotes.id));
+export async function listQuotes(db: Database, storeId?: number) {
+  const query = db.select().from(schema.quotes).orderBy(desc(schema.quotes.id));
+  return storeId ? query.where(eq(schema.quotes.storeId, storeId)) : query;
 }
 
 export async function listQuoteItems(db: Database, quoteId: number) {
@@ -117,6 +119,7 @@ export interface ConvertQuoteToSaleInput {
   paymentMethod: PaymentMethod;
   amountPaid?: number;
   userId: number;
+  storeId: number;
 }
 
 export async function convertQuoteToSale(db: Database, quoteId: number, input: ConvertQuoteToSaleInput) {
@@ -147,6 +150,7 @@ export async function convertQuoteToSale(db: Database, quoteId: number, input: C
     paymentMethod: input.paymentMethod,
     amountPaid: input.amountPaid,
     surfaceLocationId: input.surfaceLocationId,
+    storeId: input.storeId,
   });
 
   await db

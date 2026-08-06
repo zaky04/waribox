@@ -27,6 +27,7 @@ export interface CreateExpenseInput {
   note?: string;
   paymentMethod?: string;
   userId?: number;
+  storeId?: number;
 }
 
 // Insère aussi une ligne dans `payments` (referenceType: "expense") pour que
@@ -45,6 +46,7 @@ export async function createExpense(db: Database, input: CreateExpenseInput) {
       note: input.note,
       paymentMethod: input.paymentMethod,
       userId: input.userId,
+      storeId: input.storeId,
     })
     .returning()
     .get();
@@ -55,6 +57,7 @@ export async function createExpense(db: Database, input: CreateExpenseInput) {
     method: input.paymentMethod ?? "cash",
     amount: input.amount,
     receivedBy: input.userId,
+    storeId: input.storeId,
     createdAt: `${input.expenseDate} 12:00:00`,
   });
 
@@ -149,6 +152,7 @@ export interface ExpenseFilters {
   to?: string;
   category?: string;
   userId?: number;
+  storeId?: number;
   search?: string; // LIKE sur category + note
 }
 
@@ -158,6 +162,7 @@ export async function listExpenses(db: Database, filters: ExpenseFilters = {}) {
   if (filters.to) conditions.push(lte(schema.expenses.expenseDate, filters.to.slice(0, 10)));
   if (filters.category) conditions.push(eq(schema.expenses.category, filters.category));
   if (filters.userId) conditions.push(eq(schema.expenses.userId, filters.userId));
+  if (filters.storeId) conditions.push(eq(schema.expenses.storeId, filters.storeId));
   if (filters.search) {
     const pattern = `%${filters.search}%`;
     conditions.push(or(like(schema.expenses.category, pattern), like(schema.expenses.note, pattern)));

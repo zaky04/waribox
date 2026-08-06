@@ -3,8 +3,9 @@ import { schema } from "@gestion-boutique/database";
 import { desc, eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
 
-export async function listSupplierDebts(db: Database) {
-  return db.select().from(schema.supplierDebts).orderBy(desc(schema.supplierDebts.id));
+export async function listSupplierDebts(db: Database, storeId?: number) {
+  const query = db.select().from(schema.supplierDebts).orderBy(desc(schema.supplierDebts.id));
+  return storeId ? query.where(eq(schema.supplierDebts.storeId, storeId)) : query;
 }
 
 export async function listDebtPayments(db: Database, debtId: number) {

@@ -2,11 +2,13 @@ import { sql } from "drizzle-orm";
 import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { customers } from "./customers";
 import { sales } from "./sales";
+import { stores } from "./stores";
 
 export const quotes = sqliteTable("quotes", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   number: text("number").notNull().unique(),
   customerId: integer("customer_id").references(() => customers.id),
+  storeId: integer("store_id").references(() => stores.id),
   status: text("status").notNull().default("pending"), // 'pending' | 'accepted' | 'expired' | 'converted'
   validUntil: text("valid_until"),
   total: real("total").notNull(),

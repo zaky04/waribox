@@ -1,4 +1,4 @@
-import { verifyPassword, verifyPin } from "@gestion-boutique/core";
+import { impersonateUser, verifyPassword, verifyPin } from "@gestion-boutique/core";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { useSessionStore } from "../../stores/session";
 
@@ -6,10 +6,15 @@ export function useAuth() {
   const db = useDatabase();
   const user = useSessionStore((s) => s.user);
   const isLocked = useSessionStore((s) => s.isLocked);
+  const impersonatorUser = useSessionStore((s) => s.impersonatorUser);
   const setUser = useSessionStore((s) => s.setUser);
   const unlock = useSessionStore((s) => s.unlock);
   const lock = useSessionStore((s) => s.lock);
   const logout = useSessionStore((s) => s.logout);
+  const impersonate = useSessionStore((s) => s.impersonate);
+  const returnToSelf = useSessionStore((s) => s.returnToSelf);
+  const currentStoreId = useSessionStore((s) => s.currentStoreId);
+  const setCurrentStore = useSessionStore((s) => s.setCurrentStore);
 
   async function login(identifier: string, password: string) {
     const authUser = await verifyPassword(db, identifier, password);
@@ -24,5 +29,24 @@ export function useAuth() {
     unlock();
   }
 
-  return { user, isLocked, login, unlockWithPin, lock, logout };
+  async function impersonateUserById(targetUserId: number) {
+    if (!user) throw new Error("Aucune session active");
+    const target = await impersonateUser(db, targetUserId, user.permissions, user.id);
+    impersonate(target);
+  }
+
+  return {
+    user,
+    isLocked,
+    isImpersonating: impersonatorUser !== null,
+    impersonatorUser,
+    login,
+    unlockWithPin,
+    lock,
+    logout,
+    impersonateUserById,
+    returnToSelf,
+    currentStoreId,
+    setCurrentStore,
+  };
 }
