@@ -1,6 +1,7 @@
 import {
   createBatch,
   getLowStockProducts,
+  getSettings,
   getStockLevels,
   hasPermission,
   listAllVariants,
@@ -28,6 +29,8 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { openExternalUrl } from "../../lib/openExternalUrl";
+import { buildWhatsAppLink } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
 
 type Product = typeof schema.products.$inferSelect;
@@ -54,6 +57,7 @@ export function StockPage() {
   const [levels, setLevels] = useState<StockLevel[]>([]);
   const [lowStock, setLowStock] = useState<LowStockEntry[]>([]);
   const [expiring, setExpiring] = useState<ExpiringBatch[]>([]);
+  const [businessSettings, setBusinessSettings] = useState<Awaited<ReturnType<typeof getSettings>> | null>(null);
 
   const [variantId, setVariantId] = useState<string>("");
   const [entryLocationId, setEntryLocationId] = useState<string>("");
@@ -83,7 +87,7 @@ export function StockPage() {
 
   const refresh = useCallback(async () => {
     const storeId = currentStoreId ?? undefined;
-    const [productsRows, variantsRows, locationsRows, levelsRows, lowStockRows, expiringRows] =
+    const [productsRows, variantsRows, locationsRows, levelsRows, lowStockRows, expiringRows, settings] =
       await Promise.all([
         listProducts(db),
         listAllVariants(db),
@@ -91,6 +95,7 @@ export function StockPage() {
         getStockLevels(db, storeId),
         getLowStockProducts(db, storeId),
         listExpiringBatches(db, EXPIRY_WARNING_DAYS, storeId),
+        getSettings(db),
       ]);
     setProducts(productsRows);
     setVariants(variantsRows);
@@ -98,6 +103,7 @@ export function StockPage() {
     setLevels(levelsRows);
     setLowStock(lowStockRows);
     setExpiring(expiringRows);
+    setBusinessSettings(settings);
   }, [db, currentStoreId]);
 
   useEffect(() => {
@@ -269,13 +275,36 @@ export function StockPage() {
     }
   };
 
+  const lowStockAlertPhone = businessSettings?.lowStockAlertPhone?.trim();
+
+  const handleNotifyLowStock = () => {
+    if (!lowStockAlertPhone) return;
+    const MAX_LISTED = 15;
+    const lines = lowStock
+      .slice(0, MAX_LISTED)
+      .map((entry) => `- ${entry.product.name} : ${entry.totalStock}/${entry.product.lowStockThreshold}`);
+    if (lowStock.length > MAX_LISTED) lines.push(`... et ${lowStock.length - MAX_LISTED} autre(s).`);
+    const message = `Alerte stock bas — ${lowStock.length} produit(s) à réapprovisionner chez ${businessSettings?.businessName ?? "nous"} :\n${lines.join("\n")}`;
+    void openExternalUrl(buildWhatsAppLink(lowStockAlertPhone, businessSettings?.whatsappCountryCode, message));
+  };
+
   return (
     <main style={pageStyle}>
       <h1>Stock</h1>
 
       {lowStock.length > 0 && (
         <div style={{ ...cardStyle, borderLeft: "4px solid #f87171" }}>
-          <strong>Alertes stock bas</strong>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+            <strong>Alertes stock bas</strong>
+            {lowStockAlertPhone && (
+              <button
+                style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 13, whiteSpace: "nowrap" }}
+                onClick={handleNotifyLowStock}
+              >
+                Notifier sur WhatsApp
+              </button>
+            )}
+          </div>
           <ul style={{ margin: 0, paddingLeft: 20 }}>
             {lowStock.map((entry) => (
               <li key={entry.product.id}>
@@ -283,6 +312,12 @@ export function StockPage() {
               </li>
             ))}
           </ul>
+          {!lowStockAlertPhone && (
+            <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
+              Renseigne un numéro dans Paramètres → Téléphone à notifier (alertes stock bas) pour activer la
+              notification WhatsApp.
+            </p>
+          )}
         </div>
       )}
 

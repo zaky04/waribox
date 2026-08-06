@@ -14,6 +14,7 @@ import { DebtsPage } from "../features/debts/DebtsPage";
 import { ExpensesPage } from "../features/expenses/ExpensesPage";
 import { JournalsPage } from "../features/journals/JournalsPage";
 import { ProductsPage } from "../features/products/ProductsPage";
+import { PromotionsPage } from "../features/promotions/PromotionsPage";
 import { PurchasesPage } from "../features/purchases/PurchasesPage";
 import { QuotesPage } from "../features/quotes/QuotesPage";
 import { ReportsPage } from "../features/reports/ReportsPage";
@@ -34,6 +35,7 @@ const DEFAULT_ENABLED_MODULES: Record<ModuleTab, boolean> = {
   suppliers: true,
   purchases: true,
   service_orders: false,
+  promotions: false,
 };
 
 function MainContent() {
@@ -69,6 +71,7 @@ function MainContent() {
         suppliers: settings.enableSuppliers,
         purchases: settings.enablePurchases,
         service_orders: settings.enableServiceOrders,
+        promotions: settings.enablePromotions,
       });
     });
   }, [db, tab]);
@@ -84,6 +87,7 @@ function MainContent() {
       {tab === "sales" && enabledModules.sales && <SalesPage />}
       {tab === "quotes" && enabledModules.sales && <QuotesPage />}
       {tab === "service_orders" && enabledModules.service_orders && <ServiceOrdersPage />}
+      {tab === "promotions" && enabledModules.promotions && <PromotionsPage />}
       {tab === "products" && enabledModules.products && <ProductsPage />}
       {tab === "stock" && enabledModules.stock && <StockPage />}
       {tab === "customers" && <CustomersPage />}

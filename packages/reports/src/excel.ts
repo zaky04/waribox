@@ -5,6 +5,8 @@ import type {
   IncomeStatementReportData,
   MarginsReportData,
   SalesReportData,
+  SyscohadaBalanceReportData,
+  SyscohadaJournalReportData,
   TaxReportData,
 } from "./pdf";
 
@@ -166,6 +168,38 @@ export function buildBalanceSheetReportExcel(data: BalanceSheetReportData): Blob
         { Poste: "Total Passif", Montant: data.passifTotal },
         { Poste: "Capitaux propres (résiduel)", Montant: data.equity },
       ],
+    },
+  ]);
+}
+
+export function buildSyscohadaJournalExcel(data: SyscohadaJournalReportData): Blob {
+  return buildWorkbookBlob([
+    {
+      name: data.title.slice(0, 31),
+      rows: data.lines.map((l) => ({
+        Date: l.date,
+        Pièce: l.piece,
+        Compte: l.compte,
+        Intitulé: l.intitule,
+        Libellé: l.libelle,
+        Débit: l.debit || "",
+        Crédit: l.credit || "",
+      })),
+    },
+  ]);
+}
+
+export function buildSyscohadaBalanceExcel(data: SyscohadaBalanceReportData): Blob {
+  return buildWorkbookBlob([
+    {
+      name: "Balance générale",
+      rows: data.rows.map((r) => ({
+        Compte: r.compte,
+        Intitulé: r.intitule,
+        Débit: r.debit,
+        Crédit: r.credit,
+        Solde: r.solde,
+      })),
     },
   ]);
 }

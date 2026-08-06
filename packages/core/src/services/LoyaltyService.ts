@@ -149,6 +149,14 @@ export async function adjustPoints(db: Database, input: AdjustPointsInput) {
   if (newBalance < 0) {
     throw new Error(`Le client ne dispose que de ${customer.loyaltyPoints} points.`);
   }
+  // Un ajustement positif (bonus manuel) compte pour le palier au même titre
+  // qu'un point gagné par achat (voir earnPoints) — sinon un client crédité
+  // manuellement resterait injustement bloqué au palier Bronze. Un ajustement
+  // négatif (correction d'erreur) ne réduit jamais le cumul à vie, pour la
+  // même raison qu'un rachat de points ne fait jamais redescendre de palier
+  // (voir le commentaire sur computeTier).
+  const newLifetime =
+    input.pointsDelta > 0 ? customer.lifetimeLoyaltyPoints + input.pointsDelta : customer.lifetimeLoyaltyPoints;
 
   await db.insert(schema.loyaltyTransactions).values({
     customerId: input.customerId,
@@ -158,7 +166,7 @@ export async function adjustPoints(db: Database, input: AdjustPointsInput) {
 
   const updated = await db
     .update(schema.customers)
-    .set({ loyaltyPoints: newBalance })
+    .set({ loyaltyPoints: newBalance, lifetimeLoyaltyPoints: newLifetime })
     .where(eq(schema.customers.id, input.customerId))
     .returning()
     .get();

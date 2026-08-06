@@ -2,13 +2,14 @@ import {
   getSettings,
   hasMaintenanceCode,
   listBackups,
+  recordBackup,
   restoreBackupFromFile,
   setMaintenanceCode,
   updateSettings,
   verifyMaintenanceCode,
   type BackupDestination,
 } from "@gestion-boutique/core";
-import { schema } from "@gestion-boutique/database";
+import { exportDatabaseFile, schema } from "@gestion-boutique/database";
 import {
   isFileSystemAccessSupported,
   loadFolderHandle,
@@ -30,6 +31,7 @@ import { useAuth } from "../auth/useAuth";
 import { StoresSection } from "../stores/StoresSection";
 import { runGoogleDriveBackup, runLocalBackup } from "./backupRunner";
 import { resizeImageToDataUrl } from "./imageUtils";
+import { SyscohadaAccountsSection } from "./SyscohadaAccountsSection";
 import { isTauriRuntime } from "./tauriRuntime";
 
 type Backup = typeof schema.backups.$inferSelect;
@@ -84,6 +86,7 @@ export function SettingsPage() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [whatsappCountryCode, setWhatsappCountryCode] = useState("");
+  const [lowStockAlertPhone, setLowStockAlertPhone] = useState("");
   const [taxEnabled, setTaxEnabled] = useState(false);
   const [defaultTaxRate, setDefaultTaxRate] = useState("0");
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
@@ -91,6 +94,7 @@ export function SettingsPage() {
   const [receiptPreset, setReceiptPreset] = useState("32");
   const [customColumns, setCustomColumns] = useState("32");
   const [enableServiceOrders, setEnableServiceOrders] = useState(false);
+  const [enablePromotions, setEnablePromotions] = useState(false);
   const [printPromisedDateOnTicket, setPrintPromisedDateOnTicket] = useState(true);
   const [enableSales, setEnableSales] = useState(true);
   const [enableProducts, setEnableProducts] = useState(true);
@@ -98,6 +102,7 @@ export function SettingsPage() {
   const [enableSuppliers, setEnableSuppliers] = useState(true);
   const [enablePurchases, setEnablePurchases] = useState(true);
   const [multiStoreEnabled, setMultiStoreEnabled] = useState(false);
+  const [enableSyscohada, setEnableSyscohada] = useState(false);
   const [autoLockMinutes, setAutoLockMinutes] = useState("0");
 
   const [frequencyPreset, setFrequencyPreset] = useState("weekly");
@@ -109,6 +114,8 @@ export function SettingsPage() {
   const [backupError, setBackupError] = useState<string | null>(null);
   const [runningLocal, setRunningLocal] = useState(false);
   const [runningDrive, setRunningDrive] = useState(false);
+  const [downloadBackupError, setDownloadBackupError] = useState<string | null>(null);
+  const [downloadingBackup, setDownloadingBackup] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importInfo, setImportInfo] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -125,6 +132,7 @@ export function SettingsPage() {
   const [updateStep, setUpdateStep] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [updateReadyToClose, setUpdateReadyToClose] = useState(false);
 
   const refresh = useCallback(async () => {
     const [settings, backupRows, handle, maintenanceCodeIsSet] = await Promise.all([
@@ -148,10 +156,12 @@ export function SettingsPage() {
     setPhone(settings.phone ?? "");
     setEmail(settings.email ?? "");
     setWhatsappCountryCode(settings.whatsappCountryCode ?? "");
+    setLowStockAlertPhone(settings.lowStockAlertPhone ?? "");
     setTaxEnabled(settings.taxEnabled);
     setDefaultTaxRate(String(settings.defaultTaxRate));
     setLogoDataUrl(settings.logoDataUrl ?? null);
     setEnableServiceOrders(settings.enableServiceOrders);
+    setEnablePromotions(settings.enablePromotions);
     setPrintPromisedDateOnTicket(settings.printPromisedDateOnTicket);
     setEnableSales(settings.enableSales);
     setEnableProducts(settings.enableProducts);
@@ -159,6 +169,7 @@ export function SettingsPage() {
     setEnableSuppliers(settings.enableSuppliers);
     setEnablePurchases(settings.enablePurchases);
     setMultiStoreEnabled(settings.multiStoreEnabled);
+    setEnableSyscohada(settings.enableSyscohada);
     setAutoLockMinutes(String(settings.autoLockMinutes));
 
     const isReceiptPreset = RECEIPT_PRESETS.some((p) => p.value === String(settings.receiptColumns));
@@ -250,11 +261,13 @@ export function SettingsPage() {
           phone: phone.trim() || undefined,
           email: email.trim() || undefined,
           whatsappCountryCode: whatsappCountryCode.trim() || undefined,
+          lowStockAlertPhone: lowStockAlertPhone.trim() || undefined,
           taxEnabled,
           defaultTaxRate: taxRateValue,
           logoDataUrl,
           receiptColumns,
           enableServiceOrders,
+          enablePromotions,
           printPromisedDateOnTicket,
           enableSales,
           enableProducts,
@@ -262,6 +275,7 @@ export function SettingsPage() {
           enableSuppliers,
           enablePurchases,
           multiStoreEnabled,
+          enableSyscohada,
           autoLockMinutes: autoLockValue,
         },
         user?.permissions ?? {},
@@ -307,6 +321,21 @@ export function SettingsPage() {
       setBackupError(err instanceof Error ? err.message : "Échec de la sauvegarde locale.");
     } finally {
       setRunningLocal(false);
+    }
+  };
+
+  const handleManualDownloadBackup = async () => {
+    setDownloadBackupError(null);
+    setDownloadingBackup(true);
+    try {
+      const { bytes, filename } = await exportDatabaseFile();
+      downloadBlob(new Blob([new Uint8Array(bytes)]), filename);
+      await recordBackup(db, { destination: "local", fileRef: filename, status: "success" });
+      await refresh();
+    } catch (err) {
+      setDownloadBackupError(err instanceof Error ? err.message : "Échec du téléchargement de la sauvegarde.");
+    } finally {
+      setDownloadingBackup(false);
     }
   };
 
@@ -397,6 +426,7 @@ export function SettingsPage() {
   const handleInstallUpdate = async () => {
     setUpdateError(null);
     setUpdateStep(null);
+    setUpdateReadyToClose(false);
     if (!updateFilePath) {
       setUpdateError("Choisis d'abord le fichier d'installation apporté.");
       return;
@@ -430,15 +460,32 @@ export function SettingsPage() {
       const { openPath } = await import("@tauri-apps/plugin-opener");
       await openPath(updateFilePath);
 
-      setUpdateStep("Fermeture de l'application...");
-      const { exit } = await import("@tauri-apps/plugin-process");
-      await exit(0);
+      // openPath() ne garantit que la demande de lancement, pas que la
+      // fenêtre de l'installeur (ni un éventuel écran SmartScreen "Windows a
+      // protégé votre PC", très probable pour un fichier non signé reçu par
+      // téléchargement/email/WhatsApp) ait eu le temps de s'afficher. Fermer
+      // WariBox sur un délai fixe risquait de couper l'app avant que
+      // l'utilisateur n'ait pu réagir à cet écran, laissant croire que la
+      // mise à jour "ne fait rien" — la fermeture est donc maintenant
+      // déclenchée manuellement, une fois l'assistant réellement visible.
+      setUpdateStep(
+        "Une fenêtre d'installation devrait s'ouvrir. Si Windows affiche « Windows a protégé " +
+          "votre PC », c'est normal pour un installeur non signé : clique sur « Informations " +
+          "complémentaires » puis « Exécuter quand même ». Une fois l'assistant d'installation " +
+          "visible, clique ci-dessous pour fermer WariBox et laisser l'installation continuer.",
+      );
+      setUpdateReadyToClose(true);
     } catch (err) {
       setUpdateError(err instanceof Error ? err.message : "Mise à jour impossible.");
       setUpdateStep(null);
     } finally {
       setUpdating(false);
     }
+  };
+
+  const handleCloseForUpdate = async () => {
+    const { exit } = await import("@tauri-apps/plugin-process");
+    await exit(0);
   };
 
   return (
@@ -486,6 +533,19 @@ export function SettingsPage() {
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
           Utilisé pour compléter les numéros de téléphone locaux des clients lors de l'envoi d'une
           notification WhatsApp (ex : ticket de service prêt).
+        </p>
+        <label>
+          Téléphone à notifier (alertes stock bas)
+          <input
+            style={inputStyle}
+            value={lowStockAlertPhone}
+            onChange={(e) => setLowStockAlertPhone(e.target.value)}
+            placeholder="ex: 0708000000"
+          />
+        </label>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
+          Numéro du gérant/propriétaire à notifier par WhatsApp depuis Stock quand des produits passent
+          sous leur seuil d'alerte — laisser vide pour désactiver le bouton de notification.
         </p>
 
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -632,6 +692,14 @@ export function SettingsPage() {
             Imprimer la date de retrait prévue sur le ticket
           </label>
         )}
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={enablePromotions}
+            onChange={(e) => setEnablePromotions(e.target.checked)}
+          />
+          Remises programmées (promotions appliquées automatiquement aux ventes)
+        </label>
       </div>
 
       <div style={cardStyle}>
@@ -650,6 +718,24 @@ export function SettingsPage() {
           boutiques créées.
         </p>
         {multiStoreEnabled && <StoresSection />}
+      </div>
+
+      <div style={cardStyle}>
+        <strong>Export comptable SYSCOHADA</strong>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={enableSyscohada}
+            onChange={(e) => setEnableSyscohada(e.target.checked)}
+          />
+          Activer l&apos;onglet Export SYSCOHADA (Comptabilité)
+        </label>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
+          Journaux et balance générale au format SYSCOHADA (OHADA, zone UEMOA/CFA), à destination d&apos;un
+          cabinet comptable. Base de départ non validée pour ce commerce précis — voir l&apos;avertissement
+          dans l&apos;onglet une fois activé.
+        </p>
+        {enableSyscohada && <SyscohadaAccountsSection />}
       </div>
 
       <div style={cardStyle}>
@@ -779,7 +865,7 @@ export function SettingsPage() {
               <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
                 Dossier actuel : {folderName ?? "aucun dossier choisi"}
               </p>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
                   style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14 }}
                   onClick={handlePickFolder}
@@ -800,35 +886,64 @@ export function SettingsPage() {
                 >
                   {runningLocal ? "Sauvegarde..." : "Sauvegarder maintenant"}
                 </button>
-                <label
-                  style={{
-                    ...primaryButtonStyle,
-                    padding: "8px 14px",
-                    fontSize: 14,
-                    background: "transparent",
-                    border: "1px solid var(--color-border)",
-                    color: "var(--color-text)",
-                    cursor: importing ? "default" : "pointer",
-                  }}
-                >
-                  {importing ? "Import..." : "Importer une sauvegarde"}
-                  <input
-                    type="file"
-                    accept=".sqlite3"
-                    onChange={handleImportBackup}
-                    disabled={importing}
-                    style={{ display: "none" }}
-                  />
-                </label>
               </div>
-              {importError && <p style={{ color: "#f87171", fontSize: 13 }}>{importError}</p>}
-              {importInfo && <p style={{ color: "#86efac", fontSize: 13 }}>{importInfo}</p>}
             </>
           ) : (
-            <p style={{ color: "#fdba74", fontSize: 13 }}>
-              Ce navigateur ne prend pas en charge la sauvegarde locale automatique.
-            </p>
+            <>
+              <p style={{ color: "#fdba74", fontSize: 13 }}>
+                Ce navigateur ne prend pas en charge la sauvegarde automatique dans un dossier. Tu peux
+                quand même télécharger une sauvegarde manuellement à tout moment.
+              </p>
+              <button
+                style={{
+                  ...primaryButtonStyle,
+                  padding: "8px 14px",
+                  fontSize: 14,
+                  background: "transparent",
+                  border: "1px solid var(--color-border)",
+                  color: "var(--color-text)",
+                }}
+                onClick={handleManualDownloadBackup}
+                disabled={downloadingBackup}
+              >
+                {downloadingBackup ? "Téléchargement..." : "Télécharger une sauvegarde maintenant"}
+              </button>
+              {downloadBackupError && (
+                <p style={{ color: "#f87171", fontSize: 13 }}>{downloadBackupError}</p>
+              )}
+            </>
           )}
+        </div>
+
+        <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
+          <strong style={{ fontSize: 14 }}>Importer une sauvegarde</strong>
+          <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
+            Restaure les données depuis un fichier .sqlite3 (sauvegarde locale, Google Drive téléchargée,
+            ou export manuel).
+          </p>
+          <label
+            style={{
+              ...primaryButtonStyle,
+              padding: "8px 14px",
+              fontSize: 14,
+              background: "transparent",
+              border: "1px solid var(--color-border)",
+              color: "var(--color-text)",
+              cursor: importing ? "default" : "pointer",
+              display: "inline-block",
+            }}
+          >
+            {importing ? "Import..." : "Importer une sauvegarde"}
+            <input
+              type="file"
+              accept=".sqlite3"
+              onChange={handleImportBackup}
+              disabled={importing}
+              style={{ display: "none" }}
+            />
+          </label>
+          {importError && <p style={{ color: "#f87171", fontSize: 13 }}>{importError}</p>}
+          {importInfo && <p style={{ color: "#86efac", fontSize: 13 }}>{importInfo}</p>}
         </div>
 
         <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
@@ -941,9 +1056,20 @@ export function SettingsPage() {
             <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
               Choisis le fichier d'installation (.exe/.msi) apporté, saisis le code de maintenance —
               l'app tente une sauvegarde locale automatique (si un dossier de sauvegarde est configuré
-              ci-dessus), puis lance l'installeur et se ferme pour laisser Windows terminer. La sauvegarde
-              n'est pas bloquante : si elle échoue, l'installation continue quand même avec un
-              avertissement.
+              ci-dessus), puis lance l'installeur. La sauvegarde n'est pas bloquante : si elle échoue,
+              l'installation continue quand même avec un avertissement. WariBox ne se ferme plus
+              automatiquement : tu contrôles toi-même le moment de la fermeture, une fois l'installeur
+              visible à l'écran.
+            </p>
+            <p style={{ color: "#facc15", fontSize: 13 }}>
+              L'installeur n'est pas signé numériquement. Si Windows affiche un écran bleu
+              &quot;Windows a protégé votre PC&quot; (SmartScreen), c'est normal — clique sur
+              &quot;Informations complémentaires&quot; puis &quot;Exécuter quand même&quot;. Si cet écran
+              apparaît en arrière-plan sans que tu le remarques et que WariBox se ferme avant, la mise à
+              jour semble ne rien faire : c'est exactement pour éviter ça que la fermeture est maintenant
+              manuelle. Préfère aussi le fichier <strong>.exe</strong> au <strong>.msi</strong> quand les
+              deux sont disponibles : il s'installe par utilisateur, sans invite d'autorisation Windows
+              (UAC) supplémentaire.
             </p>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <button
@@ -973,14 +1099,29 @@ export function SettingsPage() {
             </label>
             {updateStep && <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{updateStep}</p>}
             {updateError && <p style={{ color: "#f87171", fontSize: 13 }}>{updateError}</p>}
-            <button
-              style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14, alignSelf: "flex-start" }}
-              onClick={handleInstallUpdate}
-              disabled={updating || !maintenanceCodeSet}
-              title={!maintenanceCodeSet ? "Définis d'abord un code de maintenance" : undefined}
-            >
-              {updating ? "Installation..." : "Installer et redémarrer"}
-            </button>
+            {updateReadyToClose ? (
+              <button
+                style={{
+                  ...primaryButtonStyle,
+                  padding: "8px 14px",
+                  fontSize: 14,
+                  alignSelf: "flex-start",
+                  background: "#f87171",
+                }}
+                onClick={handleCloseForUpdate}
+              >
+                L'installeur est ouvert — fermer WariBox maintenant
+              </button>
+            ) : (
+              <button
+                style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14, alignSelf: "flex-start" }}
+                onClick={handleInstallUpdate}
+                disabled={updating || !maintenanceCodeSet}
+                title={!maintenanceCodeSet ? "Définis d'abord un code de maintenance" : undefined}
+              >
+                {updating ? "Installation..." : "Lancer l'installeur"}
+              </button>
+            )}
           </div>
         )}
       </div>

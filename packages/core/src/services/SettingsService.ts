@@ -59,6 +59,22 @@ export interface UpdateSettingsInput {
   loyaltyTierGoldThreshold?: number;
   loyaltyTierSilverMultiplier?: number;
   loyaltyTierGoldMultiplier?: number;
+  enableSyscohada?: boolean;
+  syscohadaAccountClients?: string;
+  syscohadaAccountFournisseurs?: string;
+  syscohadaAccountTvaVentes?: string;
+  syscohadaAccountTvaServices?: string;
+  syscohadaAccountTvaAchats?: string;
+  syscohadaAccountBanque?: string;
+  syscohadaAccountCaisse?: string;
+  syscohadaAccountMobileMoney?: string;
+  syscohadaAccountAchats?: string;
+  syscohadaAccountVentes?: string;
+  syscohadaAccountServices?: string;
+  syscohadaDefaultExpenseAccountCode?: string;
+  syscohadaDefaultExpenseAccountLabel?: string;
+  lowStockAlertPhone?: string;
+  enablePromotions?: boolean;
 }
 
 export async function updateSettings(db: Database, input: UpdateSettingsInput, actingPermissions: PermissionSet) {

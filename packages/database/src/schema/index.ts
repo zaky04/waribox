@@ -16,3 +16,5 @@ export * from "./quote-items";
 export * from "./cash-sessions";
 export * from "./audit";
 export * from "./expenses";
+export * from "./promotions";
+export * from "./syscohada";

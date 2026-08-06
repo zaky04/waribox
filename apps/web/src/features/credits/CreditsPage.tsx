@@ -1,4 +1,6 @@
 import {
+  getSettings,
+  isCreditOverdue,
   listAllVariants,
   listCustomers,
   listCustomerCredits,
@@ -19,6 +21,8 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { openExternalUrl } from "../../lib/openExternalUrl";
+import { buildWhatsAppLink } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
 
 type Credit = typeof schema.customerCredits.$inferSelect;
@@ -49,6 +53,7 @@ export function CreditsPage() {
   const [variants, setVariants] = useState<Variant[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [showSettled, setShowSettled] = useState(false);
+  const [businessSettings, setBusinessSettings] = useState<Awaited<ReturnType<typeof getSettings>> | null>(null);
 
   const [payingId, setPayingId] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
@@ -65,6 +70,7 @@ export function CreditsPage() {
       serviceOrderItemRows,
       variantRows,
       productRows,
+      settings,
     ] = await Promise.all([
       listCustomerCredits(db, currentStoreId ?? undefined),
       listCustomers(db),
@@ -74,6 +80,7 @@ export function CreditsPage() {
       db.select().from(schema.serviceOrderItems),
       listAllVariants(db),
       listProducts(db),
+      getSettings(db),
     ]);
     setCredits(creditRows);
     setCustomers(customerRows);
@@ -83,6 +90,7 @@ export function CreditsPage() {
     setServiceOrderItems(serviceOrderItemRows);
     setVariants(variantRows);
     setProducts(productRows);
+    setBusinessSettings(settings);
   }, [db, currentStoreId]);
 
   useEffect(() => {
@@ -90,6 +98,7 @@ export function CreditsPage() {
   }, [refresh]);
 
   const customerName = (id: number) => customers.find((c) => c.id === id)?.fullName ?? "—";
+  const customerPhone = (id: number) => customers.find((c) => c.id === id)?.phone ?? null;
   const referenceNumber = (credit: Credit) =>
     sales.find((s) => s.id === credit.saleId)?.number ??
     serviceOrders.find((o) => o.id === credit.serviceOrderId)?.number ??
@@ -116,6 +125,13 @@ export function CreditsPage() {
   };
 
   const visibleCredits = credits.filter((c) => showSettled || c.status !== "settled");
+
+  const handleNotifyOverdue = (credit: Credit) => {
+    const phone = customerPhone(credit.customerId);
+    if (!phone) return;
+    const message = `Bonjour ${customerName(credit.customerId)}, vous avez une créance de ${credit.remainingBalance} en retard depuis le ${credit.dueDate} chez ${businessSettings?.businessName ?? "nous"} (réf. ${referenceNumber(credit)}). Merci de bien vouloir régulariser dès que possible.`;
+    void openExternalUrl(buildWhatsAppLink(phone, businessSettings?.whatsappCountryCode, message));
+  };
 
   const startPayment = (credit: Credit) => {
     setPayingId(credit.id);
@@ -171,62 +187,87 @@ export function CreditsPage() {
             <th style={thStyle}>Article</th>
             <th style={thStyle}>Montant initial</th>
             <th style={thStyle}>Solde restant</th>
+            <th style={thStyle}>Échéance</th>
             <th style={thStyle}>Statut</th>
             <th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
-          {visibleCredits.map((credit) => (
-            <tr key={credit.id}>
-              <td style={tdStyle}>{credit.createdAt}</td>
-              <td style={tdStyle}>{customerName(credit.customerId)}</td>
-              <td style={tdStyle}>{referenceNumber(credit)}</td>
-              <td style={tdStyle}>{articleSummary(credit)}</td>
-              <td style={tdStyle}>{credit.originalAmount}</td>
-              <td style={tdStyle}>{credit.remainingBalance}</td>
-              <td style={tdStyle}>
-                <span style={badgeStyle(credit.status === "settled" ? "ok" : "warning")}>
-                  {STATUS_LABELS[credit.status] ?? credit.status}
-                </span>
-              </td>
-              <td style={tdStyle}>
-                {credit.status !== "settled" &&
-                  (payingId === credit.id ? (
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <input
-                        type="number"
-                        style={{ ...inputStyle, width: 90, marginTop: 0 }}
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                      />
+          {visibleCredits.map((credit) => {
+            const overdue = isCreditOverdue(credit);
+            const phone = customerPhone(credit.customerId);
+            return (
+              <tr key={credit.id}>
+                <td style={tdStyle}>{credit.createdAt}</td>
+                <td style={tdStyle}>{customerName(credit.customerId)}</td>
+                <td style={tdStyle}>{referenceNumber(credit)}</td>
+                <td style={tdStyle}>{articleSummary(credit)}</td>
+                <td style={tdStyle}>{credit.originalAmount}</td>
+                <td style={tdStyle}>{credit.remainingBalance}</td>
+                <td style={tdStyle}>{credit.dueDate ?? "—"}</td>
+                <td style={tdStyle}>
+                  <span style={badgeStyle(credit.status === "settled" ? "ok" : overdue ? "danger" : "warning")}>
+                    {overdue ? "En retard" : STATUS_LABELS[credit.status] ?? credit.status}
+                  </span>
+                </td>
+                <td style={tdStyle}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    {credit.status !== "settled" &&
+                      (payingId === credit.id ? (
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <input
+                            type="number"
+                            style={{ ...inputStyle, width: 90, marginTop: 0 }}
+                            value={amount}
+                            onChange={(e) => setAmount(e.target.value)}
+                          />
+                          <button
+                            style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                            onClick={() => handleSubmit(credit)}
+                            disabled={saving}
+                          >
+                            Valider
+                          </button>
+                          <button
+                            style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
+                            onClick={() => setPayingId(null)}
+                          >
+                            Annuler
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                          onClick={() => startPayment(credit)}
+                        >
+                          Enregistrer un paiement
+                        </button>
+                      ))}
+                    {overdue && phone && (
                       <button
-                        style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                        onClick={() => handleSubmit(credit)}
-                        disabled={saving}
+                        style={{
+                          padding: "6px 12px",
+                          fontSize: 14,
+                          borderRadius: 8,
+                          border: "1px solid var(--color-border)",
+                          background: "transparent",
+                          color: "var(--color-text)",
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                        onClick={() => handleNotifyOverdue(credit)}
                       >
-                        Valider
+                        Notifier sur WhatsApp
                       </button>
-                      <button
-                        style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
-                        onClick={() => setPayingId(null)}
-                      >
-                        Annuler
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                      onClick={() => startPayment(credit)}
-                    >
-                      Enregistrer un paiement
-                    </button>
-                  ))}
-              </td>
-            </tr>
-          ))}
+                    )}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
           {visibleCredits.length === 0 && (
             <tr>
-              <td style={tdStyle} colSpan={8}>
+              <td style={tdStyle} colSpan={9}>
                 Aucune créance.
               </td>
             </tr>

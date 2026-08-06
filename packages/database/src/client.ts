@@ -138,6 +138,39 @@ export const MIGRATION_SQL: string[] = [
   "ALTER TABLE business_settings ADD COLUMN loyalty_tier_gold_threshold REAL NOT NULL DEFAULT 20000",
   "ALTER TABLE business_settings ADD COLUMN loyalty_tier_silver_multiplier REAL NOT NULL DEFAULT 1.25",
   "ALTER TABLE business_settings ADD COLUMN loyalty_tier_gold_multiplier REAL NOT NULL DEFAULT 1.5",
+  // Export SYSCOHADA : désactivé par défaut, numéros de compte modifiables
+  // (voir le commentaire sur ces colonnes dans schema/settings.ts) puisque le
+  // référentiel OHADA est révisé de temps à autre.
+  "ALTER TABLE business_settings ADD COLUMN enable_syscohada INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_clients TEXT NOT NULL DEFAULT '411'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_fournisseurs TEXT NOT NULL DEFAULT '401'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_tva_ventes TEXT NOT NULL DEFAULT '4431'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_tva_services TEXT NOT NULL DEFAULT '4432'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_tva_achats TEXT NOT NULL DEFAULT '4452'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_banque TEXT NOT NULL DEFAULT '512'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_caisse TEXT NOT NULL DEFAULT '571'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_mobile_money TEXT NOT NULL DEFAULT '5715'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_achats TEXT NOT NULL DEFAULT '601'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_ventes TEXT NOT NULL DEFAULT '701'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_services TEXT NOT NULL DEFAULT '706'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_default_expense_account_code TEXT NOT NULL DEFAULT '628'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_default_expense_account_label TEXT NOT NULL DEFAULT 'Autres charges externes'",
+  "ALTER TABLE business_settings ADD COLUMN low_stock_alert_phone TEXT",
+  // Comptes de charge par défaut, un par catégorie suggérée (EXPENSE_CATEGORIES)
+  // — idempotent via UNIQUE(category) + OR IGNORE, donc sûr à rejouer à
+  // chaque lancement, y compris sur une base déjà migrée.
+  `INSERT OR IGNORE INTO syscohada_expense_accounts (category, account_code, account_label) VALUES
+    ('Loyer', '613', 'Locations'),
+    ('Salaires', '661', 'Rémunérations directes versées au personnel'),
+    ('Électricité', '605', 'Autres achats (eau, électricité)'),
+    ('Eau', '605', 'Autres achats (eau, électricité)'),
+    ('Transport', '611', 'Transports'),
+    ('Fournitures', '604', 'Achats stockés de fournitures'),
+    ('Entretien', '615', 'Entretien, réparations et maintenance'),
+    ('Assurance', '616', 'Primes d''assurance'),
+    ('Impôts/Taxes', '641', 'Impôts et taxes directs'),
+    ('Autre', '628', 'Autres charges externes')`,
+  "ALTER TABLE business_settings ADD COLUMN enable_promotions INTEGER NOT NULL DEFAULT 0",
 ];
 
 export type Database = SqliteRemoteDatabase<typeof schema>;

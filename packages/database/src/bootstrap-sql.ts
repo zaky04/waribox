@@ -307,4 +307,25 @@ export const BOOTSTRAP_SQL: string[] = [
     user_id INTEGER REFERENCES users(id),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
+  `CREATE TABLE IF NOT EXISTS syscohada_expense_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL UNIQUE,
+    account_code TEXT NOT NULL,
+    account_label TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS promotions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    discount_percent REAL NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS promotion_products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    promotion_id INTEGER NOT NULL REFERENCES promotions(id),
+    product_id INTEGER NOT NULL REFERENCES products(id)
+  )`,
 ];
