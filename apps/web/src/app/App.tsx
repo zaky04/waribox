@@ -1,4 +1,5 @@
-import { getSettings } from "@gestion-boutique/core";
+import { getSettings, listStores } from "@gestion-boutique/core";
+import { schema } from "@gestion-boutique/database";
 import { useEffect, useState } from "react";
 import { UpdateBanner } from "../components/UpdateBanner";
 import { BusinessHeader } from "./BusinessHeader";
@@ -28,6 +29,8 @@ import { UsersPage } from "../features/users/UsersPage";
 import { DatabaseProvider, useDatabase } from "./DatabaseProvider";
 import { Nav, type ModuleTab, type NavTab } from "./Nav";
 
+type Store = typeof schema.stores.$inferSelect;
+
 const DEFAULT_ENABLED_MODULES: Record<ModuleTab, boolean> = {
   sales: true,
   products: true,
@@ -46,6 +49,8 @@ function MainContent() {
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [enabledModules, setEnabledModules] = useState<Record<ModuleTab, boolean>>(DEFAULT_ENABLED_MODULES);
   const [autoLockMinutes, setAutoLockMinutes] = useState(0);
+  const [multiStoreEnabled, setMultiStoreEnabled] = useState(false);
+  const [stores, setStores] = useState<Store[]>([]);
   useBackupScheduler();
   useIdleLock(autoLockMinutes);
 
@@ -58,9 +63,12 @@ function MainContent() {
   }, [user?.id]);
 
   // Un seul getSettings() par changement d'onglet, partagé par le bandeau
-  // d'en-tête et la Nav (au lieu de plusieurs lectures séparées).
+  // d'en-tête, la Nav et le sélecteur de boutique (au lieu de plusieurs
+  // lectures séparées) — c'est ce qui permet à ces trois-là de refléter un
+  // changement de Paramètres dès qu'on change d'onglet, sans attendre un
+  // verrouillage/déverrouillage ou un rechargement complet de la page.
   useEffect(() => {
-    getSettings(db).then((settings) => {
+    Promise.all([getSettings(db), listStores(db)]).then(([settings, storeRows]) => {
       setBusinessName(settings.businessName ?? null);
       setLogoDataUrl(settings.logoDataUrl ?? null);
       setAutoLockMinutes(settings.autoLockMinutes);
@@ -73,13 +81,15 @@ function MainContent() {
         service_orders: settings.enableServiceOrders,
         promotions: settings.enablePromotions,
       });
+      setMultiStoreEnabled(settings.multiStoreEnabled);
+      setStores(storeRows);
     });
   }, [db, tab]);
 
   return (
     <>
       <div style={{ position: "sticky", top: 0, zIndex: 10, background: "var(--color-bg)" }}>
-        <TopBar />
+        <TopBar multiStoreEnabled={multiStoreEnabled} stores={stores} />
         <BusinessHeader businessName={businessName} logoDataUrl={logoDataUrl} />
         <Nav active={tab} onChange={setTab} enabledModules={enabledModules} />
       </div>

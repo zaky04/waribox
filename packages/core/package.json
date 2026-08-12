@@ -5,6 +5,9 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
   "dependencies": {
     "@gestion-boutique/database": "workspace:*",
     "drizzle-orm": "^0.38.0",
@@ -12,6 +15,7 @@
   },
   "devDependencies": {
     "@gestion-boutique/config": "workspace:*",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.8"
   }
 }

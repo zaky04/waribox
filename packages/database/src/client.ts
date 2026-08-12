@@ -173,6 +173,47 @@ export const MIGRATION_SQL: string[] = [
   "ALTER TABLE business_settings ADD COLUMN enable_promotions INTEGER NOT NULL DEFAULT 0",
 ];
 
+// Sérialise les transactions entre elles : une seule connexion SQLite
+// partagée (voir getWorker ci-dessus), donc une transaction imbriquée dans
+// une autre échouerait ("cannot start a transaction within a transaction").
+// Ce verrou fait la queue plutôt que d'échouer.
+let txLock: Promise<void> = Promise.resolve();
+
+// Vraie atomicité malgré `drizzle-orm/sqlite-proxy` (qui n'a pas de support
+// de transaction natif) : la connexion SQLite est unique et les messages du
+// worker sont traités séquentiellement (voir sahpool-worker.js), donc BEGIN/
+// COMMIT/ROLLBACK envoyés directement via callWorker encadrent correctement
+// tous les appels drizzle passés dans `fn` — ceux-ci empruntent le même canal.
+// `fn` doit englober toute la séquence lecture-validation-écriture d'une
+// opération métier (pas seulement les écritures), sinon une deuxième
+// opération pourrait s'intercaler entre la validation et l'écriture de la
+// première (ex : double-vente de la dernière unité en stock).
+export async function withTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const run = async (): Promise<T> => {
+    await callWorker("exec", { sql: "BEGIN IMMEDIATE" });
+    try {
+      const result = await fn();
+      await callWorker("exec", { sql: "COMMIT" });
+      return result;
+    } catch (err) {
+      try {
+        await callWorker("exec", { sql: "ROLLBACK" });
+      } catch {
+        // La connexion est déjà dans un état anormal (ex: worker perdu) —
+        // l'erreur d'origine est plus utile au demandeur que celle-ci.
+      }
+      throw err;
+    }
+  };
+
+  const scheduled = txLock.then(run, run);
+  txLock = scheduled.then(
+    () => undefined,
+    () => undefined,
+  );
+  return scheduled;
+}
+
 export type Database = SqliteRemoteDatabase<typeof schema>;
 
 export async function createDatabase(_filename = "gestion-boutique.sqlite3"): Promise<Database> {

@@ -1,10 +1,18 @@
+import { schema } from "@gestion-boutique/database";
 import { useState } from "react";
 import { useThemeStore } from "../../stores/theme";
 import { StoreSwitcher } from "../stores/StoreSwitcher";
 import { ChangePasswordModal } from "./ChangePasswordModal";
 import { useAuth } from "./useAuth";
 
-export function TopBar() {
+type Store = typeof schema.stores.$inferSelect;
+
+interface TopBarProps {
+  multiStoreEnabled: boolean;
+  stores: Store[];
+}
+
+export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
   const { user, lock, logout, isImpersonating, impersonatorUser, returnToSelf } = useAuth();
   const { theme, toggleTheme } = useThemeStore();
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -58,7 +66,7 @@ export function TopBar() {
           <span style={{ color: "var(--color-text-muted)" }}>— {user?.roleName}</span>
         </div>
         <div style={{ display: "flex", gap: 12 }}>
-          <StoreSwitcher />
+          <StoreSwitcher enabled={multiStoreEnabled} stores={stores} />
           <button
             onClick={() => setShowPasswordModal(true)}
             style={{
