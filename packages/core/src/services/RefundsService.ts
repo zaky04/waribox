@@ -1,5 +1,5 @@
 import type { Database } from "@gestion-boutique/database";
-import { schema } from "@gestion-boutique/database";
+import { schema, withTransaction } from "@gestion-boutique/database";
 import { and, asc, eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
@@ -10,7 +10,7 @@ import { recordMovement } from "./StockService";
 // remplissant chaque lot à hauteur de sa quantité vendue avant de passer au
 // suivant — reproduit exactement l'allocation que consumeStockFefo aurait
 // faite, pour pouvoir la "rejouer" jusqu'à un certain montant cumulé.
-function allocateAcrossMagnitudes(
+export function allocateAcrossMagnitudes(
   magnitudes: { batchId: number | null; qty: number }[],
   amount: number,
 ): Map<string, number> {
@@ -88,6 +88,15 @@ export async function createRefund(db: Database, input: CreateRefundInput, actin
     throw new Error("Sélectionne au moins un article à rembourser.");
   }
 
+  // Toute la séquence lecture-validation-écriture est atomique (voir
+  // withTransaction dans SalesService.createSale pour le même raisonnement) —
+  // sinon deux remboursements concurrents sur la même ligne de vente
+  // pourraient tous deux valider la même quantité restante avant qu'aucun
+  // n'écrive, causant un double remboursement.
+  return withTransaction(() => createRefundInTransaction(db, input));
+}
+
+async function createRefundInTransaction(db: Database, input: CreateRefundInput) {
   const sale = await db.select().from(schema.sales).where(eq(schema.sales.id, input.saleId)).get();
   if (!sale) {
     throw new Error("Vente introuvable.");
