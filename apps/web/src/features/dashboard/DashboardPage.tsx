@@ -4,6 +4,7 @@ import {
   getSalesSummary,
   getSettings,
   hasPermission,
+  isCreditOverdue,
   listCustomerCredits,
   listExpiringBatches,
   listServiceOrders,
@@ -173,9 +174,7 @@ export function DashboardPage() {
     }
     if (canViewCredits) {
       const credits = await listCustomerCredits(db, storeId);
-      setOverdueCredits(
-        credits.filter((c) => c.status !== "settled" && c.dueDate && c.dueDate < today),
-      );
+      setOverdueCredits(credits.filter((c) => isCreditOverdue(c, today)));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, canViewReports, canViewOwnSales, canViewStock, canViewServiceOrders, canViewCredits, user, effectiveStoreId]);

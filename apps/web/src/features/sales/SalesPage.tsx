@@ -1,5 +1,6 @@
 import {
   createSale,
+  getActivePromotionsWithProducts,
   getExpectedCashAmount,
   getSettings,
   listCustomers,
@@ -7,6 +8,7 @@ import {
   listProducts,
   listAllVariants,
   pointsToDiscount,
+  type ActivePromotionWithProducts,
   type PaymentMethod,
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
@@ -26,6 +28,7 @@ import {
 import { useAuth } from "../auth/useAuth";
 import { PrinterPanel } from "../printer/PrinterPanel";
 import { usePrinter } from "../printer/usePrinter";
+import { BarcodeCameraScanner, isCameraScanSupported } from "./BarcodeCameraScanner";
 import { CloseCashSessionPanel } from "./CloseCashSessionPanel";
 import { OpenCashSessionScreen } from "./OpenCashSessionScreen";
 import { useBarcodeScanner } from "./useBarcodeScanner";
@@ -37,6 +40,7 @@ type Customer = typeof schema.customers.$inferSelect;
 
 interface CartLine {
   variantId: number;
+  productId: number;
   productName: string;
   unitPrice: number;
   quantity: number;
@@ -82,6 +86,12 @@ export function SalesPage() {
   const [businessSettings, setBusinessSettings] = useState<Awaited<ReturnType<typeof getSettings>> | null>(
     null,
   );
+  const [activePromotions, setActivePromotions] = useState<ActivePromotionWithProducts[]>([]);
+  // Cases à cocher : une promotion "en cours" ne s'applique que si elle est
+  // cochée — cochées par défaut à chaque rafraîchissement (une promo active
+  // s'applique "par défaut", le caissier peut décocher au cas par cas), mais
+  // jamais appliquée silencieusement sans passer par cette case.
+  const [checkedPromotionIds, setCheckedPromotionIds] = useState<Set<number>>(new Set());
 
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -113,6 +123,14 @@ export function SalesPage() {
     setCustomers(customersRows);
     setLoyaltyRatio(settings.loyaltyPointsRatio);
     setBusinessSettings(settings);
+    if (settings.enablePromotions) {
+      const promos = await getActivePromotionsWithProducts(db);
+      setActivePromotions(promos);
+      setCheckedPromotionIds(new Set(promos.map((p) => p.id)));
+    } else {
+      setActivePromotions([]);
+      setCheckedPromotionIds(new Set());
+    }
     const surface = locations.find((l) => l.type === "surface_vente" || l.type.startsWith("surface_vente#"));
     setSurfaceLocationId(surface?.id ?? null);
   }, [db, currentStoreId]);
@@ -145,6 +163,7 @@ export function SalesPage() {
         ...prev,
         {
           variantId: variant.id,
+          productId: product.id,
           productName: product.name,
           unitPrice: variant.priceOverride ?? product.salePrice,
           quantity: 1,
@@ -177,6 +196,8 @@ export function SalesPage() {
 
   useBarcodeScanner({ onScan: handleBarcodeScan, enabled: !!session });
 
+  const [showCameraScanner, setShowCameraScanner] = useState(false);
+
   const updateQuantity = (variantId: number, quantity: number) => {
     setCart((prev) =>
       quantity <= 0
@@ -198,6 +219,41 @@ export function SalesPage() {
     setCashReceived("");
   };
 
+  const togglePromotion = (promotionId: number) => {
+    setCheckedPromotionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(promotionId)) next.delete(promotionId);
+      else next.add(promotionId);
+      return next;
+    });
+  };
+
+  // Seules les promotions cochées comptent — une promotion "en cours" mais
+  // décochée par le caissier ne s'applique pas, quel que soit son statut en
+  // base (voir la case à cocher affichée à côté du panier).
+  const checkedProductPromos = activePromotions.filter(
+    (p) => p.scope === "product" && checkedPromotionIds.has(p.id),
+  );
+  const checkedInvoicePromos = activePromotions.filter(
+    (p) => p.scope === "invoice" && checkedPromotionIds.has(p.id),
+  );
+  // Si plusieurs promotions cochées visent le même produit, on retient la
+  // plus avantageuse plutôt que de les cumuler (même convention que
+  // PromotionsService.getActiveProductDiscounts).
+  function lineDiscount(productId: number): { percent: number; name?: string } {
+    let best = { percent: 0, name: undefined as string | undefined };
+    for (const promo of checkedProductPromos) {
+      if (promo.productIds.includes(productId) && promo.discountPercent > best.percent) {
+        best = { percent: promo.discountPercent, name: promo.name };
+      }
+    }
+    return best;
+  }
+  const checkedInvoicePromo =
+    checkedInvoicePromos.length > 0
+      ? checkedInvoicePromos.reduce((best, p) => (p.discountPercent > best.discountPercent ? p : best))
+      : null;
+
   // Prix TTC : le sous-total est déjà le montant payé par le client, la TVA
   // n'est qu'extraite pour l'affichage (voir SalesService.computeTaxAmount),
   // jamais ajoutée au total.
@@ -206,7 +262,19 @@ export function SalesPage() {
     const gross = line.quantity * line.unitPrice;
     return sum + (line.taxRate > 0 ? gross * (line.taxRate / (100 + line.taxRate)) : 0);
   }, 0);
-  const totalBeforeRedemption = subtotal;
+  // Remise promo "produit" : appliquée ligne par ligne, en pourcentage
+  // (jamais un montant fixe stocké dans le panier) pour rester correcte si la
+  // quantité change après l'ajout au panier.
+  const productPromoDiscount = cart.reduce(
+    (sum, line) => sum + line.quantity * line.unitPrice * (lineDiscount(line.productId).percent / 100),
+    0,
+  );
+  const itemsTotal = subtotal - productPromoDiscount;
+  // Remise promo "facture" : un pourcentage du total après remises produit,
+  // jamais cumulée avec elles sur la même base (éviterait une remise > 100%
+  // en cas de superposition de promotions).
+  const invoicePromoDiscount = checkedInvoicePromo ? itemsTotal * (checkedInvoicePromo.discountPercent / 100) : 0;
+  const totalBeforeRedemption = itemsTotal - invoicePromoDiscount;
 
   const selectedCustomer = customers.find((c) => c.id === Number(customerId));
   const maxRedeemablePoints =
@@ -242,12 +310,17 @@ export function SalesPage() {
         customerId: customerId ? Number(customerId) : null,
         newCustomerName: customerId ? undefined : newCustomerName,
         saleMode: mode,
-        items: cart.map((line) => ({
-          variantId: line.variantId,
-          quantity: line.quantity,
-          unitPrice: line.unitPrice,
-          taxRate: line.taxRate,
-        })),
+        items: cart.map((line) => {
+          const percent = lineDiscount(line.productId).percent;
+          return {
+            variantId: line.variantId,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            taxRate: line.taxRate,
+            discount: percent > 0 ? line.quantity * line.unitPrice * (percent / 100) : undefined,
+          };
+        }),
+        discount: invoicePromoDiscount > 0 ? invoicePromoDiscount : undefined,
         redeemPoints: redeemPointsValue || undefined,
         paymentMethod,
         amountPaid: paidValue,
@@ -277,7 +350,7 @@ export function SalesPage() {
           total: line.quantity * line.unitPrice,
         })),
         subtotal,
-        discount: redemptionDiscount,
+        discount: productPromoDiscount + invoicePromoDiscount + redemptionDiscount,
         tax: taxTotal,
         total,
         paymentMethod,
@@ -431,9 +504,37 @@ export function SalesPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
-              <p style={{ color: "var(--color-text-muted)", fontSize: 13, marginTop: 4 }}>
-                Scanne un code-barres à tout moment pour ajouter directement au panier.
-              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
+                  Scanne un code-barres à tout moment pour ajouter directement au panier.
+                </p>
+                {isCameraScanSupported() && (
+                  <button
+                    onClick={() => setShowCameraScanner(true)}
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: 6,
+                      border: "1px solid var(--color-border)",
+                      background: "transparent",
+                      color: "var(--color-text)",
+                      fontSize: 13,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    📷 Scanner (caméra)
+                  </button>
+                )}
+              </div>
+              {showCameraScanner && (
+                <BarcodeCameraScanner
+                  onDetected={(code) => {
+                    setShowCameraScanner(false);
+                    handleBarcodeScan(code);
+                  }}
+                  onClose={() => setShowCameraScanner(false)}
+                />
+              )}
               <div
                 style={{
                   display: "grid",
@@ -483,6 +584,32 @@ export function SalesPage() {
 
         <div style={cardStyle}>
           <strong>Panier</strong>
+
+          {activePromotions.length > 0 && (
+            <div
+              style={{
+                border: "1px solid var(--color-border)",
+                borderRadius: 8,
+                padding: 10,
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
+              <strong style={{ fontSize: 13 }}>Promotions en cours</strong>
+              {activePromotions.map((promo) => (
+                <label key={promo.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    checked={checkedPromotionIds.has(promo.id)}
+                    onChange={() => togglePromotion(promo.id)}
+                  />
+                  {promo.name} — -{promo.discountPercent}% ({promo.scope === "product" ? "produits" : "facture"})
+                </label>
+              ))}
+            </div>
+          )}
+
           {cart.length === 0 ? (
             <p style={{ color: "var(--color-text-muted)" }}>Aucun article.</p>
           ) : (
@@ -496,28 +623,40 @@ export function SalesPage() {
                 </tr>
               </thead>
               <tbody>
-                {cart.map((line) => (
-                  <tr key={line.variantId}>
-                    <td style={tdStyle}>{line.productName}</td>
-                    <td style={tdStyle}>
-                      <input
-                        type="number"
-                        value={line.quantity}
-                        onChange={(e) => updateQuantity(line.variantId, Number(e.target.value))}
-                        style={{ ...inputStyle, width: 60, marginTop: 0 }}
-                      />
-                    </td>
-                    <td style={tdStyle}>{(line.quantity * line.unitPrice).toFixed(0)}</td>
-                    <td style={tdStyle}>
-                      <button
-                        onClick={() => removeLine(line.variantId)}
-                        style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
-                      >
-                        ✕
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {cart.map((line) => {
+                  const lineGross = line.quantity * line.unitPrice;
+                  const promo = lineDiscount(line.productId);
+                  const lineDiscountAmount = lineGross * (promo.percent / 100);
+                  return (
+                    <tr key={line.variantId}>
+                      <td style={tdStyle}>
+                        {line.productName}
+                        {promo.percent > 0 && (
+                          <div style={{ color: "#86efac", fontSize: 12 }}>
+                            Promo{promo.name ? ` ${promo.name}` : ""} -{promo.percent}%
+                          </div>
+                        )}
+                      </td>
+                      <td style={tdStyle}>
+                        <input
+                          type="number"
+                          value={line.quantity}
+                          onChange={(e) => updateQuantity(line.variantId, Number(e.target.value))}
+                          style={{ ...inputStyle, width: 60, marginTop: 0 }}
+                        />
+                      </td>
+                      <td style={tdStyle}>{(lineGross - lineDiscountAmount).toFixed(0)}</td>
+                      <td style={tdStyle}>
+                        <button
+                          onClick={() => removeLine(line.variantId)}
+                          style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -525,6 +664,15 @@ export function SalesPage() {
           <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
             <div>Sous-total : {subtotal.toFixed(0)}</div>
             <div>Taxe : {taxTotal.toFixed(0)}</div>
+            {productPromoDiscount > 0 && (
+              <div style={{ color: "#86efac" }}>Remise promo produits : -{productPromoDiscount.toFixed(0)}</div>
+            )}
+            {invoicePromoDiscount > 0 && (
+              <div style={{ color: "#86efac" }}>
+                Remise promo{checkedInvoicePromo ? ` ${checkedInvoicePromo.name}` : ""} : -
+                {invoicePromoDiscount.toFixed(0)}
+              </div>
+            )}
             {redemptionDiscount > 0 && (
               <div style={{ color: "#86efac" }}>Réduction fidélité : -{redemptionDiscount.toFixed(0)}</div>
             )}

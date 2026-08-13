@@ -138,7 +138,81 @@ export const MIGRATION_SQL: string[] = [
   "ALTER TABLE business_settings ADD COLUMN loyalty_tier_gold_threshold REAL NOT NULL DEFAULT 20000",
   "ALTER TABLE business_settings ADD COLUMN loyalty_tier_silver_multiplier REAL NOT NULL DEFAULT 1.25",
   "ALTER TABLE business_settings ADD COLUMN loyalty_tier_gold_multiplier REAL NOT NULL DEFAULT 1.5",
+  // Export SYSCOHADA : désactivé par défaut, numéros de compte modifiables
+  // (voir le commentaire sur ces colonnes dans schema/settings.ts) puisque le
+  // référentiel OHADA est révisé de temps à autre.
+  "ALTER TABLE business_settings ADD COLUMN enable_syscohada INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_clients TEXT NOT NULL DEFAULT '411'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_fournisseurs TEXT NOT NULL DEFAULT '401'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_tva_ventes TEXT NOT NULL DEFAULT '4431'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_tva_services TEXT NOT NULL DEFAULT '4432'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_tva_achats TEXT NOT NULL DEFAULT '4452'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_banque TEXT NOT NULL DEFAULT '512'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_caisse TEXT NOT NULL DEFAULT '571'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_mobile_money TEXT NOT NULL DEFAULT '5715'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_achats TEXT NOT NULL DEFAULT '601'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_ventes TEXT NOT NULL DEFAULT '701'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_account_services TEXT NOT NULL DEFAULT '706'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_default_expense_account_code TEXT NOT NULL DEFAULT '628'",
+  "ALTER TABLE business_settings ADD COLUMN syscohada_default_expense_account_label TEXT NOT NULL DEFAULT 'Autres charges externes'",
+  "ALTER TABLE business_settings ADD COLUMN low_stock_alert_phone TEXT",
+  // Comptes de charge par défaut, un par catégorie suggérée (EXPENSE_CATEGORIES)
+  // — idempotent via UNIQUE(category) + OR IGNORE, donc sûr à rejouer à
+  // chaque lancement, y compris sur une base déjà migrée.
+  `INSERT OR IGNORE INTO syscohada_expense_accounts (category, account_code, account_label) VALUES
+    ('Loyer', '613', 'Locations'),
+    ('Salaires', '661', 'Rémunérations directes versées au personnel'),
+    ('Électricité', '605', 'Autres achats (eau, électricité)'),
+    ('Eau', '605', 'Autres achats (eau, électricité)'),
+    ('Transport', '611', 'Transports'),
+    ('Fournitures', '604', 'Achats stockés de fournitures'),
+    ('Entretien', '615', 'Entretien, réparations et maintenance'),
+    ('Assurance', '616', 'Primes d''assurance'),
+    ('Impôts/Taxes', '641', 'Impôts et taxes directs'),
+    ('Autre', '628', 'Autres charges externes')`,
+  "ALTER TABLE business_settings ADD COLUMN enable_promotions INTEGER NOT NULL DEFAULT 0",
 ];
+
+// Sérialise les transactions entre elles : une seule connexion SQLite
+// partagée (voir getWorker ci-dessus), donc une transaction imbriquée dans
+// une autre échouerait ("cannot start a transaction within a transaction").
+// Ce verrou fait la queue plutôt que d'échouer.
+let txLock: Promise<void> = Promise.resolve();
+
+// Vraie atomicité malgré `drizzle-orm/sqlite-proxy` (qui n'a pas de support
+// de transaction natif) : la connexion SQLite est unique et les messages du
+// worker sont traités séquentiellement (voir sahpool-worker.js), donc BEGIN/
+// COMMIT/ROLLBACK envoyés directement via callWorker encadrent correctement
+// tous les appels drizzle passés dans `fn` — ceux-ci empruntent le même canal.
+// `fn` doit englober toute la séquence lecture-validation-écriture d'une
+// opération métier (pas seulement les écritures), sinon une deuxième
+// opération pourrait s'intercaler entre la validation et l'écriture de la
+// première (ex : double-vente de la dernière unité en stock).
+export async function withTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const run = async (): Promise<T> => {
+    await callWorker("exec", { sql: "BEGIN IMMEDIATE" });
+    try {
+      const result = await fn();
+      await callWorker("exec", { sql: "COMMIT" });
+      return result;
+    } catch (err) {
+      try {
+        await callWorker("exec", { sql: "ROLLBACK" });
+      } catch {
+        // La connexion est déjà dans un état anormal (ex: worker perdu) —
+        // l'erreur d'origine est plus utile au demandeur que celle-ci.
+      }
+      throw err;
+    }
+  };
+
+  const scheduled = txLock.then(run, run);
+  txLock = scheduled.then(
+    () => undefined,
+    () => undefined,
+  );
+  return scheduled;
+}
 
 export type Database = SqliteRemoteDatabase<typeof schema>;
 

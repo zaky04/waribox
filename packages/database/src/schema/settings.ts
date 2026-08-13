@@ -31,6 +31,10 @@ export const businessSettings = sqliteTable("business_settings", {
   // Indicatif pays (ex: "225") utilisé pour compléter les numéros locaux des
   // clients lors de la génération d'un lien wa.me (voir lib/whatsapp.ts).
   whatsappCountryCode: text("whatsapp_country_code"),
+  // Numéro (gérant/propriétaire) à notifier par WhatsApp en cas de rupture de
+  // stock — distinct de `phone` (coordonnées de l'entreprise affichées sur
+  // les reçus) : celui-ci n'a de sens que comme destinataire d'alerte interne.
+  lowStockAlertPhone: text("low_stock_alert_phone"),
   // Largeur du ticket en caractères (Font A) — 32 = 58mm, 48 = 80mm, ou une
   // valeur personnalisée pour du matériel non standard.
   receiptColumns: integer("receipt_columns").notNull().default(32),
@@ -60,4 +64,36 @@ export const businessSettings = sqliteTable("business_settings", {
   // la table stores et le storeId sur stockLocations/sales/cashSessions/
   // payments existent toujours en base, même désactivé (voir stores.ts).
   multiStoreEnabled: integer("multi_store_enabled", { mode: "boolean" }).notNull().default(false),
+  // Affiche/masque l'onglet Export SYSCOHADA dans Comptabilité — désactivé
+  // par défaut (comme multiStoreEnabled), tous les commerces n'ayant pas
+  // besoin d'un export comptable normé.
+  enableSyscohada: integer("enable_syscohada", { mode: "boolean" }).notNull().default(false),
+  // Numéros de compte SYSCOHADA modifiables — le référentiel est révisé de
+  // temps à autre par l'OHADA, ces codes ne doivent donc jamais être figés
+  // dans le code (voir SyscohadaService, qui les lit systématiquement depuis
+  // ces colonnes plutôt que de les coder en dur). L'intitulé de chaque
+  // compte-rôle reste fixe (défini dans SyscohadaService) : seul le NUMÉRO
+  // de compte change d'une révision à l'autre, jamais son rôle comptable.
+  syscohadaAccountClients: text("syscohada_account_clients").notNull().default("411"),
+  syscohadaAccountFournisseurs: text("syscohada_account_fournisseurs").notNull().default("401"),
+  syscohadaAccountTvaVentes: text("syscohada_account_tva_ventes").notNull().default("4431"),
+  syscohadaAccountTvaServices: text("syscohada_account_tva_services").notNull().default("4432"),
+  syscohadaAccountTvaAchats: text("syscohada_account_tva_achats").notNull().default("4452"),
+  syscohadaAccountBanque: text("syscohada_account_banque").notNull().default("512"),
+  syscohadaAccountCaisse: text("syscohada_account_caisse").notNull().default("571"),
+  syscohadaAccountMobileMoney: text("syscohada_account_mobile_money").notNull().default("5715"),
+  syscohadaAccountAchats: text("syscohada_account_achats").notNull().default("601"),
+  syscohadaAccountVentes: text("syscohada_account_ventes").notNull().default("701"),
+  syscohadaAccountServices: text("syscohada_account_services").notNull().default("706"),
+  // Repli utilisé par SyscohadaService.resolveExpenseAccount quand une
+  // catégorie de dépense (texte libre, voir expenses.ts) n'a pas de
+  // correspondance dans syscohadaExpenseAccounts.
+  syscohadaDefaultExpenseAccountCode: text("syscohada_default_expense_account_code").notNull().default("628"),
+  syscohadaDefaultExpenseAccountLabel: text("syscohada_default_expense_account_label")
+    .notNull()
+    .default("Autres charges externes"),
+  // Affiche/masque l'onglet Promotions et l'application automatique des
+  // remises programmées aux ventes — désactivé par défaut (même convention
+  // que multiStoreEnabled/enableSyscohada).
+  enablePromotions: integer("enable_promotions", { mode: "boolean" }).notNull().default(false),
 });

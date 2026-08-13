@@ -233,3 +233,64 @@ export function buildBalanceSheetReportPdf(data: BalanceSheetReportData): Blob {
   ];
   return buildReportPdf("Bilan (simplifié, non certifié)", `Au ${data.asOfDate}`, ["Poste", "Montant"], rows);
 }
+
+export interface SyscohadaJournalLine {
+  date: string;
+  piece: string;
+  compte: string;
+  intitule: string;
+  libelle: string;
+  debit: number;
+  credit: number;
+}
+
+export interface SyscohadaJournalReportData {
+  title: string;
+  from: string;
+  to: string;
+  lines: SyscohadaJournalLine[];
+}
+
+export function buildSyscohadaJournalPdf(data: SyscohadaJournalReportData): Blob {
+  const totalDebit = data.lines.reduce((sum, l) => sum + l.debit, 0);
+  const totalCredit = data.lines.reduce((sum, l) => sum + l.credit, 0);
+  const rows = data.lines.map((l) => [
+    l.date,
+    l.piece,
+    l.compte,
+    l.intitule,
+    l.libelle,
+    l.debit > 0 ? l.debit.toFixed(0) : "",
+    l.credit > 0 ? l.credit.toFixed(0) : "",
+  ]);
+  return buildReportPdf(
+    data.title,
+    `Du ${data.from} au ${data.to} — Total débit : ${totalDebit.toFixed(0)} — Total crédit : ${totalCredit.toFixed(0)}`,
+    ["Date", "Pièce", "Compte", "Intitulé", "Libellé", "Débit", "Crédit"],
+    rows,
+  );
+}
+
+export interface SyscohadaBalanceReportData {
+  from: string;
+  to: string;
+  rows: { compte: string; intitule: string; debit: number; credit: number; solde: number }[];
+}
+
+export function buildSyscohadaBalancePdf(data: SyscohadaBalanceReportData): Blob {
+  const totalDebit = data.rows.reduce((sum, r) => sum + r.debit, 0);
+  const totalCredit = data.rows.reduce((sum, r) => sum + r.credit, 0);
+  const rows = data.rows.map((r) => [
+    r.compte,
+    r.intitule,
+    r.debit.toFixed(0),
+    r.credit.toFixed(0),
+    r.solde.toFixed(0),
+  ]);
+  return buildReportPdf(
+    "Balance générale (SYSCOHADA)",
+    `Du ${data.from} au ${data.to} — Total débit : ${totalDebit.toFixed(0)} — Total crédit : ${totalCredit.toFixed(0)}`,
+    ["Compte", "Intitulé", "Débit", "Crédit", "Solde"],
+    rows,
+  );
+}

@@ -1,6 +1,7 @@
 export const PERMISSIONS = [
   "view_margins",
   "manage_products",
+  "manage_promotions",
   "manage_stock",
   "manage_sales",
   "manage_refunds",
@@ -104,6 +105,7 @@ export const DEFAULT_ROLES: Record<DefaultRoleKey, { name: string; permissions: 
     permissions: {
       view_margins: true,
       manage_products: true,
+      manage_promotions: true,
       manage_stock: true,
       manage_sales: true,
       manage_refunds: true,

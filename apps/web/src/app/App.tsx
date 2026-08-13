@@ -1,4 +1,5 @@
-import { getSettings } from "@gestion-boutique/core";
+import { getSettings, listStores } from "@gestion-boutique/core";
+import { schema } from "@gestion-boutique/database";
 import { useEffect, useState } from "react";
 import { UpdateBanner } from "../components/UpdateBanner";
 import { BusinessHeader } from "./BusinessHeader";
@@ -14,6 +15,7 @@ import { DebtsPage } from "../features/debts/DebtsPage";
 import { ExpensesPage } from "../features/expenses/ExpensesPage";
 import { JournalsPage } from "../features/journals/JournalsPage";
 import { ProductsPage } from "../features/products/ProductsPage";
+import { PromotionsPage } from "../features/promotions/PromotionsPage";
 import { PurchasesPage } from "../features/purchases/PurchasesPage";
 import { QuotesPage } from "../features/quotes/QuotesPage";
 import { ReportsPage } from "../features/reports/ReportsPage";
@@ -27,6 +29,8 @@ import { UsersPage } from "../features/users/UsersPage";
 import { DatabaseProvider, useDatabase } from "./DatabaseProvider";
 import { Nav, type ModuleTab, type NavTab } from "./Nav";
 
+type Store = typeof schema.stores.$inferSelect;
+
 const DEFAULT_ENABLED_MODULES: Record<ModuleTab, boolean> = {
   sales: true,
   products: true,
@@ -34,6 +38,7 @@ const DEFAULT_ENABLED_MODULES: Record<ModuleTab, boolean> = {
   suppliers: true,
   purchases: true,
   service_orders: false,
+  promotions: false,
 };
 
 function MainContent() {
@@ -44,6 +49,8 @@ function MainContent() {
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [enabledModules, setEnabledModules] = useState<Record<ModuleTab, boolean>>(DEFAULT_ENABLED_MODULES);
   const [autoLockMinutes, setAutoLockMinutes] = useState(0);
+  const [multiStoreEnabled, setMultiStoreEnabled] = useState(false);
+  const [stores, setStores] = useState<Store[]>([]);
   useBackupScheduler();
   useIdleLock(autoLockMinutes);
 
@@ -56,9 +63,12 @@ function MainContent() {
   }, [user?.id]);
 
   // Un seul getSettings() par changement d'onglet, partagé par le bandeau
-  // d'en-tête et la Nav (au lieu de plusieurs lectures séparées).
+  // d'en-tête, la Nav et le sélecteur de boutique (au lieu de plusieurs
+  // lectures séparées) — c'est ce qui permet à ces trois-là de refléter un
+  // changement de Paramètres dès qu'on change d'onglet, sans attendre un
+  // verrouillage/déverrouillage ou un rechargement complet de la page.
   useEffect(() => {
-    getSettings(db).then((settings) => {
+    Promise.all([getSettings(db), listStores(db)]).then(([settings, storeRows]) => {
       setBusinessName(settings.businessName ?? null);
       setLogoDataUrl(settings.logoDataUrl ?? null);
       setAutoLockMinutes(settings.autoLockMinutes);
@@ -69,14 +79,17 @@ function MainContent() {
         suppliers: settings.enableSuppliers,
         purchases: settings.enablePurchases,
         service_orders: settings.enableServiceOrders,
+        promotions: settings.enablePromotions,
       });
+      setMultiStoreEnabled(settings.multiStoreEnabled);
+      setStores(storeRows);
     });
   }, [db, tab]);
 
   return (
     <>
       <div style={{ position: "sticky", top: 0, zIndex: 10, background: "var(--color-bg)" }}>
-        <TopBar />
+        <TopBar multiStoreEnabled={multiStoreEnabled} stores={stores} />
         <BusinessHeader businessName={businessName} logoDataUrl={logoDataUrl} />
         <Nav active={tab} onChange={setTab} enabledModules={enabledModules} />
       </div>
@@ -84,6 +97,7 @@ function MainContent() {
       {tab === "sales" && enabledModules.sales && <SalesPage />}
       {tab === "quotes" && enabledModules.sales && <QuotesPage />}
       {tab === "service_orders" && enabledModules.service_orders && <ServiceOrdersPage />}
+      {tab === "promotions" && enabledModules.promotions && <PromotionsPage />}
       {tab === "products" && enabledModules.products && <ProductsPage />}
       {tab === "stock" && enabledModules.stock && <StockPage />}
       {tab === "customers" && <CustomersPage />}

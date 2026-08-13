@@ -8,6 +8,17 @@ export async function listCustomerCredits(db: Database, storeId?: number) {
   return storeId ? query.where(eq(schema.customerCredits.storeId, storeId)) : query;
 }
 
+// Prédicat partagé "en retard" (créance non soldée dont l'échéance est
+// dépassée) — utilisé à la fois par le Dashboard (compteur) et CreditsPage
+// (bouton de relance WhatsApp), pour éviter que les deux dérivent avec des
+// définitions légèrement différentes.
+export function isCreditOverdue(
+  credit: { status: string; dueDate: string | null },
+  today: string = new Date().toISOString().slice(0, 10),
+): boolean {
+  return credit.status !== "settled" && !!credit.dueDate && credit.dueDate < today;
+}
+
 export async function listCreditRepayments(db: Database, creditId: number) {
   return db
     .select()

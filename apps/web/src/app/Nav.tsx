@@ -6,6 +6,7 @@ export type NavTab =
   | "sales"
   | "quotes"
   | "service_orders"
+  | "promotions"
   | "products"
   | "stock"
   | "customers"
@@ -29,6 +30,7 @@ const TABS: { key: NavTab; label: string; permission: Permission | null; moduleK
   { key: "sales", label: "Ventes", permission: "manage_sales" },
   { key: "quotes", label: "Devis", permission: "manage_quotes", moduleKey: "sales" },
   { key: "service_orders", label: "Tickets de service", permission: "manage_service_orders" },
+  { key: "promotions", label: "Promotions", permission: "manage_promotions" },
   { key: "products", label: "Produits", permission: "manage_products" },
   { key: "stock", label: "Stock", permission: "manage_stock" },
   { key: "customers", label: "Clients", permission: "manage_customers" },
@@ -47,8 +49,23 @@ const TABS: { key: NavTab; label: string; permission: Permission | null; moduleK
 // Onglets rattachés à un module optionnel choisi à l'installation (voir
 // ModuleSetupScreen) — Clients/Créances/Dettes/Rapports/Paramètres/
 // Utilisateurs/Journaux restent toujours actifs, hors de ce système.
-export type ModuleTab = "sales" | "products" | "stock" | "suppliers" | "purchases" | "service_orders";
-const MODULE_TABS: ModuleTab[] = ["sales", "products", "stock", "suppliers", "purchases", "service_orders"];
+export type ModuleTab =
+  | "sales"
+  | "products"
+  | "stock"
+  | "suppliers"
+  | "purchases"
+  | "service_orders"
+  | "promotions";
+const MODULE_TABS: ModuleTab[] = [
+  "sales",
+  "products",
+  "stock",
+  "suppliers",
+  "purchases",
+  "service_orders",
+  "promotions",
+];
 
 interface NavProps {
   active: NavTab;

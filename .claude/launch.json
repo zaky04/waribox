@@ -4,13 +4,13 @@
     {
       "name": "web",
       "runtimeExecutable": "cmd.exe",
-      "runtimeArgs": ["/c", "C:\\Users\\djaka\\APPLI GESTION BOUT\\dev-web.cmd"],
+      "runtimeArgs": ["/c", "C:\\Users\\djaka\\WariBox\\dev-web.cmd"],
       "port": 5173
     },
     {
       "name": "web-prod-preview",
       "runtimeExecutable": "cmd.exe",
-      "runtimeArgs": ["/c", "C:\\Users\\djaka\\APPLI GESTION BOUT\\preview-web.cmd"],
+      "runtimeArgs": ["/c", "C:\\Users\\djaka\\WariBox\\preview-web.cmd"],
       "port": 4173
     }
   ]
