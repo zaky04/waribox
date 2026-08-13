@@ -1,10 +1,17 @@
 // Bootstrap idempotent du schéma (CREATE TABLE IF NOT EXISTS), exécuté au premier
-// démarrage de l'app dans le navigateur. Reflète exactement packages/database/src/schema/*.
+// démarrage de l'app dans le navigateur. Reflète exactement packages/database/src/schema/*
+// UNIQUEMENT pour les colonnes présentes dès la création d'une table — les colonnes
+// ajoutées après coup vivent dans MIGRATION_SQL (legacy) ou MIGRATIONS (voir client.ts),
+// jamais ici, pour ne pas casser `CREATE TABLE IF NOT EXISTS` sur une base existante.
 //
-// Ceci sert d'amorçage rapide pour la Phase 0. À partir de la Phase 1, les évolutions
-// de schéma doivent passer par `pnpm db:generate` (drizzle-kit) et un vrai runner de
-// migrations versionnées rejouées côté navigateur (table `__migrations` + fichiers .sql).
+// Phase 1 (voir MIGRATIONS dans client.ts) : chaque évolution de schéma désormais
+// suivie individuellement dans `__migrations`, créée ici pour que le tout premier
+// bootstrap d'une base neuve l'ait déjà.
 export const BOOTSTRAP_SQL: string[] = [
+  `CREATE TABLE IF NOT EXISTS __migrations (
+    id INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
   `CREATE TABLE IF NOT EXISTS roles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,

@@ -151,9 +151,10 @@ export function ProductsPage() {
 
     setSaving(true);
     try {
+      const permissions = user?.permissions ?? {};
       let finalCategoryId = categoryId ? Number(categoryId) : null;
       if (!finalCategoryId && newCategoryName.trim()) {
-        const created = await createCategory(db, { name: newCategoryName.trim(), createdBy: user?.id });
+        const created = await createCategory(db, { name: newCategoryName.trim(), createdBy: user?.id }, permissions);
         finalCategoryId = created.id;
       }
 
@@ -168,10 +169,10 @@ export function ProductsPage() {
           trackExpiry,
           taxRate: taxRate.trim() === "" ? null : Number(taxRate),
           updatedBy: user?.id,
-        });
+        }, permissions);
         const variant = variants.find((v) => v.productId === editingProductId);
         if (variant) {
-          await updateVariantBarcode(db, variant.id, barcode.trim() || null);
+          await updateVariantBarcode(db, variant.id, barcode.trim() || null, permissions);
         }
       } else {
         await createProduct(db, {
@@ -185,7 +186,7 @@ export function ProductsPage() {
           taxRate: taxRate.trim() === "" ? null : Number(taxRate),
           barcode: barcode.trim() || null,
           createdBy: user?.id,
-        });
+        }, permissions);
       }
 
       resetForm();

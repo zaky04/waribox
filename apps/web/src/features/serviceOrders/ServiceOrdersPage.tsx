@@ -242,7 +242,7 @@ export function ServiceOrdersPage() {
         paymentMethod,
         amountPaid: paidValue,
         storeId: currentStoreId ?? undefined,
-      });
+      }, user.permissions);
 
       const selectedCustomer = customers.find((c) => c.id === Number(customerId));
       const customerName = selectedCustomer?.fullName || newCustomerName.trim() || undefined;
@@ -306,7 +306,7 @@ export function ServiceOrdersPage() {
 
   const handleStatusChange = async (item: ServiceOrderItem, status: ServiceOrderItemStatus) => {
     if (!user) return;
-    await updateServiceOrderItemStatus(db, { itemId: item.id, status, userId: user.id });
+    await updateServiceOrderItemStatus(db, { itemId: item.id, status, userId: user.id }, user.permissions);
     const items = await listServiceOrderItems(db, item.serviceOrderId);
     setItemsByOrder((prev) => ({ ...prev, [item.serviceOrderId]: items }));
     await refreshTrack();
@@ -357,6 +357,7 @@ export function ServiceOrdersPage() {
           notes: editNotes.trim() || null,
         },
         user.id,
+        user.permissions,
       );
       for (const item of editItems) {
         await updateServiceOrderItem(
@@ -369,6 +370,7 @@ export function ServiceOrdersPage() {
             taxRate: item.taxRate,
           },
           user.id,
+          user.permissions,
         );
       }
       const items = await listServiceOrderItems(db, orderId);
@@ -397,7 +399,7 @@ export function ServiceOrdersPage() {
     }
     setRepaying(true);
     try {
-      await recordCreditRepayment(db, { creditId: credit.id, amount: value, userId: user.id });
+      await recordCreditRepayment(db, { creditId: credit.id, amount: value, userId: user.id }, user.permissions);
       setRepayAmount("");
       await refreshTrack();
     } catch (err) {

@@ -43,6 +43,17 @@ export class PermissionError extends Error {
   }
 }
 
+// Pour une primitive partagée par deux flux distincts qui ont chacun leur
+// propre permission naturelle (ex: recordCreditRepayment, invoquée à la fois
+// depuis Créances et depuis le suivi des tickets de service) — une seule des
+// deux permissions suffit, plutôt que d'exiger les deux ou de dupliquer la
+// fonction pour chaque appelant.
+export function requireAnyPermission(permissions: PermissionSet, allowed: Permission[]): void {
+  if (!allowed.some((permission) => hasPermission(permissions, permission))) {
+    throw new PermissionError();
+  }
+}
+
 export function requirePermission(permissions: PermissionSet, permission: Permission): void {
   if (!hasPermission(permissions, permission)) {
     throw new PermissionError();

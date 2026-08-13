@@ -87,9 +87,9 @@ export function SuppliersPage() {
         createdBy: user?.id,
       };
       if (editingId) {
-        await updateSupplier(db, editingId, input);
+        await updateSupplier(db, editingId, input, user?.permissions ?? {});
       } else {
-        await createSupplier(db, input);
+        await createSupplier(db, input, user?.permissions ?? {});
       }
       resetForm();
       await refresh();

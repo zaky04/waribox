@@ -2,6 +2,7 @@ import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { and, desc, eq, gte, like, lte, or } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { requirePermission, type PermissionSet } from "../domain/permissions";
 
 // Suggestions pour un datalist en UI — la catégorie reste un champ texte
 // libre (pas de table de référence rigide) pour ne pas bloquer un gérant sur
@@ -36,7 +37,12 @@ export interface CreateExpenseInput {
 // createdAt de cette ligne miroir est forcé à la date d'effet de la dépense
 // (et non l'horodatage de saisie), pour que la dépense se rattache au bon
 // mois dans la trésorerie même si elle est saisie en retard.
-export async function createExpense(db: Database, input: CreateExpenseInput) {
+export async function createExpense(
+  db: Database,
+  input: CreateExpenseInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "manage_expenses");
   const expense = await db
     .insert(schema.expenses)
     .values({
@@ -81,7 +87,13 @@ export interface UpdateExpenseInput {
   userId?: number; // qui effectue la modification (pour l'audit, pas forcément le créateur)
 }
 
-export async function updateExpense(db: Database, id: number, input: UpdateExpenseInput) {
+export async function updateExpense(
+  db: Database,
+  id: number,
+  input: UpdateExpenseInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "edit_expenses");
   const expense = await db
     .update(schema.expenses)
     .set({
@@ -129,7 +141,13 @@ export async function updateExpense(db: Database, id: number, input: UpdateExpen
 // autre table ne référence expenses.id. La traçabilité reste assurée par le
 // journal (métadonnées de l'enregistrement supprimé), important pour un usage
 // sur plusieurs années.
-export async function deleteExpense(db: Database, id: number, userId?: number) {
+export async function deleteExpense(
+  db: Database,
+  id: number,
+  actingPermissions: PermissionSet,
+  userId?: number,
+) {
+  requirePermission(actingPermissions, "edit_expenses");
   const existing = await db.select().from(schema.expenses).where(eq(schema.expenses.id, id)).get();
   if (!existing) return;
 

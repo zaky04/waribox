@@ -2,6 +2,7 @@ import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { requirePermission, type PermissionSet } from "../domain/permissions";
 
 export interface CategoryInput {
   name: string;
@@ -13,7 +14,8 @@ export async function listCategories(db: Database) {
   return db.select().from(schema.categories);
 }
 
-export async function createCategory(db: Database, input: CategoryInput) {
+export async function createCategory(db: Database, input: CategoryInput, actingPermissions: PermissionSet) {
+  requirePermission(actingPermissions, "manage_products");
   const category = await db
     .insert(schema.categories)
     .values({ name: input.name, parentId: input.parentId ?? null })
@@ -53,7 +55,12 @@ export interface ProductWithVariant {
 
 // Chaque produit possède toujours au moins une variante "de base" (attributes: {})
 // pour rester vendable même sans déclinaisons (taille/couleur, etc.).
-export async function createProduct(db: Database, input: ProductInput): Promise<ProductWithVariant> {
+export async function createProduct(
+  db: Database,
+  input: ProductInput,
+  actingPermissions: PermissionSet,
+): Promise<ProductWithVariant> {
+  requirePermission(actingPermissions, "manage_products");
   const product = await db
     .insert(schema.products)
     .values({
@@ -105,7 +112,13 @@ export interface UpdateProductInput {
   updatedBy?: number;
 }
 
-export async function updateProduct(db: Database, productId: number, input: UpdateProductInput) {
+export async function updateProduct(
+  db: Database,
+  productId: number,
+  input: UpdateProductInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "manage_products");
   const updates: Partial<typeof schema.products.$inferInsert> = {};
   if (input.name !== undefined) updates.name = input.name;
   if (input.categoryId !== undefined) updates.categoryId = input.categoryId;
@@ -141,7 +154,13 @@ export async function updateProduct(db: Database, productId: number, input: Upda
 
 // Le code-barres vit sur la variante par défaut, pas sur le produit — voir
 // createProduct, qui crée toujours une variante "de base" sans attribut.
-export async function updateVariantBarcode(db: Database, variantId: number, barcode: string | null) {
+export async function updateVariantBarcode(
+  db: Database,
+  variantId: number,
+  barcode: string | null,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "manage_products");
   return db
     .update(schema.productVariants)
     .set({ barcode })
@@ -158,7 +177,8 @@ export interface VariantInput {
   priceOverride?: number;
 }
 
-export async function createVariant(db: Database, input: VariantInput) {
+export async function createVariant(db: Database, input: VariantInput, actingPermissions: PermissionSet) {
+  requirePermission(actingPermissions, "manage_products");
   await db
     .update(schema.products)
     .set({ hasVariants: true })

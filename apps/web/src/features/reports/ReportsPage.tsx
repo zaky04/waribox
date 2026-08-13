@@ -1,12 +1,15 @@
 import {
   buildCashFlowReportExcel,
   buildCashFlowReportPdf,
+  buildCashSessionsReportExcel,
+  buildCashSessionsReportPdf,
   buildMarginsReportExcel,
   buildMarginsReportPdf,
   buildSalesReportExcel,
   buildSalesReportPdf,
   buildTaxReportExcel,
   buildTaxReportPdf,
+  type CashSessionReportRow,
 } from "@gestion-boutique/reports";
 import {
   getCashFlow,
@@ -17,7 +20,9 @@ import {
   getTaxCollected,
   getTopProducts,
   hasPermission,
+  listCashSessions,
   listStores,
+  listUsers,
   projectCashFlow,
   type CashFlow,
   type CashFlowProjection,
@@ -41,7 +46,7 @@ import {
 } from "../../components/sharedStyles";
 import { useAuth } from "../auth/useAuth";
 
-type SubTab = "sales" | "margins" | "cashflow" | "tax";
+type SubTab = "sales" | "margins" | "cashflow" | "tax" | "cash";
 
 function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -106,6 +111,8 @@ export function ReportsPage() {
   const [projection, setProjection] = useState<CashFlowProjection | null>(null);
   const [taxEnabled, setTaxEnabled] = useState(false);
   const [taxSummary, setTaxSummary] = useState<TaxCollectedSummary | null>(null);
+  const [cashSessions, setCashSessions] = useState<Awaited<ReturnType<typeof listCashSessions>>>([]);
+  const [users, setUsers] = useState<Awaited<ReturnType<typeof listUsers>>>([]);
 
   const [stores, setStores] = useState<Awaited<ReturnType<typeof listStores>>>([]);
   const [multiStoreEnabled, setMultiStoreEnabled] = useState(false);
@@ -133,16 +140,19 @@ export function ReportsPage() {
 
   const refresh = useCallback(async () => {
     const storeId = effectiveStoreId;
-    const [sales, products, margins, productBreakdown, flow, proj, settings, tax] = await Promise.all([
-      getSalesSummary(db, range, storeId),
-      getTopProducts(db, range, 10, storeId),
-      getMarginsSummary(db, range, storeId),
-      getProductMarginsBreakdown(db, range, storeId),
-      getCashFlow(db, range, storeId),
-      projectCashFlow(db, { years, growthRate, storeId }),
-      getSettings(db),
-      getTaxCollected(db, range, storeId),
-    ]);
+    const [sales, products, margins, productBreakdown, flow, proj, settings, tax, sessions, userRows] =
+      await Promise.all([
+        getSalesSummary(db, range, storeId),
+        getTopProducts(db, range, 10, storeId),
+        getMarginsSummary(db, range, storeId),
+        getProductMarginsBreakdown(db, range, storeId),
+        getCashFlow(db, range, storeId),
+        projectCashFlow(db, { years, growthRate, storeId }),
+        getSettings(db),
+        getTaxCollected(db, range, storeId),
+        listCashSessions(db, { from: fromDate, to: toDate, storeId }),
+        listUsers(db),
+      ]);
     setSalesSummary(sales);
     setTopProducts(products);
     setMarginsSummary(margins);
@@ -151,6 +161,8 @@ export function ReportsPage() {
     setProjection(proj);
     setTaxEnabled(settings?.taxEnabled ?? false);
     setTaxSummary(tax);
+    setCashSessions(sessions);
+    setUsers(userRows);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, fromDate, toDate, years, growthRate, effectiveStoreId]);
 
@@ -216,9 +228,32 @@ export function ReportsPage() {
     downloadBlob(blob, `rapport-tva-${fromDate}-${toDate}.xlsx`);
   };
 
+  const userName = (userId: number) => users.find((u) => u.id === userId)?.fullName ?? "—";
+
+  const cashSessionRows: CashSessionReportRow[] = cashSessions.map((s) => ({
+    userName: userName(s.userId),
+    openedAt: s.openedAt,
+    openingAmount: s.openingAmount,
+    closedAt: s.closedAt,
+    closingAmount: s.closingAmount,
+    expectedAmount: s.expectedAmount,
+    difference: s.closingAmount != null && s.expectedAmount != null ? s.closingAmount - s.expectedAmount : null,
+  }));
+
+  const exportCashSessionsPdf = () => {
+    const blob = buildCashSessionsReportPdf({ from: fromDate, to: toDate, rows: cashSessionRows });
+    downloadBlob(blob, `rapport-caisse-${fromDate}-${toDate}.pdf`);
+  };
+
+  const exportCashSessionsExcel = () => {
+    const blob = buildCashSessionsReportExcel({ from: fromDate, to: toDate, rows: cashSessionRows });
+    downloadBlob(blob, `rapport-caisse-${fromDate}-${toDate}.xlsx`);
+  };
+
   const subTabs: { key: SubTab; label: string }[] = [{ key: "sales", label: "Ventes" }];
   if (canViewMargins) subTabs.push({ key: "margins", label: "Marges" });
   subTabs.push({ key: "cashflow", label: "Trésorerie" });
+  subTabs.push({ key: "cash", label: "Caisse" });
   if (taxEnabled) subTabs.push({ key: "tax", label: "TVA" });
 
   return (
@@ -528,6 +563,59 @@ export function ReportsPage() {
               Export Excel
             </button>
           </div>
+        </>
+      )}
+
+      {subTab === "cash" && (
+        <>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 24 }}>
+            <button style={secondaryButtonStyle} onClick={exportCashSessionsPdf}>
+              Export PDF
+            </button>
+            <button style={secondaryButtonStyle} onClick={exportCashSessionsExcel}>
+              Export Excel
+            </button>
+          </div>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Ouverture</th>
+                <th style={thStyle}>Caissier</th>
+                <th style={thStyle}>Montant ouverture</th>
+                <th style={thStyle}>Fermeture</th>
+                <th style={thStyle}>Montant fermeture</th>
+                <th style={thStyle}>Attendu</th>
+                <th style={thStyle}>Écart</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cashSessionRows.map((r, i) => (
+                <tr key={i}>
+                  <td style={tdStyle}>{r.openedAt}</td>
+                  <td style={tdStyle}>{r.userName}</td>
+                  <td style={tdStyle}>{r.openingAmount.toFixed(0)}</td>
+                  <td style={tdStyle}>{r.closedAt ?? "En cours"}</td>
+                  <td style={tdStyle}>{r.closingAmount != null ? r.closingAmount.toFixed(0) : "—"}</td>
+                  <td style={tdStyle}>{r.expectedAmount != null ? r.expectedAmount.toFixed(0) : "—"}</td>
+                  <td
+                    style={{
+                      ...tdStyle,
+                      color: r.difference == null ? undefined : r.difference === 0 ? "#86efac" : "#f87171",
+                    }}
+                  >
+                    {r.difference != null ? r.difference.toFixed(0) : "—"}
+                  </td>
+                </tr>
+              ))}
+              {cashSessionRows.length === 0 && (
+                <tr>
+                  <td style={tdStyle} colSpan={7}>
+                    Aucune session de caisse pour cette période.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </>
       )}
     </main>

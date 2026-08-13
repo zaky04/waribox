@@ -2,6 +2,7 @@ import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { desc, eq, sql } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { findOrCreateCustomerByNameAndPhone } from "./CustomersService";
 import { earnPoints } from "./LoyaltyService";
 import { getSettings } from "./SettingsService";
@@ -53,7 +54,12 @@ function computeTaxAmount(grossTtc: number, taxRate: number): number {
   return grossTtc * (taxRate / (100 + taxRate));
 }
 
-export async function createServiceOrder(db: Database, input: CreateServiceOrderInput) {
+export async function createServiceOrder(
+  db: Database,
+  input: CreateServiceOrderInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "manage_service_orders");
   if (input.items.length === 0) {
     throw new Error("Le ticket doit contenir au moins un article.");
   }
@@ -219,7 +225,9 @@ export interface UpdateServiceOrderItemStatusInput {
 export async function updateServiceOrderItemStatus(
   db: Database,
   input: UpdateServiceOrderItemStatusInput,
+  actingPermissions: PermissionSet,
 ) {
+  requirePermission(actingPermissions, "manage_service_orders");
   const now = new Date().toISOString();
 
   const item = await db
@@ -268,7 +276,9 @@ export async function updateServiceOrder(
   orderId: number,
   input: UpdateServiceOrderInput,
   userId: number,
+  actingPermissions: PermissionSet,
 ) {
+  requirePermission(actingPermissions, "edit_service_orders");
   const order = await db
     .update(schema.serviceOrders)
     .set(input)
@@ -304,7 +314,9 @@ export async function updateServiceOrderItem(
   itemId: number,
   input: UpdateServiceOrderItemInput,
   userId: number,
+  actingPermissions: PermissionSet,
 ) {
+  requirePermission(actingPermissions, "edit_service_orders");
   const current = await db
     .select()
     .from(schema.serviceOrderItems)

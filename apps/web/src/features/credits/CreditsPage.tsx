@@ -150,7 +150,7 @@ export function CreditsPage() {
 
     setSaving(true);
     try {
-      await recordCreditRepayment(db, { creditId: credit.id, amount: value, userId: user.id });
+      await recordCreditRepayment(db, { creditId: credit.id, amount: value, userId: user.id }, user.permissions);
       setPayingId(null);
       setAmount("");
       await refresh();

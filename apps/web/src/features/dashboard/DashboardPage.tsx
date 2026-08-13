@@ -4,7 +4,9 @@ import {
   getSalesSummary,
   getSettings,
   hasPermission,
+  isBackupDue,
   isCreditOverdue,
+  listBackups,
   listCustomerCredits,
   listExpiringBatches,
   listServiceOrders,
@@ -121,6 +123,10 @@ export function DashboardPage() {
   const canViewCredits = hasPermission(user?.permissions ?? {}, "manage_credits");
   const canViewOwnSales = hasPermission(user?.permissions ?? {}, "manage_sales");
   const canSwitchStore = hasPermission(user?.permissions ?? {}, "switch_store");
+  // Aligné sur qui peut effectivement agir sur les sauvegardes (Paramètres →
+  // Sauvegardes est déjà réservé à manage_settings) — pas d'intérêt à
+  // afficher cet indicateur à un rôle qui ne peut de toute façon rien y faire.
+  const canManageBackups = hasPermission(user?.permissions ?? {}, "manage_settings");
 
   const [todayRevenue, setTodayRevenue] = useState(0);
   const [todaySaleCount, setTodaySaleCount] = useState(0);
@@ -130,6 +136,8 @@ export function DashboardPage() {
   const [expiringBatches, setExpiringBatches] = useState<ExpiringBatch[]>([]);
   const [readyOrderCount, setReadyOrderCount] = useState(0);
   const [overdueCredits, setOverdueCredits] = useState<Credit[]>([]);
+  const [backupOverdue, setBackupOverdue] = useState(false);
+  const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
 
   const [stores, setStores] = useState<Awaited<ReturnType<typeof listStores>>>([]);
   const [multiStoreEnabled, setMultiStoreEnabled] = useState(false);
@@ -176,8 +184,26 @@ export function DashboardPage() {
       const credits = await listCustomerCredits(db, storeId);
       setOverdueCredits(credits.filter((c) => isCreditOverdue(c, today)));
     }
+    if (canManageBackups) {
+      const [backups, settings] = await Promise.all([listBackups(db), getSettings(db)]);
+      // La plus récente réussie, tous destinations confondues (dossier local
+      // ou Google Drive) — l'une ou l'autre suffit à protéger les données.
+      const lastSuccess = backups.find((b) => b.status === "success");
+      setLastBackupAt(lastSuccess?.createdAt ?? null);
+      setBackupOverdue(isBackupDue(lastSuccess?.createdAt ?? null, settings.backupFrequency));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, canViewReports, canViewOwnSales, canViewStock, canViewServiceOrders, canViewCredits, user, effectiveStoreId]);
+  }, [
+    db,
+    canViewReports,
+    canViewOwnSales,
+    canViewStock,
+    canViewServiceOrders,
+    canViewCredits,
+    canManageBackups,
+    user,
+    effectiveStoreId,
+  ]);
 
   useEffect(() => {
     refresh();
@@ -256,6 +282,19 @@ export function DashboardPage() {
           <KpiCard icon="💳" iconColor="#f43f5e" title="Créances en retard" value={overdueCredits.length}>
             <span style={badgeStyle(overdueCredits.length > 0 ? "warning" : "ok")}>
               {overdueCredits.length > 0 ? "À relancer" : "Aucune"}
+            </span>
+          </KpiCard>
+        )}
+
+        {canManageBackups && (
+          <KpiCard
+            icon="🛡️"
+            iconColor="#64748b"
+            title="Sauvegarde"
+            value={lastBackupAt ? lastBackupAt.slice(0, 10) : "Jamais"}
+          >
+            <span style={badgeStyle(backupOverdue ? "warning" : "ok")}>
+              {backupOverdue ? "En retard — à faire dans Paramètres" : "À jour"}
             </span>
           </KpiCard>
         )}

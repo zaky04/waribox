@@ -105,7 +105,7 @@ export function DebtsPage() {
 
     setSaving(true);
     try {
-      await recordDebtPayment(db, { debtId: debt.id, amount: value, userId: user.id });
+      await recordDebtPayment(db, { debtId: debt.id, amount: value, userId: user.id }, user.permissions);
       setPayingId(null);
       setAmount("");
       await refresh();

@@ -1,5 +1,5 @@
 import {
-  createBatch,
+  addManualStockEntry,
   getLowStockProducts,
   getSettings,
   getStockLevels,
@@ -8,7 +8,7 @@ import {
   listExpiringBatches,
   listLocations,
   listProducts,
-  recordMovement,
+  recordStockLoss,
   transferStock,
   type ExpiringBatch,
   type LowStockEntry,
@@ -164,27 +164,18 @@ export function StockPage() {
 
     setEntrySaving(true);
     try {
-      let batchId: number | undefined;
-      if (selectedProductTracksExpiry) {
-        const batch = await createBatch(db, {
+      await addManualStockEntry(
+        db,
+        {
           variantId: vId,
           locationId: lId,
-          lotNumber: lotNumber || undefined,
-          expiryDate,
           quantity: qty,
-        });
-        batchId = batch.id;
-      }
-
-      await recordMovement(db, {
-        variantId: vId,
-        locationId: lId,
-        quantityDelta: qty,
-        movementType: "adjustment",
-        referenceType: "manual",
-        batchId,
-        userId: user?.id,
-      });
+          lotNumber: lotNumber || undefined,
+          expiryDate: selectedProductTracksExpiry ? expiryDate : undefined,
+          userId: user?.id,
+        },
+        user?.permissions ?? {},
+      );
 
       setVariantId("");
       setEntryLocationId("");
@@ -218,13 +209,17 @@ export function StockPage() {
 
     setTransferSaving(true);
     try {
-      await transferStock(db, {
-        variantId: vId,
-        fromLocationId: from,
-        toLocationId: to,
-        quantity: qty,
-        userId: user?.id,
-      });
+      await transferStock(
+        db,
+        {
+          variantId: vId,
+          fromLocationId: from,
+          toLocationId: to,
+          quantity: qty,
+          userId: user?.id,
+        },
+        user?.permissions ?? {},
+      );
       setTransferVariantId("");
       setFromLocationId("");
       setToLocationId("");
@@ -255,14 +250,17 @@ export function StockPage() {
 
     setLossSaving(true);
     try {
-      await recordMovement(db, {
-        variantId: vId,
-        locationId: lId,
-        quantityDelta: -qty,
-        movementType: "loss",
-        referenceType: lossReason,
-        userId: user?.id,
-      });
+      await recordStockLoss(
+        db,
+        {
+          variantId: vId,
+          locationId: lId,
+          quantity: qty,
+          reason: lossReason,
+          userId: user?.id,
+        },
+        user?.permissions ?? {},
+      );
       setLossVariantId("");
       setLossLocationId("");
       setLossQuantity("0");
@@ -285,6 +283,20 @@ export function StockPage() {
       .map((entry) => `- ${entry.product.name} : ${entry.totalStock}/${entry.product.lowStockThreshold}`);
     if (lowStock.length > MAX_LISTED) lines.push(`... et ${lowStock.length - MAX_LISTED} autre(s).`);
     const message = `Alerte stock bas — ${lowStock.length} produit(s) à réapprovisionner chez ${businessSettings?.businessName ?? "nous"} :\n${lines.join("\n")}`;
+    void openExternalUrl(buildWhatsAppLink(lowStockAlertPhone, businessSettings?.whatsappCountryCode, message));
+  };
+
+  // Même numéro que l'alerte stock bas (business_settings.lowStockAlertPhone)
+  // — un seul réglage "téléphone à notifier" pour les deux types d'alerte
+  // stock, pas de champ dédié supplémentaire dans Paramètres.
+  const handleNotifyExpiring = () => {
+    if (!lowStockAlertPhone) return;
+    const MAX_LISTED = 15;
+    const lines = expiring
+      .slice(0, MAX_LISTED)
+      .map((e) => `- ${productName(e.variant.productId)} (lot ${e.batch.lotNumber || "—"}) : expire le ${e.batch.expiryDate}`);
+    if (expiring.length > MAX_LISTED) lines.push(`... et ${expiring.length - MAX_LISTED} autre(s).`);
+    const message = `Péremptions proches (≤ ${EXPIRY_WARNING_DAYS} jours) — ${expiring.length} lot(s) chez ${businessSettings?.businessName ?? "nous"} :\n${lines.join("\n")}`;
     void openExternalUrl(buildWhatsAppLink(lowStockAlertPhone, businessSettings?.whatsappCountryCode, message));
   };
 
@@ -323,7 +335,17 @@ export function StockPage() {
 
       {expiring.length > 0 && (
         <div style={{ ...cardStyle, borderLeft: "4px solid #facc15" }}>
-          <strong>Péremptions proches (≤ {EXPIRY_WARNING_DAYS} jours)</strong>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+            <strong>Péremptions proches (≤ {EXPIRY_WARNING_DAYS} jours)</strong>
+            {lowStockAlertPhone && (
+              <button
+                style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 13, whiteSpace: "nowrap" }}
+                onClick={handleNotifyExpiring}
+              >
+                Notifier sur WhatsApp
+              </button>
+            )}
+          </div>
           <ul style={{ margin: 0, paddingLeft: 20 }}>
             {expiring.map((e) => (
               <li key={e.batch.id}>

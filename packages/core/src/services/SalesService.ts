@@ -4,6 +4,7 @@ import { and, desc, eq, gte, like, lte, sql } from "drizzle-orm";
 import { withTransaction } from "@gestion-boutique/database";
 import { logAction } from "./AuditService";
 import { findOrCreateCustomerByName } from "./CustomersService";
+import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { earnPoints, pointsToDiscount, redeemPoints } from "./LoyaltyService";
 import { getSettings } from "./SettingsService";
 import { consumeStockFefo, getStockLevels } from "./StockService";
@@ -60,7 +61,8 @@ export function computeTaxAmount(grossTtc: number, taxRate: number): number {
   return grossTtc * (taxRate / (100 + taxRate));
 }
 
-export async function createSale(db: Database, input: CreateSaleInput) {
+export async function createSale(db: Database, input: CreateSaleInput, actingPermissions: PermissionSet) {
+  requirePermission(actingPermissions, "manage_sales");
   if (input.items.length === 0) {
     throw new Error("La vente doit contenir au moins un article.");
   }

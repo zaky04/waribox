@@ -124,7 +124,7 @@ export function ExpensesPage() {
           paymentMethod,
           note: note.trim() || undefined,
           userId: user?.id,
-        });
+        }, user?.permissions ?? {});
       } else {
         await createExpense(db, {
           category: category.trim(),
@@ -134,7 +134,7 @@ export function ExpensesPage() {
           note: note.trim() || undefined,
           userId: user?.id,
           storeId: currentStoreId ?? undefined,
-        });
+        }, user?.permissions ?? {});
       }
       resetForm();
       await refresh();
@@ -149,7 +149,7 @@ export function ExpensesPage() {
     if (!window.confirm(`Supprimer définitivement la dépense "${expense.category}" (${expense.amount}) ?`)) {
       return;
     }
-    await deleteExpense(db, expense.id, user?.id);
+    await deleteExpense(db, expense.id, user?.permissions ?? {}, user?.id);
     await refresh();
   };
 

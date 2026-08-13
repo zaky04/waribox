@@ -25,6 +25,8 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { openExternalUrl } from "../../lib/openExternalUrl";
+import { buildReceiptWhatsAppMessage, buildWhatsAppLink } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
 import { PrinterPanel } from "../printer/PrinterPanel";
 import { usePrinter } from "../printer/usePrinter";
@@ -105,6 +107,7 @@ export function SalesPage() {
   const [checkingOut, setCheckingOut] = useState(false);
   const [lastSaleNumber, setLastSaleNumber] = useState<string | null>(null);
   const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null);
+  const [receiptPhone, setReceiptPhone] = useState("");
   const [printError, setPrintError] = useState<string | null>(null);
   const [showCloseSession, setShowCloseSession] = useState(false);
   const [expectedCash, setExpectedCash] = useState<number | null>(null);
@@ -326,7 +329,7 @@ export function SalesPage() {
         amountPaid: paidValue,
         surfaceLocationId,
         storeId: currentStoreId,
-      });
+      }, user.permissions);
 
       const customerName =
         customers.find((c) => c.id === Number(customerId))?.fullName || newCustomerName.trim() || undefined;
@@ -356,6 +359,7 @@ export function SalesPage() {
         paymentMethod,
         amountPaid: paidValue,
       });
+      setReceiptPhone(customers.find((c) => c.id === Number(customerId))?.phone ?? "");
       setPrintError(null);
       setCart([]);
       setCustomerId("");
@@ -487,6 +491,28 @@ export function SalesPage() {
               }}
             >
               Enregistrer en PDF
+            </button>
+            <input
+              style={{ ...inputStyle, width: 140, marginTop: 0 }}
+              placeholder="Téléphone client"
+              value={receiptPhone}
+              onChange={(e) => setReceiptPhone(e.target.value)}
+            />
+            <button
+              style={{
+                ...primaryButtonStyle,
+                background: "transparent",
+                border: "1px solid var(--color-border)",
+                color: "var(--color-text)",
+              }}
+              disabled={!lastReceipt || !receiptPhone.trim()}
+              onClick={() => {
+                if (!lastReceipt) return;
+                const message = buildReceiptWhatsAppMessage(lastReceipt);
+                void openExternalUrl(buildWhatsAppLink(receiptPhone, businessSettings?.whatsappCountryCode, message));
+              }}
+            >
+              Envoyer par WhatsApp
             </button>
           </div>
         </div>

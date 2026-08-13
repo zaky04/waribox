@@ -2,6 +2,7 @@ import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { desc, eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { requirePermission, type PermissionSet } from "../domain/permissions";
 
 export async function listSupplierDebts(db: Database, storeId?: number) {
   const query = db.select().from(schema.supplierDebts).orderBy(desc(schema.supplierDebts.id));
@@ -22,7 +23,12 @@ export interface RecordDebtPaymentInput {
   userId: number;
 }
 
-export async function recordDebtPayment(db: Database, input: RecordDebtPaymentInput) {
+export async function recordDebtPayment(
+  db: Database,
+  input: RecordDebtPaymentInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "manage_debts");
   const debt = await db
     .select()
     .from(schema.supplierDebts)

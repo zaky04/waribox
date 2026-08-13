@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import type {
   BalanceSheetReportData,
   CashFlowReportData,
+  CashSessionsReportData,
   IncomeStatementReportData,
   MarginsReportData,
   SalesReportData,
@@ -199,6 +200,23 @@ export function buildSyscohadaBalanceExcel(data: SyscohadaBalanceReportData): Bl
         Débit: r.debit,
         Crédit: r.credit,
         Solde: r.solde,
+      })),
+    },
+  ]);
+}
+
+export function buildCashSessionsReportExcel(data: CashSessionsReportData): Blob {
+  return buildWorkbookBlob([
+    {
+      name: "Sessions de caisse",
+      rows: data.rows.map((r) => ({
+        Ouverture: r.openedAt,
+        Caissier: r.userName,
+        "Montant ouverture": r.openingAmount,
+        Fermeture: r.closedAt ?? "En cours",
+        "Montant fermeture": r.closingAmount ?? "",
+        Attendu: r.expectedAmount ?? "",
+        Écart: r.difference ?? "",
       })),
     },
   ]);

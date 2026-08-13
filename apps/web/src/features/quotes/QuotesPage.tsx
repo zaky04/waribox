@@ -191,7 +191,7 @@ export function QuotesPage() {
         validUntil: validUntil || undefined,
         createdBy: user?.id,
         storeId: currentStoreId ?? undefined,
-      });
+      }, user?.permissions ?? {});
       setCart([]);
       setCustomerId("");
       setNewCustomerName("");
@@ -257,7 +257,7 @@ export function QuotesPage() {
         amountPaid: convertAmountPaid === "" ? undefined : Number(convertAmountPaid),
         userId: user.id,
         storeId: currentStoreId,
-      });
+      }, user.permissions);
       setExpandedQuoteId(null);
       await refresh();
     } catch (err) {
@@ -269,7 +269,7 @@ export function QuotesPage() {
 
   const handleStatusChange = async (quote: Quote, status: "accepted" | "expired") => {
     if (!user) return;
-    await updateQuoteStatus(db, quote.id, status, user.id);
+    await updateQuoteStatus(db, quote.id, status, user.id, user.permissions);
     await refresh();
   };
 

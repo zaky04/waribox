@@ -1,11 +1,15 @@
 import {
   createPurchase,
+  ensureVariantBarcode,
+  getLowStockProducts,
   listAllVariants,
   listProducts,
   listPurchases,
   listSuppliers,
+  type LowStockEntry,
   type PurchasePaymentMethod,
 } from "@gestion-boutique/core";
+import { buildLabelSheetPdf } from "@gestion-boutique/printer";
 import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useState } from "react";
 import { useDatabase } from "../../app/DatabaseProvider";
@@ -20,6 +24,21 @@ import {
   thStyle,
 } from "../../components/sharedStyles";
 import { useAuth } from "../auth/useAuth";
+
+function timestampForFilename(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 type Product = typeof schema.products.$inferSelect;
 type Variant = typeof schema.productVariants.$inferSelect;
@@ -48,6 +67,7 @@ export function PurchasesPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [lowStockEntries, setLowStockEntries] = useState<LowStockEntry[]>([]);
 
   const [supplierId, setSupplierId] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -55,34 +75,39 @@ export function PurchasesPage() {
   const [amountPaid, setAmountPaid] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [lastPurchaseLines, setLastPurchaseLines] = useState<CartLine[]>([]);
+  const [printingLabels, setPrintingLabels] = useState(false);
+  const [labelsError, setLabelsError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [lastPurchaseNumber, setLastPurchaseNumber] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const [supplierRows, productRows, variantRows, purchaseRows] = await Promise.all([
+    const [supplierRows, productRows, variantRows, purchaseRows, lowStockRows] = await Promise.all([
       listSuppliers(db),
       listProducts(db),
       listAllVariants(db),
       listPurchases(db, currentStoreId ?? undefined),
+      getLowStockProducts(db, currentStoreId ?? undefined),
     ]);
     setSuppliers(supplierRows);
     setProducts(productRows);
     setVariants(variantRows);
     setPurchases(purchaseRows);
+    setLowStockEntries(lowStockRows);
   }, [db, currentStoreId]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  const addToCart = (product: Product) => {
+  const addToCart = (product: Product, quantity = 1) => {
     const variant = variants.find((v) => v.productId === product.id);
     if (!variant) return;
     setCart((prev) => {
       const existing = prev.find((line) => line.variantId === variant.id);
       if (existing) {
         return prev.map((line) =>
-          line.variantId === variant.id ? { ...line, quantity: line.quantity + 1 } : line,
+          line.variantId === variant.id ? { ...line, quantity: line.quantity + quantity } : line,
         );
       }
       return [
@@ -90,12 +115,18 @@ export function PurchasesPage() {
         {
           variantId: variant.id,
           productName: product.name,
-          quantity: 1,
+          quantity,
           unitCost: product.purchasePrice,
         },
       ];
     });
   };
+
+  // Quantité suggérée pour ramener le stock au double du seuil d'alerte —
+  // repère de réappro simple et transparent, pas une prévision de vente :
+  // le commerçant reste libre de l'ajuster avant de valider l'achat.
+  const suggestedReorderQuantity = (entry: LowStockEntry): number =>
+    Math.max(1, Math.ceil(entry.product.lowStockThreshold * 2 - entry.totalStock));
 
   const updateQuantity = (variantId: number, quantity: number) => {
     setCart((prev) =>
@@ -157,9 +188,11 @@ export function PurchasesPage() {
         amountPaid: paidValue,
         dueDate: dueDate || undefined,
         storeId: currentStoreId,
-      });
+      }, user.permissions);
 
       setLastPurchaseNumber(purchase.number);
+      setLastPurchaseLines(cart);
+      setLabelsError(null);
       setCart([]);
       setSupplierId("");
       setAmountPaid("");
@@ -173,13 +206,106 @@ export function PurchasesPage() {
     }
   };
 
+  const handlePrintLabels = async () => {
+    setLabelsError(null);
+    if (lastPurchaseLines.length === 0) return;
+
+    setPrintingLabels(true);
+    try {
+      const labels = [];
+      for (const line of lastPurchaseLines) {
+        const product = products.find((p) => p.id === variants.find((v) => v.id === line.variantId)?.productId);
+        if (!product) continue;
+        const barcode = await ensureVariantBarcode(db, line.variantId);
+        // Une étiquette par unité reçue par défaut — copies doit rester un
+        // entier positif (quantité d'achat en `real`, potentiellement
+        // fractionnaire pour un produit au poids).
+        labels.push({
+          name: product.name,
+          price: product.salePrice,
+          barcode,
+          copies: Math.max(1, Math.round(line.quantity)),
+        });
+      }
+      const blob = buildLabelSheetPdf(labels);
+      downloadBlob(blob, `etiquettes-${timestampForFilename()}.pdf`);
+    } catch (err) {
+      setLabelsError(err instanceof Error ? err.message : "Impossible de générer les étiquettes.");
+    } finally {
+      setPrintingLabels(false);
+    }
+  };
+
   return (
     <main style={pageStyle}>
       <h1>Achats</h1>
 
       {lastPurchaseNumber && (
-        <div style={{ ...cardStyle, borderLeft: "4px solid #86efac" }}>
-          Achat enregistré : <strong>{lastPurchaseNumber}</strong>
+        <div
+          style={{
+            ...cardStyle,
+            borderLeft: "4px solid #86efac",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <span>
+            Achat enregistré : <strong>{lastPurchaseNumber}</strong>
+          </span>
+          <button
+            style={{
+              ...primaryButtonStyle,
+              background: "transparent",
+              border: "1px solid var(--color-border)",
+              color: "var(--color-text)",
+            }}
+            disabled={printingLabels || lastPurchaseLines.length === 0}
+            onClick={handlePrintLabels}
+          >
+            {printingLabels ? "Génération..." : "Imprimer les étiquettes"}
+          </button>
+        </div>
+      )}
+      {labelsError && <p style={{ color: "#f87171" }}>{labelsError}</p>}
+
+      {lowStockEntries.length > 0 && (
+        <div style={{ ...cardStyle, borderLeft: "4px solid #fbbf24", marginTop: 24 }}>
+          <strong>Suggestions de réappro (stock bas)</strong>
+          <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
+            Quantité suggérée pour ramener le stock au double du seuil d'alerte — à ajuster avant
+            de valider l'achat. Choisis d'abord un fournisseur ci-dessous si tu veux enregistrer
+            l'achat directement.
+          </p>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Produit</th>
+                <th style={thStyle}>Stock actuel</th>
+                <th style={thStyle}>Seuil d'alerte</th>
+                <th style={thStyle}>Qté suggérée</th>
+                <th style={thStyle}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {lowStockEntries.map((entry) => (
+                <tr key={entry.product.id}>
+                  <td style={tdStyle}>{entry.product.name}</td>
+                  <td style={tdStyle}>{entry.totalStock}</td>
+                  <td style={tdStyle}>{entry.product.lowStockThreshold}</td>
+                  <td style={tdStyle}>{suggestedReorderQuantity(entry)}</td>
+                  <td style={tdStyle}>
+                    <button
+                      style={{ ...primaryButtonStyle, padding: "4px 12px", fontSize: 13 }}
+                      onClick={() => addToCart(entry.product, suggestedReorderQuantity(entry))}
+                    >
+                      Ajouter au panier
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

@@ -2,6 +2,7 @@ import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { requirePermission, type PermissionSet } from "../domain/permissions";
 
 export async function listSuppliers(db: Database) {
   return db.select().from(schema.suppliers);
@@ -14,7 +15,12 @@ export interface CreateSupplierInput {
   createdBy?: number;
 }
 
-export async function createSupplier(db: Database, input: CreateSupplierInput) {
+export async function createSupplier(
+  db: Database,
+  input: CreateSupplierInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "manage_suppliers");
   const supplier = await db
     .insert(schema.suppliers)
     .values({
@@ -45,7 +51,13 @@ export interface UpdateSupplierInput {
   createdBy?: number;
 }
 
-export async function updateSupplier(db: Database, id: number, input: UpdateSupplierInput) {
+export async function updateSupplier(
+  db: Database,
+  id: number,
+  input: UpdateSupplierInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "edit_suppliers");
   const supplier = await db
     .update(schema.suppliers)
     .set({

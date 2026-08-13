@@ -1,7 +1,8 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
-import { and, eq, gte, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { requirePermission, type PermissionSet } from "../domain/permissions";
 
 // Une session est scopée par (utilisateur, boutique) — un même caissier peut
 // avoir une session ouverte par boutique s'il opère sur plusieurs.
@@ -25,7 +26,12 @@ export interface OpenSessionInput {
   openingAmount: number;
 }
 
-export async function openSession(db: Database, input: OpenSessionInput) {
+export async function openSession(
+  db: Database,
+  input: OpenSessionInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "manage_sales");
   const existing = await getActiveSession(db, input.userId, input.storeId);
   if (existing) return existing;
 
@@ -81,7 +87,12 @@ export interface CloseSessionInput {
   expectedAmount: number;
 }
 
-export async function closeSession(db: Database, input: CloseSessionInput) {
+export async function closeSession(
+  db: Database,
+  input: CloseSessionInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "manage_sales");
   const session = await db
     .update(schema.cashSessions)
     .set({
@@ -106,4 +117,24 @@ export async function closeSession(db: Database, input: CloseSessionInput) {
   });
 
   return session;
+}
+
+export interface CashSessionFilters {
+  from?: string; // "YYYY-MM-DD"
+  to?: string;
+  storeId?: number;
+}
+
+// Historique des sessions de caisse pour le rapport de clôture (Rapports →
+// Caisse) — inclut les sessions encore ouvertes (closedAt/closingAmount nuls)
+// dans la plage, pas seulement les clôturées, pour ne pas donner l'illusion
+// qu'une session en cours n'a jamais existé.
+export async function listCashSessions(db: Database, filters: CashSessionFilters = {}) {
+  const conditions = [];
+  if (filters.from) conditions.push(gte(schema.cashSessions.openedAt, `${filters.from.slice(0, 10)} 00:00:00`));
+  if (filters.to) conditions.push(lte(schema.cashSessions.openedAt, `${filters.to.slice(0, 10)} 23:59:59`));
+  if (filters.storeId) conditions.push(eq(schema.cashSessions.storeId, filters.storeId));
+
+  const query = db.select().from(schema.cashSessions).orderBy(desc(schema.cashSessions.id));
+  return conditions.length > 0 ? query.where(and(...conditions)) : query;
 }

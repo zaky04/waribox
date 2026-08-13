@@ -129,9 +129,9 @@ export function CustomersPage() {
         createdBy: user?.id,
       };
       if (editingId) {
-        await updateCustomer(db, editingId, input);
+        await updateCustomer(db, editingId, input, user?.permissions ?? {});
       } else {
-        await createCustomer(db, input);
+        await createCustomer(db, input, user?.permissions ?? {});
       }
       resetForm();
       await refresh();

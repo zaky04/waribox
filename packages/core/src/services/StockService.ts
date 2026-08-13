@@ -2,6 +2,7 @@ import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { DEFAULT_LOCATIONS, type DefaultLocationKey } from "../domain/stock";
+import { requirePermission, type PermissionSet } from "../domain/permissions";
 
 // Idempotent : crée les emplacements par défaut (Réserve / Surface de vente)
 // d'une boutique s'ils n'existent pas encore, puis retourne leurs ids. Le
@@ -111,21 +112,99 @@ export interface TransferStockInput {
   userId?: number;
 }
 
-export async function transferStock(db: Database, input: TransferStockInput) {
-  await recordMovement(db, {
-    variantId: input.variantId,
-    locationId: input.fromLocationId,
-    quantityDelta: -input.quantity,
-    movementType: "transfer",
-    userId: input.userId,
-  });
-  await recordMovement(db, {
-    variantId: input.variantId,
-    locationId: input.toLocationId,
-    quantityDelta: input.quantity,
-    movementType: "transfer",
-    userId: input.userId,
-  });
+// Un transfert doit conserver la traçabilité par lot (coût, péremption) —
+// sans ça, le stock qui passe de la Réserve à la Surface de vente perdrait
+// son lot d'origine et retomberait dans le "reliquat sans lot" de
+// consumeStockFefo, ce qui fausserait le calcul de marge réel dès qu'un
+// achat suit le flux normal Achat → Réserve → Transfert → Vente (voir le
+// commentaire sur getCostOfGoodsSoldBySaleAndVariant dans ReportsService).
+// Même ordre FEFO que consumeStockFefo pour décider quel(s) lot(s) source
+// sont consommés en premier ; chaque lot source consommé se prolonge par un
+// lot "miroir" au même coût/péremption à l'emplacement de destination.
+export async function transferStock(
+  db: Database,
+  input: TransferStockInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "manage_stock");
+  const batches = await db
+    .select()
+    .from(schema.stockBatches)
+    .where(
+      and(
+        eq(schema.stockBatches.variantId, input.variantId),
+        eq(schema.stockBatches.locationId, input.fromLocationId),
+      ),
+    );
+  const remainingMap = await getBatchRemainingMap(db, batches.map((b) => b.id));
+  const withRemaining = batches
+    .map((batch) => ({ batch, remaining: remainingMap.get(batch.id) ?? 0 }))
+    .filter((b) => b.remaining > 0)
+    .sort((a, b) => {
+      if (!a.batch.expiryDate && !b.batch.expiryDate) return a.batch.id - b.batch.id;
+      if (!a.batch.expiryDate) return 1;
+      if (!b.batch.expiryDate) return -1;
+      return a.batch.expiryDate.localeCompare(b.batch.expiryDate);
+    });
+
+  let toTransfer = input.quantity;
+  for (const { batch, remaining } of withRemaining) {
+    if (toTransfer <= 0) break;
+    const take = Math.min(toTransfer, remaining);
+    if (take <= 0) continue;
+
+    await recordMovement(db, {
+      variantId: input.variantId,
+      locationId: input.fromLocationId,
+      quantityDelta: -take,
+      movementType: "transfer",
+      batchId: batch.id,
+      userId: input.userId,
+    });
+
+    // Nouveau lot par transfert plutôt que de chercher à en réutiliser un
+    // existant à destination — reste simple, et le nombre de lots créés
+    // demeure proportionnel aux mouvements réels.
+    const destBatch = await createBatch(db, {
+      variantId: input.variantId,
+      locationId: input.toLocationId,
+      lotNumber: batch.lotNumber ?? undefined,
+      expiryDate: batch.expiryDate ?? undefined,
+      quantity: take,
+      unitCost: batch.unitCost ?? undefined,
+    });
+
+    await recordMovement(db, {
+      variantId: input.variantId,
+      locationId: input.toLocationId,
+      quantityDelta: take,
+      movementType: "transfer",
+      batchId: destBatch.id,
+      userId: input.userId,
+    });
+
+    toTransfer -= take;
+  }
+
+  // Reliquat sans lot (produit non suivi par lot, ou lots insuffisants) —
+  // comme avant l'introduction du suivi par lot, aucune rupture de
+  // compatibilité pour les produits qui n'en ont jamais eu.
+  if (toTransfer > 0) {
+    await recordMovement(db, {
+      variantId: input.variantId,
+      locationId: input.fromLocationId,
+      quantityDelta: -toTransfer,
+      movementType: "transfer",
+      userId: input.userId,
+    });
+    await recordMovement(db, {
+      variantId: input.variantId,
+      locationId: input.toLocationId,
+      quantityDelta: toTransfer,
+      movementType: "transfer",
+      userId: input.userId,
+    });
+  }
 }
 
 export interface StockLevel {
@@ -202,12 +281,87 @@ export interface CreateBatchInput {
   variantId: number;
   locationId: number;
   lotNumber?: string;
-  expiryDate: string;
+  expiryDate?: string;
   quantity: number;
+  // Coût d'achat unitaire de ce lot — renseigné par PurchasesService, absent
+  // pour une entrée de stock manuelle (voir le commentaire sur la colonne
+  // dans schema/stock.ts).
+  unitCost?: number;
 }
 
 export async function createBatch(db: Database, input: CreateBatchInput) {
   return db.insert(schema.stockBatches).values(input).returning().get();
+}
+
+export interface ManualStockEntryInput {
+  variantId: number;
+  locationId: number;
+  quantity: number;
+  lotNumber?: string;
+  expiryDate?: string;
+  userId?: number;
+}
+
+// Entrée de stock manuelle (StockPage) — distincte des mouvements internes
+// (achat, vente, transfert, remboursement), qui portent chacun leur propre
+// permission via leur flux d'origine et appellent directement createBatch/
+// recordMovement (primitives volontairement non gardées, car partagées par
+// ces flux). Celle-ci est le seul point d'entrée de saisie manuelle, donc
+// gardée elle-même.
+export async function addManualStockEntry(
+  db: Database,
+  input: ManualStockEntryInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "manage_stock");
+
+  let batchId: number | undefined;
+  if (input.expiryDate) {
+    const batch = await createBatch(db, {
+      variantId: input.variantId,
+      locationId: input.locationId,
+      lotNumber: input.lotNumber,
+      expiryDate: input.expiryDate,
+      quantity: input.quantity,
+    });
+    batchId = batch.id;
+  }
+
+  await recordMovement(db, {
+    variantId: input.variantId,
+    locationId: input.locationId,
+    quantityDelta: input.quantity,
+    movementType: "adjustment",
+    referenceType: "manual",
+    batchId,
+    userId: input.userId,
+  });
+}
+
+export interface RecordStockLossInput {
+  variantId: number;
+  locationId: number;
+  quantity: number;
+  reason: string;
+  userId?: number;
+}
+
+// Retrait pour perte/péremption/casse/vol (StockPage) — même raisonnement
+// que addManualStockEntry ci-dessus.
+export async function recordStockLoss(
+  db: Database,
+  input: RecordStockLossInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "manage_stock");
+  await recordMovement(db, {
+    variantId: input.variantId,
+    locationId: input.locationId,
+    quantityDelta: -input.quantity,
+    movementType: "loss",
+    referenceType: input.reason,
+    userId: input.userId,
+  });
 }
 
 // Utilisé par Journaux pour afficher le numéro de lot d'un mouvement de

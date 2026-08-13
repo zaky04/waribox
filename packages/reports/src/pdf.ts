@@ -294,3 +294,38 @@ export function buildSyscohadaBalancePdf(data: SyscohadaBalanceReportData): Blob
     rows,
   );
 }
+
+export interface CashSessionReportRow {
+  userName: string;
+  openedAt: string;
+  openingAmount: number;
+  closedAt: string | null;
+  closingAmount: number | null;
+  expectedAmount: number | null;
+  difference: number | null;
+}
+
+export interface CashSessionsReportData {
+  from: string;
+  to: string;
+  rows: CashSessionReportRow[];
+}
+
+export function buildCashSessionsReportPdf(data: CashSessionsReportData): Blob {
+  const totalDifference = data.rows.reduce((sum, r) => sum + (r.difference ?? 0), 0);
+  const rows = data.rows.map((r) => [
+    r.openedAt,
+    r.userName,
+    r.openingAmount.toFixed(0),
+    r.closedAt ?? "En cours",
+    r.closingAmount != null ? r.closingAmount.toFixed(0) : "—",
+    r.expectedAmount != null ? r.expectedAmount.toFixed(0) : "—",
+    r.difference != null ? r.difference.toFixed(0) : "—",
+  ]);
+  return buildReportPdf(
+    "Rapport de clôture de caisse",
+    `Du ${data.from} au ${data.to} — ${data.rows.length} session(s) — écart cumulé : ${totalDifference.toFixed(0)}`,
+    ["Ouverture", "Caissier", "Montant ouverture", "Fermeture", "Montant fermeture", "Attendu", "Écart"],
+    rows,
+  );
+}
