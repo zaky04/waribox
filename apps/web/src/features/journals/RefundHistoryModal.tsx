@@ -55,10 +55,14 @@ export function RefundHistoryModal({
         alignItems: "center",
         justifyContent: "center",
         zIndex: 1000,
+        padding: 16,
       }}
       onClick={onClose}
     >
-      <div style={{ ...cardStyle, width: 560, maxHeight: "85vh", overflowY: "auto", marginTop: 0 }} onClick={(e) => e.stopPropagation()}>
+      <div
+        style={{ ...cardStyle, width: "min(560px, 100%)", maxHeight: "85vh", overflowY: "auto", marginTop: 0 }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2 style={{ margin: 0 }}>{t("journals.refundHistoryModal.title", { number: sale.number })}</h2>
 
         {loading ? (
@@ -76,7 +80,7 @@ export function RefundHistoryModal({
                 marginTop: 12,
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                 <strong>{refund.createdAt}</strong>
                 <strong>{refund.total.toFixed(0)}</strong>
               </div>

@@ -105,7 +105,7 @@ export function SuppliersPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1>{t("suppliers.title")}</h1>
         <button
           style={primaryButtonStyle}
@@ -142,46 +142,48 @@ export function SuppliersPage() {
         </div>
       )}
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>{t("suppliers.name")}</th>
-            <th style={thStyle}>{t("suppliers.phone")}</th>
-            <th style={thStyle}>{t("suppliers.contactPerson")}</th>
-            <th style={thStyle}>{t("suppliers.debtBalance")}</th>
-            <th style={thStyle}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {suppliers.map((s) => (
-            <tr key={s.id}>
-              <td style={tdStyle}>{s.name}</td>
-              <td style={tdStyle}>{s.phone ?? "—"}</td>
-              <td style={tdStyle}>{s.contactPerson ?? "—"}</td>
-              <td style={{ ...tdStyle, color: debtBalance(s.id) > 0 ? "#fdba74" : undefined }}>
-                {debtBalance(s.id) > 0 ? debtBalance(s.id) : "—"}
-              </td>
-              <td style={tdStyle}>
-                {user && hasPermission(user.permissions, "edit_suppliers") && (
-                  <button
-                    style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                    onClick={() => startEdit(s)}
-                  >
-                    {t("suppliers.edit")}
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-          {suppliers.length === 0 && (
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
             <tr>
-              <td style={tdStyle} colSpan={5}>
-                {t("suppliers.none")}
-              </td>
+              <th style={thStyle}>{t("suppliers.name")}</th>
+              <th style={thStyle}>{t("suppliers.phone")}</th>
+              <th style={thStyle}>{t("suppliers.contactPerson")}</th>
+              <th style={thStyle}>{t("suppliers.debtBalance")}</th>
+              <th style={thStyle}></th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {suppliers.map((s) => (
+              <tr key={s.id}>
+                <td style={tdStyle}>{s.name}</td>
+                <td style={tdStyle}>{s.phone ?? "—"}</td>
+                <td style={tdStyle}>{s.contactPerson ?? "—"}</td>
+                <td style={{ ...tdStyle, color: debtBalance(s.id) > 0 ? "#fdba74" : undefined }}>
+                  {debtBalance(s.id) > 0 ? debtBalance(s.id) : "—"}
+                </td>
+                <td style={tdStyle}>
+                  {user && hasPermission(user.permissions, "edit_suppliers") && (
+                    <button
+                      style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                      onClick={() => startEdit(s)}
+                    >
+                      {t("suppliers.edit")}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {suppliers.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={5}>
+                  {t("suppliers.none")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </main>
   );
 }

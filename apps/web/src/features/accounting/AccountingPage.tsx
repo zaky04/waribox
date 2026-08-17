@@ -171,9 +171,9 @@ export function AccountingPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1>{t("accounting.title")}</h1>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {subTabs.map((tab) => (
             <button
               key={tab.key}
@@ -195,7 +195,7 @@ export function AccountingPage() {
 
       {subTab === "income" && (
         <>
-          <div style={{ ...cardStyle, flexDirection: "row", gap: 16, alignItems: "flex-end" }}>
+          <div style={{ ...cardStyle, flexDirection: "row", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
             <label>
               {t("accounting.from")}
               <input
@@ -236,9 +236,9 @@ export function AccountingPage() {
                 </div>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24, flexWrap: "wrap", gap: 8 }}>
                 <strong>{t("accounting.expensesByCategory")}</strong>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   <button style={secondaryButtonStyle} onClick={exportIncomePdf}>
                     {t("accounting.exportPdf")}
                   </button>
@@ -247,29 +247,31 @@ export function AccountingPage() {
                   </button>
                 </div>
               </div>
-              <table style={tableStyle}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>{t("accounting.category")}</th>
-                    <th style={thStyle}>{t("accounting.amount")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {incomeStatement.expensesByCategory.map((e) => (
-                    <tr key={e.category}>
-                      <td style={tdStyle}>{e.category}</td>
-                      <td style={tdStyle}>{e.amount.toFixed(0)}</td>
-                    </tr>
-                  ))}
-                  {incomeStatement.expensesByCategory.length === 0 && (
+              <div style={{ overflowX: "auto" }}>
+                <table style={tableStyle}>
+                  <thead>
                     <tr>
-                      <td style={tdStyle} colSpan={2}>
-                        {t("accounting.noExpenses")}
-                      </td>
+                      <th style={thStyle}>{t("accounting.category")}</th>
+                      <th style={thStyle}>{t("accounting.amount")}</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {incomeStatement.expensesByCategory.map((e) => (
+                      <tr key={e.category}>
+                        <td style={tdStyle}>{e.category}</td>
+                        <td style={tdStyle}>{e.amount.toFixed(0)}</td>
+                      </tr>
+                    ))}
+                    {incomeStatement.expensesByCategory.length === 0 && (
+                      <tr>
+                        <td style={tdStyle} colSpan={2}>
+                          {t("accounting.noExpenses")}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </>
           )}
         </>
@@ -340,7 +342,7 @@ export function AccountingPage() {
             {t("accounting.syscohadaWarning")}
           </div>
 
-          <div style={{ ...cardStyle, flexDirection: "row", gap: 16, alignItems: "flex-end", marginTop: 16 }}>
+          <div style={{ ...cardStyle, flexDirection: "row", flexWrap: "wrap", gap: 16, alignItems: "flex-end", marginTop: 16 }}>
             <label>
               {t("accounting.from")}
               <input
@@ -357,7 +359,7 @@ export function AccountingPage() {
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, flexWrap: "wrap", gap: 8 }}>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {(
                 [
                   { key: "ventes", label: t("accounting.views.ventes") },
@@ -380,7 +382,7 @@ export function AccountingPage() {
                 </button>
               ))}
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               <button style={secondaryButtonStyle} onClick={exportSyscohadaPdf}>
                 {t("accounting.exportPdf")}
               </button>

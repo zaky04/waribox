@@ -110,3 +110,20 @@ table tbody tr:hover {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-muted);
 }
+
+/* Grille "liste + panier" (Ventes, Achats, Devis, Tickets de service) : une
+   colonne flexible + une colonne fixe de 380px sur desktop, empilées en une
+   seule colonne sous 720px — sinon la colonne fixe à elle seule dépasse la
+   largeur d'un téléphone. Une classe plutôt qu'un style inline car une media
+   query ne peut pas s'exprimer dans un objet CSSProperties. */
+.cart-layout-grid {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 24px;
+  margin-top: 24px;
+}
+@media (max-width: 720px) {
+  .cart-layout-grid {
+    grid-template-columns: 1fr;
+  }
+}

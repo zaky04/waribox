@@ -951,37 +951,39 @@ export function SettingsPage() {
 
         {backupError && <p style={{ color: "#f87171" }}>{backupError}</p>}
 
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={thStyle}>{t("settings.backups.date")}</th>
-              <th style={thStyle}>{t("settings.backups.destination")}</th>
-              <th style={thStyle}>{t("settings.backups.status")}</th>
-              <th style={thStyle}>{t("settings.backups.detail")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {backups.slice(0, 10).map((b) => (
-              <tr key={b.id}>
-                <td style={tdStyle}>{b.createdAt}</td>
-                <td style={tdStyle}>{DESTINATION_LABELS[b.destination as BackupDestination] ?? b.destination}</td>
-                <td style={tdStyle}>
-                  <span style={badgeStyle(b.status === "success" ? "ok" : "warning")}>
-                    {b.status === "success" ? t("settings.backups.success") : t("settings.backups.failure")}
-                  </span>
-                </td>
-                <td style={tdStyle}>{b.fileRef ?? "—"}</td>
-              </tr>
-            ))}
-            {backups.length === 0 && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={tableStyle}>
+            <thead>
               <tr>
-                <td style={tdStyle} colSpan={4}>
-                  {t("settings.backups.none")}
-                </td>
+                <th style={thStyle}>{t("settings.backups.date")}</th>
+                <th style={thStyle}>{t("settings.backups.destination")}</th>
+                <th style={thStyle}>{t("settings.backups.status")}</th>
+                <th style={thStyle}>{t("settings.backups.detail")}</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {backups.slice(0, 10).map((b) => (
+                <tr key={b.id}>
+                  <td style={tdStyle}>{b.createdAt}</td>
+                  <td style={tdStyle}>{DESTINATION_LABELS[b.destination as BackupDestination] ?? b.destination}</td>
+                  <td style={tdStyle}>
+                    <span style={badgeStyle(b.status === "success" ? "ok" : "warning")}>
+                      {b.status === "success" ? t("settings.backups.success") : t("settings.backups.failure")}
+                    </span>
+                  </td>
+                  <td style={tdStyle}>{b.fileRef ?? "—"}</td>
+                </tr>
+              ))}
+              {backups.length === 0 && (
+                <tr>
+                  <td style={tdStyle} colSpan={4}>
+                    {t("settings.backups.none")}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div style={cardStyle}>

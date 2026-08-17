@@ -13,6 +13,7 @@ export function UpdateBanner() {
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
+        flexWrap: "wrap",
         gap: 16,
         padding: "10px 24px",
         background: "var(--color-bg-elevated)",
@@ -21,7 +22,7 @@ export function UpdateBanner() {
       }}
     >
       <span>{t("updateBanner.message")}</span>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         <button
           onClick={() => updateServiceWorker(true)}
           style={{

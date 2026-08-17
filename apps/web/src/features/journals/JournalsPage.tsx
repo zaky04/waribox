@@ -288,9 +288,9 @@ export function JournalsPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1>{t("journals.title")}</h1>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {(["sales", "stock", "actions"] as const).map((key) => (
             <button
               key={key}
@@ -378,83 +378,85 @@ export function JournalsPage() {
             )}
           </FilterBar>
 
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>{t("journals.sales.number")}</th>
-                <th style={thStyle}>{t("journals.sales.date")}</th>
-                <th style={thStyle}>{t("journals.sales.customer")}</th>
-                <th style={thStyle}>{t("journals.sales.mode")}</th>
-                {multiStoreEnabled && <th style={thStyle}>{t("journals.sales.store")}</th>}
-                <th style={thStyle}>{t("journals.sales.total")}</th>
-                <th style={thStyle}>{t("journals.sales.payment")}</th>
-                <th style={thStyle}>{t("journals.sales.cashier")}</th>
-                {canManageRefunds && <th style={thStyle}>{t("journals.sales.refundColumn")}</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredSales.map((sale) => (
-                <tr key={sale.id}>
-                  <td style={tdStyle}>{sale.number}</td>
-                  <td style={tdStyle}>{sale.createdAt}</td>
-                  <td style={tdStyle}>{customerName(sale.customerId) ?? "—"}</td>
-                  <td style={tdStyle}>{sale.saleMode === "pos" ? t("journals.sales.modePos") : t("journals.sales.modeForm")}</td>
-                  {multiStoreEnabled && <td style={tdStyle}>{storeName(sale.storeId)}</td>}
-                  <td style={tdStyle}>{sale.total}</td>
-                  <td style={tdStyle}>{PAYMENT_STATUS_LABELS[sale.paymentStatus] ?? sale.paymentStatus}</td>
-                  <td style={tdStyle}>{userName(sale.userId)}</td>
-                  {canManageRefunds && (
-                    <td style={{ ...tdStyle, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                      {sale.status === "refunded" && <span style={{ color: "#f87171" }}>{t("journals.sales.refunded")}</span>}
-                      {sale.status !== "refunded" && (refundTotals[sale.id] ?? 0) > 0 && (
-                        <span style={{ color: "#fdba74" }}>{t("journals.sales.partiallyRefunded")}</span>
-                      )}
-                      {(refundTotals[sale.id] ?? 0) > 0 && (
-                        <button
-                          onClick={() => setHistorySale(sale)}
-                          style={{
-                            background: "transparent",
-                            border: "1px solid var(--color-border)",
-                            color: "var(--color-text)",
-                            borderRadius: "var(--radius-md)",
-                            padding: "6px 12px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          {t("journals.sales.history")}
-                        </button>
-                      )}
-                      {sale.status !== "refunded" && (
-                        <button
-                          onClick={() => setRefundingSale(sale)}
-                          style={{
-                            background: "transparent",
-                            border: "1px solid var(--color-border)",
-                            color: "var(--color-text)",
-                            borderRadius: "var(--radius-md)",
-                            padding: "6px 12px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          {t("journals.sales.refund")}
-                        </button>
-                      )}
-                    </td>
-                  )}
-                </tr>
-              ))}
-              {filteredSales.length === 0 && (
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead>
                 <tr>
-                  <td
-                    style={tdStyle}
-                    colSpan={7 + (multiStoreEnabled ? 1 : 0) + (canManageRefunds ? 1 : 0)}
-                  >
-                    {t("journals.sales.noSales")}
-                  </td>
+                  <th style={thStyle}>{t("journals.sales.number")}</th>
+                  <th style={thStyle}>{t("journals.sales.date")}</th>
+                  <th style={thStyle}>{t("journals.sales.customer")}</th>
+                  <th style={thStyle}>{t("journals.sales.mode")}</th>
+                  {multiStoreEnabled && <th style={thStyle}>{t("journals.sales.store")}</th>}
+                  <th style={thStyle}>{t("journals.sales.total")}</th>
+                  <th style={thStyle}>{t("journals.sales.payment")}</th>
+                  <th style={thStyle}>{t("journals.sales.cashier")}</th>
+                  {canManageRefunds && <th style={thStyle}>{t("journals.sales.refundColumn")}</th>}
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredSales.map((sale) => (
+                  <tr key={sale.id}>
+                    <td style={tdStyle}>{sale.number}</td>
+                    <td style={tdStyle}>{sale.createdAt}</td>
+                    <td style={tdStyle}>{customerName(sale.customerId) ?? "—"}</td>
+                    <td style={tdStyle}>{sale.saleMode === "pos" ? t("journals.sales.modePos") : t("journals.sales.modeForm")}</td>
+                    {multiStoreEnabled && <td style={tdStyle}>{storeName(sale.storeId)}</td>}
+                    <td style={tdStyle}>{sale.total}</td>
+                    <td style={tdStyle}>{PAYMENT_STATUS_LABELS[sale.paymentStatus] ?? sale.paymentStatus}</td>
+                    <td style={tdStyle}>{userName(sale.userId)}</td>
+                    {canManageRefunds && (
+                      <td style={{ ...tdStyle, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                        {sale.status === "refunded" && <span style={{ color: "#f87171" }}>{t("journals.sales.refunded")}</span>}
+                        {sale.status !== "refunded" && (refundTotals[sale.id] ?? 0) > 0 && (
+                          <span style={{ color: "#fdba74" }}>{t("journals.sales.partiallyRefunded")}</span>
+                        )}
+                        {(refundTotals[sale.id] ?? 0) > 0 && (
+                          <button
+                            onClick={() => setHistorySale(sale)}
+                            style={{
+                              background: "transparent",
+                              border: "1px solid var(--color-border)",
+                              color: "var(--color-text)",
+                              borderRadius: "var(--radius-md)",
+                              padding: "6px 12px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {t("journals.sales.history")}
+                          </button>
+                        )}
+                        {sale.status !== "refunded" && (
+                          <button
+                            onClick={() => setRefundingSale(sale)}
+                            style={{
+                              background: "transparent",
+                              border: "1px solid var(--color-border)",
+                              color: "var(--color-text)",
+                              borderRadius: "var(--radius-md)",
+                              padding: "6px 12px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {t("journals.sales.refund")}
+                          </button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+                {filteredSales.length === 0 && (
+                  <tr>
+                    <td
+                      style={tdStyle}
+                      colSpan={7 + (multiStoreEnabled ? 1 : 0) + (canManageRefunds ? 1 : 0)}
+                    >
+                      {t("journals.sales.noSales")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
@@ -530,46 +532,48 @@ export function JournalsPage() {
             </label>
           </FilterBar>
 
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>{t("journals.stock.date")}</th>
-                <th style={thStyle}>{t("journals.stock.product")}</th>
-                <th style={thStyle}>{t("journals.stock.location")}</th>
-                <th style={thStyle}>{t("journals.stock.type")}</th>
-                <th style={thStyle}>{t("journals.stock.reason")}</th>
-                <th style={thStyle}>{t("journals.stock.lot")}</th>
-                <th style={thStyle}>{t("journals.stock.quantity")}</th>
-                <th style={thStyle}>{t("journals.stock.user")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredMovements.map((m) => (
-                <tr key={m.id}>
-                  <td style={tdStyle}>{m.createdAt}</td>
-                  <td style={tdStyle}>{variantLabel(m.variantId)}</td>
-                  <td style={tdStyle}>{locationName(m.locationId)}</td>
-                  <td style={tdStyle}>{MOVEMENT_TYPE_LABELS[m.movementType] ?? m.movementType}</td>
-                  <td style={tdStyle}>
-                    {m.movementType === "loss" ? (LOSS_REASON_LABELS[m.referenceType ?? ""] ?? "—") : "—"}
-                  </td>
-                  <td style={tdStyle}>{lotLabel(m.batchId)}</td>
-                  <td style={{ ...tdStyle, color: m.quantityDelta < 0 ? "#f87171" : "#86efac" }}>
-                    {m.quantityDelta > 0 ? "+" : ""}
-                    {m.quantityDelta}
-                  </td>
-                  <td style={tdStyle}>{userName(m.createdBy)}</td>
-                </tr>
-              ))}
-              {filteredMovements.length === 0 && (
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead>
                 <tr>
-                  <td style={tdStyle} colSpan={8}>
-                    {t("journals.stock.noMovements")}
-                  </td>
+                  <th style={thStyle}>{t("journals.stock.date")}</th>
+                  <th style={thStyle}>{t("journals.stock.product")}</th>
+                  <th style={thStyle}>{t("journals.stock.location")}</th>
+                  <th style={thStyle}>{t("journals.stock.type")}</th>
+                  <th style={thStyle}>{t("journals.stock.reason")}</th>
+                  <th style={thStyle}>{t("journals.stock.lot")}</th>
+                  <th style={thStyle}>{t("journals.stock.quantity")}</th>
+                  <th style={thStyle}>{t("journals.stock.user")}</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredMovements.map((m) => (
+                  <tr key={m.id}>
+                    <td style={tdStyle}>{m.createdAt}</td>
+                    <td style={tdStyle}>{variantLabel(m.variantId)}</td>
+                    <td style={tdStyle}>{locationName(m.locationId)}</td>
+                    <td style={tdStyle}>{MOVEMENT_TYPE_LABELS[m.movementType] ?? m.movementType}</td>
+                    <td style={tdStyle}>
+                      {m.movementType === "loss" ? (LOSS_REASON_LABELS[m.referenceType ?? ""] ?? "—") : "—"}
+                    </td>
+                    <td style={tdStyle}>{lotLabel(m.batchId)}</td>
+                    <td style={{ ...tdStyle, color: m.quantityDelta < 0 ? "#f87171" : "#86efac" }}>
+                      {m.quantityDelta > 0 ? "+" : ""}
+                      {m.quantityDelta}
+                    </td>
+                    <td style={tdStyle}>{userName(m.createdBy)}</td>
+                  </tr>
+                ))}
+                {filteredMovements.length === 0 && (
+                  <tr>
+                    <td style={tdStyle} colSpan={8}>
+                      {t("journals.stock.noMovements")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
@@ -617,39 +621,41 @@ export function JournalsPage() {
             </label>
           </FilterBar>
 
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>{t("journals.actions.date")}</th>
-                <th style={thStyle}>{t("journals.actions.user")}</th>
-                <th style={thStyle}>{t("journals.actions.action")}</th>
-                <th style={thStyle}>{t("journals.actions.details")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {auditEntries.map((entry) => (
-                <tr key={entry.id}>
-                  <td style={tdStyle}>{entry.createdAt}</td>
-                  <td style={tdStyle}>{userName(entry.userId)}</td>
-                  <td style={tdStyle}>{ACTION_LABELS[entry.action] ?? entry.action}</td>
-                  <td style={tdStyle}>
-                    {entry.metadata
-                      ? Object.entries(JSON.parse(entry.metadata) as Record<string, unknown>)
-                          .map(([k, v]) => `${k}: ${v}`)
-                          .join(", ")
-                      : "—"}
-                  </td>
-                </tr>
-              ))}
-              {auditEntries.length === 0 && (
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead>
                 <tr>
-                  <td style={tdStyle} colSpan={4}>
-                    {t("journals.actions.noActions")}
-                  </td>
+                  <th style={thStyle}>{t("journals.actions.date")}</th>
+                  <th style={thStyle}>{t("journals.actions.user")}</th>
+                  <th style={thStyle}>{t("journals.actions.action")}</th>
+                  <th style={thStyle}>{t("journals.actions.details")}</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {auditEntries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td style={tdStyle}>{entry.createdAt}</td>
+                    <td style={tdStyle}>{userName(entry.userId)}</td>
+                    <td style={tdStyle}>{ACTION_LABELS[entry.action] ?? entry.action}</td>
+                    <td style={tdStyle}>
+                      {entry.metadata
+                        ? Object.entries(JSON.parse(entry.metadata) as Record<string, unknown>)
+                            .map(([k, v]) => `${k}: ${v}`)
+                            .join(", ")
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+                {auditEntries.length === 0 && (
+                  <tr>
+                    <td style={tdStyle} colSpan={4}>
+                      {t("journals.actions.noActions")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </main>

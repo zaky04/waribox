@@ -108,10 +108,14 @@ export function RefundModal({
         alignItems: "center",
         justifyContent: "center",
         zIndex: 1000,
+        padding: 16,
       }}
       onClick={onClose}
     >
-      <div style={{ ...cardStyle, width: 560, maxHeight: "85vh", overflowY: "auto", marginTop: 0 }} onClick={(e) => e.stopPropagation()}>
+      <div
+        style={{ ...cardStyle, width: "min(560px, 100%)", maxHeight: "85vh", overflowY: "auto", marginTop: 0 }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2 style={{ margin: 0 }}>{t("journals.refundModal.title", { number: sale.number })}</h2>
 
         {loading ? (

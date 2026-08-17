@@ -258,56 +258,58 @@ export function SalesHistoryPage() {
         </label>
       </FilterBar>
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>{t("salesHistory.number")}</th>
-            <th style={thStyle}>{t("salesHistory.date")}</th>
-            <th style={thStyle}>{t("salesHistory.customer")}</th>
-            {multiStoreEnabled && <th style={thStyle}>{t("salesHistory.store")}</th>}
-            <th style={thStyle}>{t("salesHistory.seller")}</th>
-            <th style={thStyle}>{t("salesHistory.paymentMethod")}</th>
-            <th style={thStyle}>{t("salesHistory.total")}</th>
-            <th style={thStyle}>{t("salesHistory.status")}</th>
-            <th style={thStyle}>{t("salesHistory.report")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sales.map((sale) => (
-            <tr key={sale.id}>
-              <td style={tdStyle}>{sale.number}</td>
-              <td style={tdStyle}>{sale.createdAt}</td>
-              <td style={tdStyle}>{customerName(sale.customerId) ?? "—"}</td>
-              {multiStoreEnabled && <td style={tdStyle}>{storeName(sale.storeId)}</td>}
-              <td style={tdStyle}>{userName(sale.userId)}</td>
-              <td style={tdStyle}>
-                {(() => {
-                  const method = paymentForSale(sale.id)?.method;
-                  return method ? (PAYMENT_METHOD_LABELS[method as PaymentMethod] ?? method) : "—";
-                })()}
-              </td>
-              <td style={tdStyle}>{sale.total}</td>
-              <td style={tdStyle}>{PAYMENT_STATUS_LABELS[sale.paymentStatus] ?? sale.paymentStatus}</td>
-              <td style={tdStyle}>
-                <button
-                  style={{ ...primaryButtonStyle, padding: "6px 12px" }}
-                  disabled={generatingSaleId === sale.id}
-                  onClick={() => handleGenerateReport(sale)}
-                >
-                  {generatingSaleId === sale.id ? t("salesHistory.generating") : t("salesHistory.report")}
-                </button>
-              </td>
-            </tr>
-          ))}
-          {sales.length === 0 && (
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
             <tr>
-              <td style={tdStyle} colSpan={8 + (multiStoreEnabled ? 1 : 0)}>
-                {t("salesHistory.noSales")}
-              </td>
+              <th style={thStyle}>{t("salesHistory.number")}</th>
+              <th style={thStyle}>{t("salesHistory.date")}</th>
+              <th style={thStyle}>{t("salesHistory.customer")}</th>
+              {multiStoreEnabled && <th style={thStyle}>{t("salesHistory.store")}</th>}
+              <th style={thStyle}>{t("salesHistory.seller")}</th>
+              <th style={thStyle}>{t("salesHistory.paymentMethod")}</th>
+              <th style={thStyle}>{t("salesHistory.total")}</th>
+              <th style={thStyle}>{t("salesHistory.status")}</th>
+              <th style={thStyle}>{t("salesHistory.report")}</th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {sales.map((sale) => (
+              <tr key={sale.id}>
+                <td style={tdStyle}>{sale.number}</td>
+                <td style={tdStyle}>{sale.createdAt}</td>
+                <td style={tdStyle}>{customerName(sale.customerId) ?? "—"}</td>
+                {multiStoreEnabled && <td style={tdStyle}>{storeName(sale.storeId)}</td>}
+                <td style={tdStyle}>{userName(sale.userId)}</td>
+                <td style={tdStyle}>
+                  {(() => {
+                    const method = paymentForSale(sale.id)?.method;
+                    return method ? (PAYMENT_METHOD_LABELS[method as PaymentMethod] ?? method) : "—";
+                  })()}
+                </td>
+                <td style={tdStyle}>{sale.total}</td>
+                <td style={tdStyle}>{PAYMENT_STATUS_LABELS[sale.paymentStatus] ?? sale.paymentStatus}</td>
+                <td style={tdStyle}>
+                  <button
+                    style={{ ...primaryButtonStyle, padding: "6px 12px" }}
+                    disabled={generatingSaleId === sale.id}
+                    onClick={() => handleGenerateReport(sale)}
+                  >
+                    {generatingSaleId === sale.id ? t("salesHistory.generating") : t("salesHistory.report")}
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {sales.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={8 + (multiStoreEnabled ? 1 : 0)}>
+                  {t("salesHistory.noSales")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </main>
   );
 }

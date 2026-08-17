@@ -388,9 +388,9 @@ export function SalesPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1>{t("sales.title")}</h1>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button
             onClick={() => setMode("pos")}
             style={{
@@ -456,12 +456,14 @@ export function SalesPage() {
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 8,
           }}
         >
           <span>
             {t("sales.saleRegistered")} <strong>{lastSaleNumber}</strong>
           </span>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             <button
               style={primaryButtonStyle}
               disabled={!printer.connected || !lastReceipt}
@@ -522,7 +524,7 @@ export function SalesPage() {
 
       {printError && <p style={{ color: "#f87171" }}>{printError}</p>}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 24, marginTop: 24 }}>
+      <div className="cart-layout-grid">
         <div>
           {mode === "pos" ? (
             <>
@@ -640,53 +642,55 @@ export function SalesPage() {
           {cart.length === 0 ? (
             <p style={{ color: "var(--color-text-muted)" }}>{t("sales.emptyCart")}</p>
           ) : (
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>{t("sales.item")}</th>
-                  <th style={thStyle}>{t("sales.quantity")}</th>
-                  <th style={thStyle}>{t("sales.total")}</th>
-                  <th style={thStyle}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {cart.map((line) => {
-                  const lineGross = line.quantity * line.unitPrice;
-                  const promo = lineDiscount(line.productId);
-                  const lineDiscountAmount = lineGross * (promo.percent / 100);
-                  return (
-                    <tr key={line.variantId}>
-                      <td style={tdStyle}>
-                        {line.productName}
-                        {promo.percent > 0 && (
-                          <div style={{ color: "#86efac", fontSize: 12 }}>
-                            {t("sales.promo")}
-                            {promo.name ? ` ${promo.name}` : ""} -{promo.percent}%
-                          </div>
-                        )}
-                      </td>
-                      <td style={tdStyle}>
-                        <input
-                          type="number"
-                          value={line.quantity}
-                          onChange={(e) => updateQuantity(line.variantId, Number(e.target.value))}
-                          style={{ ...inputStyle, width: 60, marginTop: 0 }}
-                        />
-                      </td>
-                      <td style={tdStyle}>{(lineGross - lineDiscountAmount).toFixed(0)}</td>
-                      <td style={tdStyle}>
-                        <button
-                          onClick={() => removeLine(line.variantId)}
-                          style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
-                        >
-                          ✕
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div style={{ overflowX: "auto" }}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>{t("sales.item")}</th>
+                    <th style={thStyle}>{t("sales.quantity")}</th>
+                    <th style={thStyle}>{t("sales.total")}</th>
+                    <th style={thStyle}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cart.map((line) => {
+                    const lineGross = line.quantity * line.unitPrice;
+                    const promo = lineDiscount(line.productId);
+                    const lineDiscountAmount = lineGross * (promo.percent / 100);
+                    return (
+                      <tr key={line.variantId}>
+                        <td style={tdStyle}>
+                          {line.productName}
+                          {promo.percent > 0 && (
+                            <div style={{ color: "#86efac", fontSize: 12 }}>
+                              {t("sales.promo")}
+                              {promo.name ? ` ${promo.name}` : ""} -{promo.percent}%
+                            </div>
+                          )}
+                        </td>
+                        <td style={tdStyle}>
+                          <input
+                            type="number"
+                            value={line.quantity}
+                            onChange={(e) => updateQuantity(line.variantId, Number(e.target.value))}
+                            style={{ ...inputStyle, width: 60, marginTop: 0 }}
+                          />
+                        </td>
+                        <td style={tdStyle}>{(lineGross - lineDiscountAmount).toFixed(0)}</td>
+                        <td style={tdStyle}>
+                          <button
+                            onClick={() => removeLine(line.variantId)}
+                            style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
+                          >
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
 
           <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>

@@ -2024,6 +2024,123 @@ ignoré) et les 20 tests unitaires passent. Aucune erreur console.
   contenu le plus long) ; risque jugé faible sur les tableaux plus simples
   déjà couverts par le même filet de sécurité.
 
+### 2026-08-17 — Audit et correctifs responsive (mobile/tablette)
+
+**Contexte** : retour explicite du porteur du projet — "l'application n'est
+pas assez responsive, sur les petits écrans surtout mobile, la manipulation
+n'est pas assez facile". Aucune media query n'existait nulle part dans
+l'app avant cette session (confirmé par recherche sur tout `apps/web/src`)
+— l'app n'avait jamais été vérifiée à une largeur inférieure au bureau.
+Vérification faite en conditions réelles (navigateur redimensionné à
+375px, 768px, 1280px), pas seulement en lisant le code : un script
+JS (`window.__checkOverflow()`, injecté dans la page) mesure
+`document.documentElement.scrollWidth` vs `window.innerWidth` après
+chaque navigation pour détecter tout débordement horizontal forçant la
+page entière à défiler sur le côté — bien plus fiable qu'une inspection
+visuelle, en particulier dans cet environnement où `computer`/`screenshot`
+échouent régulièrement (pane non composité, déjà documenté dans ce
+fichier).
+
+**3 causes racines systémiques trouvées**, chacune répétée dans un grand
+nombre de fichiers (pas des bugs isolés — un même défaut de layout copié-
+collé partout dans l'app depuis le début) :
+
+1. **Aucune ligne à largeur fixe ne repassait à la ligne** (`flexWrap`
+   manquant). Motif `display: "flex", justifyContent: "space-between"`
+   (titre de page + bouton(s) d'action) trouvé sans `flexWrap` dans **26
+   occurrences sur ~20 fichiers** — confirmé en direct que ça casse la page
+   dès que le titre + les boutons ne tiennent pas sur une seule ligne à
+   375px (ex: la barre du haut, `TopBar.tsx`, poussait toute la page à
+   502px de large sur un écran de 375px). Un second motif, moins visible au
+   premier passage — le groupe de boutons *à l'intérieur* de cette même
+   ligne (`display: "flex", gap: 8`, sans son propre `flexWrap`) — repéré
+   après coup en testant réellement la page Ventes en mobile (le groupe
+   "Mode Caisse/Mode Formulaire/Imprimante/Fermer la caisse" débordait tout
+   seul une fois le premier niveau corrigé) : **16 occurrences
+   supplémentaires**, plus quelques variantes avec un `gap` différent
+   (6 occurrences). Corrigé partout par l'ajout de `flexWrap: "wrap"`
+   (+ `gap` si absent) — un no-op sur grand écran (le contenu tient déjà
+   sur une ligne), donc aucun risque de régression visuelle desktop.
+2. **Aucun tableau ne pouvait défiler dans sa propre largeur** — tous les
+   `<table style={tableStyle}>` (19 fichiers, 30 tableaux au total, y
+   compris un cas de tableau imbriqué dans `ServiceOrdersPage.tsx`) étaient
+   rendus à leur largeur de contenu réelle, sans conteneur
+   `overflow-x: auto` — un tableau à 6-7 colonnes force alors toute la page
+   (en-tête sticky compris) à défiler horizontalement sur mobile. Chaque
+   `<table>` est maintenant enveloppé dans `<div style={{ overflowX:
+   "auto" }}>` — le tableau défile dans sa propre boîte, le reste de la
+   page (nav, en-tête) reste fixe. Approche par enveloppe DOM plutôt que le
+   classique `table { display: block; overflow-x: auto }` en CSS global :
+   ce dernier casse l'alignement des colonnes entre `<thead>` et `<tbody>`
+   (deux contextes de mise en page de tableau séparés, chacun dimensionne
+   ses colonnes indépendamment) — pas acceptable pour des tableaux de
+   données.
+3. **Grilles à colonne fixe qui ne s'empilent jamais** —
+   `gridTemplateColumns: "1fr 380px"` (liste de produits/articles + panier)
+   codé en dur dans **4 pages structurellement identiques** (Ventes, Achats,
+   Devis, Tickets de service) : sur un écran de 375px, la seule colonne
+   fixe de 380px dépasse déjà la largeur de l'écran à elle seule — la page
+   la plus utilisée d'un POS (Ventes) était donc essentiellement inutilisable
+   en mobile. Une media query ne peut pas s'exprimer dans un objet
+   `CSSProperties` (contrainte du style inline utilisé partout dans cette
+   app) — nouvelle classe partagée `.cart-layout-grid`
+   ([index.css](apps/web/src/app/index.css)) : `1fr 380px` au-dessus de
+   720px (identique à l'ancien rendu desktop, vérifié pixel pour pixel :
+   508px/380px sur 1280px de large), colonne unique en dessous. Les 4 pages
+   utilisent maintenant `className="cart-layout-grid"` au lieu de leur
+   style inline dupliqué.
+
+**Autres correctifs, plus ciblés** :
+- [Nav.tsx](apps/web/src/app/Nav.tsx) : les 19 onglets passent de
+  `flexWrap: "wrap"` (jusqu'à 5-6 lignes de boutons empilées, énorme perte
+  d'espace vertical sur mobile) à une **bande défilante horizontalement en
+  une seule ligne** (`overflowX: "auto"`, motif d'onglets mobile standard)
+  — vérifié que la nav défile dans sa propre boîte (1740px de contenu dans
+  375px) sans jamais faire déborder la page.
+- [sharedStyles.ts](apps/web/src/components/sharedStyles.ts) :
+  `pageStyle.padding` passe de `24` fixe à `clamp(12px, 4vw, 24px)` — moins
+  de marge perdue sur petit écran, identique à 24px au-delà d'environ
+  600px de large, sans avoir besoin de media query (fonction CSS pure).
+- 3 modales ([ChangePasswordModal.tsx](apps/web/src/features/auth/ChangePasswordModal.tsx),
+  [RefundModal.tsx](apps/web/src/features/journals/RefundModal.tsx),
+  [RefundHistoryModal.tsx](apps/web/src/features/journals/RefundHistoryModal.tsx)) :
+  largeur fixe (380px/560px) remplacée par `width: "min(380px, 100%)"` (ou
+  560px) + `padding: 16` sur l'overlay — la modale se réduit pour tenir
+  dans un écran plus étroit que sa largeur "normale" au lieu de déborder ;
+  `maxHeight: "85vh", overflowY: "auto"` ajouté à `ChangePasswordModal`
+  (déjà présent sur les deux autres) pour qu'un clavier virtuel mobile ne
+  pousse jamais le bas du formulaire hors d'atteinte.
+
+**Vérifié dans le navigateur, à 3 largeurs** (375px mobile, 768px tablette,
+1280px desktop), avec des comptes/données réels (pas des pages vides) :
+**les 20 onglets de navigation un par un** (Accueil, Ventes, Historique des
+ventes, Devis, Produits, Stock, Clients, Fournisseurs, Achats, Créances,
+Dettes, Rapports — les 4 sous-onglets, Dépenses, Comptabilité — Bilan
+compris, Paramètres, Utilisateurs, Journaux, Tickets de service — les 3
+vues, Promotions), plus l'écran de connexion, l'écran de verrouillage PIN,
+une modale (Rembourser, ouverte depuis Journaux), et un formulaire
+("Nouveau produit") — **zéro débordement horizontal de page restant** sur
+toute cette liste. Confirmé qu'à 1280px la grille Ventes/panier rend
+exactement comme avant (508px/380px, aucun changement visuel desktop).
+`pnpm run build` (rebuild forcé, cache ignoré) et les 20 tests unitaires
+passent. Aucune erreur console (hors WebSocket HMR habituel).
+
+**Pas fait / laissé de côté** :
+- Pas de refonte de la nav en menu hamburger/tiroir — la bande défilante
+  horizontale est un correctif net et à faible risque (une seule classe
+  CSS, pas de nouvel état React, pas de changement de comportement au
+  clic) ; un vrai menu tiroir serait une refonte plus lourde, pas demandée
+  explicitement et hors du périmètre "s'assurer que l'app s'adapte à tous
+  les écrans" de cette session.
+- Pas de revue de la taille des cibles tactiles (zones de clic bouton/lien
+  trop petites au doigt) au-delà de ce qui découle déjà des correctifs
+  ci-dessus — un audit distinct, non demandé cette fois.
+- Le clavier numérique de `PinLockScreen` (chiffres 1-9/0/⌫) n'a pas été
+  spécifiquement testé au tactile (grille de boutons déjà en `display:
+  grid`, taille de bouton déjà généreuse) — risque jugé faible.
+- `BarcodeCameraScanner` (plein écran, déjà à `maxWidth: 480, width:
+  "100%"`) non retouché — déjà responsive avant cette session.
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du

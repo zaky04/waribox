@@ -180,7 +180,7 @@ export function CustomersPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1>{t("customers.title")}</h1>
         <button
           style={primaryButtonStyle}
@@ -222,103 +222,105 @@ export function CustomersPage() {
         </div>
       )}
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>{t("customers.fullName")}</th>
-            <th style={thStyle}>{t("customers.phone")}</th>
-            <th style={thStyle}>{t("customers.email")}</th>
-            <th style={thStyle}>{t("customers.creditBalance")}</th>
-            <th style={thStyle}>{t("customers.loyaltyPoints")}</th>
-            <th style={thStyle}>{t("customers.tier")}</th>
-            <th style={thStyle}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {customers.map((c) => (
-            <tr key={c.id}>
-              <td style={tdStyle}>{c.fullName}</td>
-              <td style={tdStyle}>{c.phone ?? "—"}</td>
-              <td style={tdStyle}>{c.email ?? "—"}</td>
-              <td style={{ ...tdStyle, color: creditBalance(c.id) > 0 ? "#fdba74" : undefined }}>
-                {creditBalance(c.id) > 0 ? creditBalance(c.id) : "—"}
-              </td>
-              <td style={tdStyle}>{c.loyaltyPoints}</td>
-              <td style={tdStyle}>
-                {(() => {
-                  const tier = computeTier(c.lifetimeLoyaltyPoints, tierThresholds.silver, tierThresholds.gold);
-                  return <span style={tierBadgeStyle(tier)}>{getTierLabel(tier)}</span>;
-                })()}
-              </td>
-              <td style={tdStyle}>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {user && hasPermission(user.permissions, "edit_customers") && (
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>{t("customers.fullName")}</th>
+              <th style={thStyle}>{t("customers.phone")}</th>
+              <th style={thStyle}>{t("customers.email")}</th>
+              <th style={thStyle}>{t("customers.creditBalance")}</th>
+              <th style={thStyle}>{t("customers.loyaltyPoints")}</th>
+              <th style={thStyle}>{t("customers.tier")}</th>
+              <th style={thStyle}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {customers.map((c) => (
+              <tr key={c.id}>
+                <td style={tdStyle}>{c.fullName}</td>
+                <td style={tdStyle}>{c.phone ?? "—"}</td>
+                <td style={tdStyle}>{c.email ?? "—"}</td>
+                <td style={{ ...tdStyle, color: creditBalance(c.id) > 0 ? "#fdba74" : undefined }}>
+                  {creditBalance(c.id) > 0 ? creditBalance(c.id) : "—"}
+                </td>
+                <td style={tdStyle}>{c.loyaltyPoints}</td>
+                <td style={tdStyle}>
+                  {(() => {
+                    const tier = computeTier(c.lifetimeLoyaltyPoints, tierThresholds.silver, tierThresholds.gold);
+                    return <span style={tierBadgeStyle(tier)}>{getTierLabel(tier)}</span>;
+                  })()}
+                </td>
+                <td style={tdStyle}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {user && hasPermission(user.permissions, "edit_customers") && (
+                      <button
+                        style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                        onClick={() => startEdit(c)}
+                      >
+                        {t("customers.edit")}
+                      </button>
+                    )}
                     <button
-                      style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                      onClick={() => startEdit(c)}
+                      style={{
+                        ...primaryButtonStyle,
+                        padding: "6px 12px",
+                        fontSize: 14,
+                        background: "transparent",
+                        border: "1px solid var(--color-border)",
+                        color: "var(--color-text)",
+                      }}
+                      onClick={() => startAdjust(c)}
                     >
-                      {t("customers.edit")}
-                    </button>
-                  )}
-                  <button
-                    style={{
-                      ...primaryButtonStyle,
-                      padding: "6px 12px",
-                      fontSize: 14,
-                      background: "transparent",
-                      border: "1px solid var(--color-border)",
-                      color: "var(--color-text)",
-                    }}
-                    onClick={() => startAdjust(c)}
-                  >
-                    {t("customers.adjustPoints")}
-                  </button>
-                </div>
-                {adjustingId === c.id && (
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-                    <input
-                      type="number"
-                      placeholder={t("customers.pointsDeltaPlaceholder")}
-                      style={{ ...inputStyle, width: 100, marginTop: 0 }}
-                      value={pointsDelta}
-                      onChange={(e) => setPointsDelta(e.target.value)}
-                    />
-                    <input
-                      placeholder={t("customers.pointsReasonPlaceholder")}
-                      style={{ ...inputStyle, width: 140, marginTop: 0 }}
-                      value={pointsReason}
-                      onChange={(e) => setPointsReason(e.target.value)}
-                    />
-                    <button
-                      style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                      onClick={() => handleAdjustSubmit(c)}
-                      disabled={adjusting}
-                    >
-                      {t("customers.confirm")}
-                    </button>
-                    <button
-                      style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
-                      onClick={() => setAdjustingId(null)}
-                    >
-                      {t("customers.cancelAdjust")}
+                      {t("customers.adjustPoints")}
                     </button>
                   </div>
-                )}
-                {adjustingId === c.id && pointsError && (
-                  <p style={{ color: "#f87171", fontSize: 13 }}>{pointsError}</p>
-                )}
-              </td>
-            </tr>
-          ))}
-          {customers.length === 0 && (
-            <tr>
-              <td style={tdStyle} colSpan={7}>
-                {t("customers.none")}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+                  {adjustingId === c.id && (
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+                      <input
+                        type="number"
+                        placeholder={t("customers.pointsDeltaPlaceholder")}
+                        style={{ ...inputStyle, width: 100, marginTop: 0 }}
+                        value={pointsDelta}
+                        onChange={(e) => setPointsDelta(e.target.value)}
+                      />
+                      <input
+                        placeholder={t("customers.pointsReasonPlaceholder")}
+                        style={{ ...inputStyle, width: 140, marginTop: 0 }}
+                        value={pointsReason}
+                        onChange={(e) => setPointsReason(e.target.value)}
+                      />
+                      <button
+                        style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                        onClick={() => handleAdjustSubmit(c)}
+                        disabled={adjusting}
+                      >
+                        {t("customers.confirm")}
+                      </button>
+                      <button
+                        style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
+                        onClick={() => setAdjustingId(null)}
+                      >
+                        {t("customers.cancelAdjust")}
+                      </button>
+                    </div>
+                  )}
+                  {adjustingId === c.id && pointsError && (
+                    <p style={{ color: "#f87171", fontSize: 13 }}>{pointsError}</p>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {customers.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={7}>
+                  {t("customers.none")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </main>
   );
 }

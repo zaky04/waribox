@@ -180,7 +180,7 @@ export function PromotionsPage() {
             onChange={(e) => setDiscountPercent(e.target.value)}
           />
         </label>
-        <div style={{ display: "flex", gap: 16 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
           <label style={{ flex: 1 }}>
             {t("promotions.from")}
             <input style={inputStyle} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
@@ -241,62 +241,64 @@ export function PromotionsPage() {
         </button>
       </div>
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>{t("promotions.name")}</th>
-            <th style={thStyle}>{t("promotions.scopeColumn")}</th>
-            <th style={thStyle}>{t("promotions.discount")}</th>
-            <th style={thStyle}>{t("promotions.period")}</th>
-            <th style={thStyle}>{t("promotions.status")}</th>
-            <th style={thStyle}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {promotions.map((promo) => {
-            const running = isPromotionActiveOn(promo, today);
-            return (
-              <tr key={promo.id}>
-                <td style={tdStyle}>
-                  {promo.name}
-                  {promo.scope === "product" && (
-                    <div style={{ color: "var(--color-text-muted)", fontSize: 12 }}>
-                      {(productsByPromotion[promo.id] ?? []).map(productName).join(", ") || t("promotions.noProductsLinked")}
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>{t("promotions.name")}</th>
+              <th style={thStyle}>{t("promotions.scopeColumn")}</th>
+              <th style={thStyle}>{t("promotions.discount")}</th>
+              <th style={thStyle}>{t("promotions.period")}</th>
+              <th style={thStyle}>{t("promotions.status")}</th>
+              <th style={thStyle}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {promotions.map((promo) => {
+              const running = isPromotionActiveOn(promo, today);
+              return (
+                <tr key={promo.id}>
+                  <td style={tdStyle}>
+                    {promo.name}
+                    {promo.scope === "product" && (
+                      <div style={{ color: "var(--color-text-muted)", fontSize: 12 }}>
+                        {(productsByPromotion[promo.id] ?? []).map(productName).join(", ") || t("promotions.noProductsLinked")}
+                      </div>
+                    )}
+                  </td>
+                  <td style={tdStyle}>{promo.scope === "product" ? t("promotions.scopeProductShort") : t("promotions.scopeInvoiceShort")}</td>
+                  <td style={tdStyle}>-{promo.discountPercent}%</td>
+                  <td style={tdStyle}>
+                    {promo.startDate} → {promo.endDate}
+                  </td>
+                  <td style={tdStyle}>
+                    <span style={badgeStyle(!promo.isActive ? "info" : running ? "ok" : "warning")}>
+                      {!promo.isActive ? t("promotions.disabled") : running ? t("promotions.running") : t("promotions.scheduledOrExpired")}
+                    </span>
+                  </td>
+                  <td style={tdStyle}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      <button style={secondaryButtonStyle} onClick={() => handleToggleActive(promo)}>
+                        {promo.isActive ? t("promotions.disable") : t("promotions.enable")}
+                      </button>
+                      <button style={secondaryButtonStyle} onClick={() => handleDelete(promo)}>
+                        {t("promotions.delete")}
+                      </button>
                     </div>
-                  )}
-                </td>
-                <td style={tdStyle}>{promo.scope === "product" ? t("promotions.scopeProductShort") : t("promotions.scopeInvoiceShort")}</td>
-                <td style={tdStyle}>-{promo.discountPercent}%</td>
-                <td style={tdStyle}>
-                  {promo.startDate} → {promo.endDate}
-                </td>
-                <td style={tdStyle}>
-                  <span style={badgeStyle(!promo.isActive ? "info" : running ? "ok" : "warning")}>
-                    {!promo.isActive ? t("promotions.disabled") : running ? t("promotions.running") : t("promotions.scheduledOrExpired")}
-                  </span>
-                </td>
-                <td style={tdStyle}>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button style={secondaryButtonStyle} onClick={() => handleToggleActive(promo)}>
-                      {promo.isActive ? t("promotions.disable") : t("promotions.enable")}
-                    </button>
-                    <button style={secondaryButtonStyle} onClick={() => handleDelete(promo)}>
-                      {t("promotions.delete")}
-                    </button>
-                  </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {promotions.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={6}>
+                  {t("promotions.none")}
                 </td>
               </tr>
-            );
-          })}
-          {promotions.length === 0 && (
-            <tr>
-              <td style={tdStyle} colSpan={6}>
-                {t("promotions.none")}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+            )}
+          </tbody>
+        </table>
+      </div>
     </main>
   );
 }

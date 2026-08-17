@@ -62,50 +62,52 @@ export function StoresSection() {
       <strong style={{ fontSize: 14 }}>{t("storesSection.heading")}</strong>
       <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("storesSection.description")}</p>
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>{t("storesSection.name")}</th>
-            <th style={thStyle}>{t("storesSection.address")}</th>
-            <th style={thStyle}>{t("storesSection.phone")}</th>
-            <th style={thStyle}>{t("storesSection.status")}</th>
-            <th style={thStyle}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {stores.map((store) => (
-            <tr key={store.id}>
-              <td style={tdStyle}>{store.name}</td>
-              <td style={tdStyle}>{store.address || "—"}</td>
-              <td style={tdStyle}>{store.phone || "—"}</td>
-              <td style={tdStyle}>{store.isActive ? t("storesSection.active") : t("storesSection.inactive")}</td>
-              <td style={tdStyle}>
-                <button
-                  onClick={() => handleToggleActive(store)}
-                  style={{
-                    background: "transparent",
-                    border: "1px solid var(--color-border)",
-                    color: "var(--color-text)",
-                    borderRadius: 8,
-                    padding: "4px 10px",
-                    cursor: "pointer",
-                    fontSize: 13,
-                  }}
-                >
-                  {store.isActive ? t("storesSection.deactivate") : t("storesSection.activate")}
-                </button>
-              </td>
-            </tr>
-          ))}
-          {stores.length === 0 && (
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
             <tr>
-              <td style={tdStyle} colSpan={5}>
-                {t("storesSection.none")}
-              </td>
+              <th style={thStyle}>{t("storesSection.name")}</th>
+              <th style={thStyle}>{t("storesSection.address")}</th>
+              <th style={thStyle}>{t("storesSection.phone")}</th>
+              <th style={thStyle}>{t("storesSection.status")}</th>
+              <th style={thStyle}></th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {stores.map((store) => (
+              <tr key={store.id}>
+                <td style={tdStyle}>{store.name}</td>
+                <td style={tdStyle}>{store.address || "—"}</td>
+                <td style={tdStyle}>{store.phone || "—"}</td>
+                <td style={tdStyle}>{store.isActive ? t("storesSection.active") : t("storesSection.inactive")}</td>
+                <td style={tdStyle}>
+                  <button
+                    onClick={() => handleToggleActive(store)}
+                    style={{
+                      background: "transparent",
+                      border: "1px solid var(--color-border)",
+                      color: "var(--color-text)",
+                      borderRadius: 8,
+                      padding: "4px 10px",
+                      cursor: "pointer",
+                      fontSize: 13,
+                    }}
+                  >
+                    {store.isActive ? t("storesSection.deactivate") : t("storesSection.activate")}
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {stores.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={5}>
+                  {t("storesSection.none")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <div style={{ display: "flex", gap: 12, marginTop: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
         <label>

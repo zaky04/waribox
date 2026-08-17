@@ -97,9 +97,11 @@ export function Nav({ active, onChange, enabledModules }: NavProps) {
     <nav
       style={{
         display: "flex",
-        flexWrap: "wrap",
+        flexWrap: "nowrap",
+        overflowX: "auto",
+        WebkitOverflowScrolling: "touch",
         gap: 8,
-        padding: "8px 24px",
+        padding: "8px 16px",
         background: "var(--color-bg)",
         borderBottom: "1px solid var(--color-bg-elevated)",
       }}
@@ -109,6 +111,7 @@ export function Nav({ active, onChange, enabledModules }: NavProps) {
           key={tab.key}
           onClick={() => onChange(tab.key)}
           style={{
+            flex: "none",
             padding: "8px 16px",
             borderRadius: 8,
             border: "none",
@@ -116,6 +119,7 @@ export function Nav({ active, onChange, enabledModules }: NavProps) {
             color: active === tab.key ? "#0f172a" : "var(--color-text)",
             fontWeight: 600,
             cursor: "pointer",
+            whiteSpace: "nowrap",
           }}
         >
           {t(`nav.${tab.key}`)}

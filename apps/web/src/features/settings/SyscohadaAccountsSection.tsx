@@ -223,7 +223,7 @@ export function SyscohadaAccountsSection() {
                 />
               </td>
               <td style={tdStyle}>
-                <div style={{ display: "flex", gap: 6 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   <button style={secondaryButtonStyle} onClick={() => handleSaveMapping(m)}>
                     {t("syscohadaSection.save")}
                   </button>

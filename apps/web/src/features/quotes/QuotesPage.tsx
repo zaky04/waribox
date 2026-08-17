@@ -280,7 +280,7 @@ export function QuotesPage() {
       <h1>{t("quotes.title")}</h1>
 
       {canManage && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 24, marginTop: 24 }}>
+        <div className="cart-layout-grid">
           <div style={cardStyle}>
             <strong>{t("quotes.addItems")}</strong>
             <SearchableSelect
@@ -297,40 +297,42 @@ export function QuotesPage() {
             {cart.length === 0 ? (
               <p style={{ color: "var(--color-text-muted)" }}>{t("quotes.emptyCart")}</p>
             ) : (
-              <table style={tableStyle}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>{t("quotes.item")}</th>
-                    <th style={thStyle}>{t("quotes.quantity")}</th>
-                    <th style={thStyle}>{t("quotes.total")}</th>
-                    <th style={thStyle}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cart.map((line) => (
-                    <tr key={line.variantId}>
-                      <td style={tdStyle}>{line.productName}</td>
-                      <td style={tdStyle}>
-                        <input
-                          type="number"
-                          value={line.quantity}
-                          onChange={(e) => updateQuantity(line.variantId, Number(e.target.value))}
-                          style={{ ...inputStyle, width: 60, marginTop: 0 }}
-                        />
-                      </td>
-                      <td style={tdStyle}>{(line.quantity * line.unitPrice).toFixed(0)}</td>
-                      <td style={tdStyle}>
-                        <button
-                          onClick={() => removeLine(line.variantId)}
-                          style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
-                        >
-                          ✕
-                        </button>
-                      </td>
+              <div style={{ overflowX: "auto" }}>
+                <table style={tableStyle}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>{t("quotes.item")}</th>
+                      <th style={thStyle}>{t("quotes.quantity")}</th>
+                      <th style={thStyle}>{t("quotes.total")}</th>
+                      <th style={thStyle}></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {cart.map((line) => (
+                      <tr key={line.variantId}>
+                        <td style={tdStyle}>{line.productName}</td>
+                        <td style={tdStyle}>
+                          <input
+                            type="number"
+                            value={line.quantity}
+                            onChange={(e) => updateQuantity(line.variantId, Number(e.target.value))}
+                            style={{ ...inputStyle, width: 60, marginTop: 0 }}
+                          />
+                        </td>
+                        <td style={tdStyle}>{(line.quantity * line.unitPrice).toFixed(0)}</td>
+                        <td style={tdStyle}>
+                          <button
+                            onClick={() => removeLine(line.variantId)}
+                            style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
+                          >
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
 
@@ -386,124 +388,126 @@ export function QuotesPage() {
 
       <div style={cardStyle}>
         <strong>{t("quotes.savedQuotes")}</strong>
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={thStyle}>{t("quotes.quoteColumn")}</th>
-              <th style={thStyle}>{t("quotes.customer")}</th>
-              <th style={thStyle}>{t("quotes.total")}</th>
-              <th style={thStyle}>{t("quotes.statusColumn")}</th>
-              <th style={thStyle}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {quotes.map((quote) => {
-              const expanded = expandedQuoteId === quote.id;
-              return (
-                <Fragment key={quote.id}>
-                  <tr>
-                    <td style={tdStyle}>{quote.number}</td>
-                    <td style={tdStyle}>{customerName(quote.customerId)}</td>
-                    <td style={tdStyle}>{quote.total.toFixed(0)}</td>
-                    <td style={tdStyle}>
-                      <span style={badgeStyle(quote.status === "converted" || quote.status === "accepted" ? "ok" : "warning")}>
-                        {STATUS_LABELS[quote.status] ?? quote.status}
-                      </span>
-                    </td>
-                    <td style={tdStyle}>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button
-                          style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                          onClick={() => handleDownloadPdf(quote)}
-                        >
-                          {t("quotes.pdf")}
-                        </button>
-                        {canEdit && quote.status === "pending" && (
-                          <>
-                            <button
-                              style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                              onClick={() => handleStatusChange(quote, "accepted")}
-                            >
-                              {t("quotes.accept")}
-                            </button>
-                            <button
-                              style={{
-                                ...primaryButtonStyle,
-                                padding: "6px 12px",
-                                fontSize: 14,
-                                background: "transparent",
-                                border: "1px solid var(--color-border)",
-                                color: "var(--color-text)",
-                              }}
-                              onClick={() => handleStatusChange(quote, "expired")}
-                            >
-                              {t("quotes.markExpired")}
-                            </button>
-                          </>
-                        )}
-                        {canManage && quote.status !== "converted" && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>{t("quotes.quoteColumn")}</th>
+                <th style={thStyle}>{t("quotes.customer")}</th>
+                <th style={thStyle}>{t("quotes.total")}</th>
+                <th style={thStyle}>{t("quotes.statusColumn")}</th>
+                <th style={thStyle}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {quotes.map((quote) => {
+                const expanded = expandedQuoteId === quote.id;
+                return (
+                  <Fragment key={quote.id}>
+                    <tr>
+                      <td style={tdStyle}>{quote.number}</td>
+                      <td style={tdStyle}>{customerName(quote.customerId)}</td>
+                      <td style={tdStyle}>{quote.total.toFixed(0)}</td>
+                      <td style={tdStyle}>
+                        <span style={badgeStyle(quote.status === "converted" || quote.status === "accepted" ? "ok" : "warning")}>
+                          {STATUS_LABELS[quote.status] ?? quote.status}
+                        </span>
+                      </td>
+                      <td style={tdStyle}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                           <button
                             style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                            onClick={() => toggleConvert(quote)}
+                            onClick={() => handleDownloadPdf(quote)}
                           >
-                            {expanded ? t("quotes.close") : t("quotes.convertToSale")}
+                            {t("quotes.pdf")}
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  {expanded && (
-                    <tr>
-                      <td style={tdStyle} colSpan={5}>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                          <label>
-                            {t("quotes.paymentMethod")}
-                            <select
-                              style={inputStyle}
-                              value={convertPaymentMethod}
-                              onChange={(e) => setConvertPaymentMethod(e.target.value as PaymentMethod)}
+                          {canEdit && quote.status === "pending" && (
+                            <>
+                              <button
+                                style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                                onClick={() => handleStatusChange(quote, "accepted")}
+                              >
+                                {t("quotes.accept")}
+                              </button>
+                              <button
+                                style={{
+                                  ...primaryButtonStyle,
+                                  padding: "6px 12px",
+                                  fontSize: 14,
+                                  background: "transparent",
+                                  border: "1px solid var(--color-border)",
+                                  color: "var(--color-text)",
+                                }}
+                                onClick={() => handleStatusChange(quote, "expired")}
+                              >
+                                {t("quotes.markExpired")}
+                              </button>
+                            </>
+                          )}
+                          {canManage && quote.status !== "converted" && (
+                            <button
+                              style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                              onClick={() => toggleConvert(quote)}
                             >
-                              {PAYMENT_METHODS.map((m) => (
-                                <option key={m.value} value={m.value}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            {t("quotes.amountPaid")}
-                            <input
-                              style={inputStyle}
-                              type="number"
-                              value={convertAmountPaid}
-                              onChange={(e) => setConvertAmountPaid(e.target.value)}
-                              placeholder={quote.total.toFixed(0)}
-                            />
-                          </label>
-                          {convertError && <p style={{ color: "#f87171" }}>{convertError}</p>}
-                          <button
-                            style={{ ...primaryButtonStyle, alignSelf: "flex-start" }}
-                            onClick={() => handleConvert(quote)}
-                            disabled={converting}
-                          >
-                            {converting ? t("quotes.converting") : t("quotes.confirmConversion")}
-                          </button>
+                              {expanded ? t("quotes.close") : t("quotes.convertToSale")}
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-            {quotes.length === 0 && (
-              <tr>
-                <td style={tdStyle} colSpan={5}>
-                  {t("quotes.none")}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                    {expanded && (
+                      <tr>
+                        <td style={tdStyle} colSpan={5}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                            <label>
+                              {t("quotes.paymentMethod")}
+                              <select
+                                style={inputStyle}
+                                value={convertPaymentMethod}
+                                onChange={(e) => setConvertPaymentMethod(e.target.value as PaymentMethod)}
+                              >
+                                {PAYMENT_METHODS.map((m) => (
+                                  <option key={m.value} value={m.value}>
+                                    {m.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              {t("quotes.amountPaid")}
+                              <input
+                                style={inputStyle}
+                                type="number"
+                                value={convertAmountPaid}
+                                onChange={(e) => setConvertAmountPaid(e.target.value)}
+                                placeholder={quote.total.toFixed(0)}
+                              />
+                            </label>
+                            {convertError && <p style={{ color: "#f87171" }}>{convertError}</p>}
+                            <button
+                              style={{ ...primaryButtonStyle, alignSelf: "flex-start" }}
+                              onClick={() => handleConvert(quote)}
+                              disabled={converting}
+                            >
+                              {converting ? t("quotes.converting") : t("quotes.confirmConversion")}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+              {quotes.length === 0 && (
+                <tr>
+                  <td style={tdStyle} colSpan={5}>
+                    {t("quotes.none")}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </main>
   );

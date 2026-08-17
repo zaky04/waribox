@@ -171,7 +171,7 @@ export function CreditsPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1>{t("credits.title")}</h1>
         <button
           style={{
@@ -186,102 +186,104 @@ export function CreditsPage() {
         </button>
       </div>
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>{t("credits.date")}</th>
-            <th style={thStyle}>{t("credits.customer")}</th>
-            <th style={thStyle}>{t("credits.reference")}</th>
-            <th style={thStyle}>{t("credits.article")}</th>
-            <th style={thStyle}>{t("credits.originalAmount")}</th>
-            <th style={thStyle}>{t("credits.remainingBalance")}</th>
-            <th style={thStyle}>{t("credits.dueDate")}</th>
-            <th style={thStyle}>{t("credits.status")}</th>
-            <th style={thStyle}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {visibleCredits.map((credit) => {
-            const overdue = isCreditOverdue(credit);
-            const phone = customerPhone(credit.customerId);
-            return (
-              <tr key={credit.id}>
-                <td style={tdStyle}>{credit.createdAt}</td>
-                <td style={tdStyle}>{customerName(credit.customerId)}</td>
-                <td style={tdStyle}>{referenceNumber(credit)}</td>
-                <td style={tdStyle}>{articleSummary(credit)}</td>
-                <td style={tdStyle}>{credit.originalAmount}</td>
-                <td style={tdStyle}>{credit.remainingBalance}</td>
-                <td style={tdStyle}>{credit.dueDate ?? "—"}</td>
-                <td style={tdStyle}>
-                  <span style={badgeStyle(credit.status === "settled" ? "ok" : overdue ? "danger" : "warning")}>
-                    {overdue ? t("credits.overdue") : STATUS_LABELS[credit.status] ?? credit.status}
-                  </span>
-                </td>
-                <td style={tdStyle}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    {credit.status !== "settled" &&
-                      (payingId === credit.id ? (
-                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          <input
-                            type="number"
-                            style={{ ...inputStyle, width: 90, marginTop: 0 }}
-                            value={amount}
-                            onChange={(e) => setAmount(e.target.value)}
-                          />
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>{t("credits.date")}</th>
+              <th style={thStyle}>{t("credits.customer")}</th>
+              <th style={thStyle}>{t("credits.reference")}</th>
+              <th style={thStyle}>{t("credits.article")}</th>
+              <th style={thStyle}>{t("credits.originalAmount")}</th>
+              <th style={thStyle}>{t("credits.remainingBalance")}</th>
+              <th style={thStyle}>{t("credits.dueDate")}</th>
+              <th style={thStyle}>{t("credits.status")}</th>
+              <th style={thStyle}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleCredits.map((credit) => {
+              const overdue = isCreditOverdue(credit);
+              const phone = customerPhone(credit.customerId);
+              return (
+                <tr key={credit.id}>
+                  <td style={tdStyle}>{credit.createdAt}</td>
+                  <td style={tdStyle}>{customerName(credit.customerId)}</td>
+                  <td style={tdStyle}>{referenceNumber(credit)}</td>
+                  <td style={tdStyle}>{articleSummary(credit)}</td>
+                  <td style={tdStyle}>{credit.originalAmount}</td>
+                  <td style={tdStyle}>{credit.remainingBalance}</td>
+                  <td style={tdStyle}>{credit.dueDate ?? "—"}</td>
+                  <td style={tdStyle}>
+                    <span style={badgeStyle(credit.status === "settled" ? "ok" : overdue ? "danger" : "warning")}>
+                      {overdue ? t("credits.overdue") : STATUS_LABELS[credit.status] ?? credit.status}
+                    </span>
+                  </td>
+                  <td style={tdStyle}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      {credit.status !== "settled" &&
+                        (payingId === credit.id ? (
+                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <input
+                              type="number"
+                              style={{ ...inputStyle, width: 90, marginTop: 0 }}
+                              value={amount}
+                              onChange={(e) => setAmount(e.target.value)}
+                            />
+                            <button
+                              style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                              onClick={() => handleSubmit(credit)}
+                              disabled={saving}
+                            >
+                              {t("credits.confirm")}
+                            </button>
+                            <button
+                              style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
+                              onClick={() => setPayingId(null)}
+                            >
+                              {t("credits.cancel")}
+                            </button>
+                          </div>
+                        ) : (
                           <button
                             style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                            onClick={() => handleSubmit(credit)}
-                            disabled={saving}
+                            onClick={() => startPayment(credit)}
                           >
-                            {t("credits.confirm")}
+                            {t("credits.recordPayment")}
                           </button>
-                          <button
-                            style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
-                            onClick={() => setPayingId(null)}
-                          >
-                            {t("credits.cancel")}
-                          </button>
-                        </div>
-                      ) : (
+                        ))}
+                      {overdue && phone && (
                         <button
-                          style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                          onClick={() => startPayment(credit)}
+                          style={{
+                            padding: "6px 12px",
+                            fontSize: 14,
+                            borderRadius: 8,
+                            border: "1px solid var(--color-border)",
+                            background: "transparent",
+                            color: "var(--color-text)",
+                            cursor: "pointer",
+                            whiteSpace: "nowrap",
+                          }}
+                          onClick={() => handleNotifyOverdue(credit)}
                         >
-                          {t("credits.recordPayment")}
+                          {t("credits.notifyWhatsapp")}
                         </button>
-                      ))}
-                    {overdue && phone && (
-                      <button
-                        style={{
-                          padding: "6px 12px",
-                          fontSize: 14,
-                          borderRadius: 8,
-                          border: "1px solid var(--color-border)",
-                          background: "transparent",
-                          color: "var(--color-text)",
-                          cursor: "pointer",
-                          whiteSpace: "nowrap",
-                        }}
-                        onClick={() => handleNotifyOverdue(credit)}
-                      >
-                        {t("credits.notifyWhatsapp")}
-                      </button>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {visibleCredits.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={9}>
+                  {t("credits.none")}
                 </td>
               </tr>
-            );
-          })}
-          {visibleCredits.length === 0 && (
-            <tr>
-              <td style={tdStyle} colSpan={9}>
-                {t("credits.none")}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {error && <p style={{ color: "#f87171" }}>{error}</p>}
     </main>

@@ -120,7 +120,7 @@ export function DebtsPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1>{t("debts.title")}</h1>
         <button
           style={{
@@ -135,77 +135,79 @@ export function DebtsPage() {
         </button>
       </div>
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>{t("debts.date")}</th>
-            <th style={thStyle}>{t("debts.supplier")}</th>
-            <th style={thStyle}>{t("debts.purchase")}</th>
-            <th style={thStyle}>{t("debts.article")}</th>
-            <th style={thStyle}>{t("debts.originalAmount")}</th>
-            <th style={thStyle}>{t("debts.remainingBalance")}</th>
-            <th style={thStyle}>{t("debts.status")}</th>
-            <th style={thStyle}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {visibleDebts.map((debt) => (
-            <tr key={debt.id}>
-              <td style={tdStyle}>{debt.createdAt}</td>
-              <td style={tdStyle}>{supplierName(debt.supplierId)}</td>
-              <td style={tdStyle}>{purchaseNumber(debt.purchaseId)}</td>
-              <td style={tdStyle}>{articleSummary(debt.purchaseId)}</td>
-              <td style={tdStyle}>{debt.originalAmount}</td>
-              <td style={tdStyle}>{debt.remainingBalance}</td>
-              <td style={tdStyle}>
-                <span style={badgeStyle(debt.status === "settled" ? "ok" : "warning")}>
-                  {STATUS_LABELS[debt.status] ?? debt.status}
-                </span>
-              </td>
-              <td style={tdStyle}>
-                {debt.status !== "settled" &&
-                  (payingId === debt.id ? (
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <input
-                        type="number"
-                        style={{ ...inputStyle, width: 90, marginTop: 0 }}
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                      />
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>{t("debts.date")}</th>
+              <th style={thStyle}>{t("debts.supplier")}</th>
+              <th style={thStyle}>{t("debts.purchase")}</th>
+              <th style={thStyle}>{t("debts.article")}</th>
+              <th style={thStyle}>{t("debts.originalAmount")}</th>
+              <th style={thStyle}>{t("debts.remainingBalance")}</th>
+              <th style={thStyle}>{t("debts.status")}</th>
+              <th style={thStyle}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleDebts.map((debt) => (
+              <tr key={debt.id}>
+                <td style={tdStyle}>{debt.createdAt}</td>
+                <td style={tdStyle}>{supplierName(debt.supplierId)}</td>
+                <td style={tdStyle}>{purchaseNumber(debt.purchaseId)}</td>
+                <td style={tdStyle}>{articleSummary(debt.purchaseId)}</td>
+                <td style={tdStyle}>{debt.originalAmount}</td>
+                <td style={tdStyle}>{debt.remainingBalance}</td>
+                <td style={tdStyle}>
+                  <span style={badgeStyle(debt.status === "settled" ? "ok" : "warning")}>
+                    {STATUS_LABELS[debt.status] ?? debt.status}
+                  </span>
+                </td>
+                <td style={tdStyle}>
+                  {debt.status !== "settled" &&
+                    (payingId === debt.id ? (
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <input
+                          type="number"
+                          style={{ ...inputStyle, width: 90, marginTop: 0 }}
+                          value={amount}
+                          onChange={(e) => setAmount(e.target.value)}
+                        />
+                        <button
+                          style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                          onClick={() => handleSubmit(debt)}
+                          disabled={saving}
+                        >
+                          {t("debts.confirm")}
+                        </button>
+                        <button
+                          style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
+                          onClick={() => setPayingId(null)}
+                        >
+                          {t("debts.cancel")}
+                        </button>
+                      </div>
+                    ) : (
                       <button
                         style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                        onClick={() => handleSubmit(debt)}
-                        disabled={saving}
+                        onClick={() => startPayment(debt)}
                       >
-                        {t("debts.confirm")}
+                        {t("debts.recordPayment")}
                       </button>
-                      <button
-                        style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
-                        onClick={() => setPayingId(null)}
-                      >
-                        {t("debts.cancel")}
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                      onClick={() => startPayment(debt)}
-                    >
-                      {t("debts.recordPayment")}
-                    </button>
-                  ))}
-              </td>
-            </tr>
-          ))}
-          {visibleDebts.length === 0 && (
-            <tr>
-              <td style={tdStyle} colSpan={8}>
-                {t("debts.none")}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+                    ))}
+                </td>
+              </tr>
+            ))}
+            {visibleDebts.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={8}>
+                  {t("debts.none")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {error && <p style={{ color: "#f87171" }}>{error}</p>}
     </main>

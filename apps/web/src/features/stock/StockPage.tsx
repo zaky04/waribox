@@ -328,7 +328,7 @@ export function StockPage() {
 
       {lowStock.length > 0 && (
         <div style={{ ...cardStyle, borderLeft: "4px solid #f87171" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
             <strong>{t("stock.lowStockAlerts")}</strong>
             {lowStockAlertPhone && (
               <button
@@ -358,7 +358,7 @@ export function StockPage() {
 
       {expiring.length > 0 && (
         <div style={{ ...cardStyle, borderLeft: "4px solid #facc15" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
             <strong>{t("stock.expiringSoon", { days: EXPIRY_WARNING_DAYS })}</strong>
             {lowStockAlertPhone && (
               <button
@@ -414,46 +414,48 @@ export function StockPage() {
         </label>
       </FilterBar>
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>{t("stock.product")}</th>
-            {locations.map((loc) => (
-              <th style={thStyle} key={loc.id}>
-                {getLocationDisplayName(loc.name)}
-              </th>
-            ))}
-            <th style={thStyle}>{t("stock.total")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredVariants.map((variant) => {
-            const total = locations.reduce((sum, loc) => sum + quantityFor(variant.id, loc.id), 0);
-            const product = products.find((p) => p.id === variant.productId);
-            const isLow = product ? total <= product.lowStockThreshold : false;
-            return (
-              <tr key={variant.id}>
-                <td style={tdStyle}>{variantLabel(variant)}</td>
-                {locations.map((loc) => (
-                  <td style={tdStyle} key={loc.id}>
-                    {quantityFor(variant.id, loc.id)}
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>{t("stock.product")}</th>
+              {locations.map((loc) => (
+                <th style={thStyle} key={loc.id}>
+                  {getLocationDisplayName(loc.name)}
+                </th>
+              ))}
+              <th style={thStyle}>{t("stock.total")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredVariants.map((variant) => {
+              const total = locations.reduce((sum, loc) => sum + quantityFor(variant.id, loc.id), 0);
+              const product = products.find((p) => p.id === variant.productId);
+              const isLow = product ? total <= product.lowStockThreshold : false;
+              return (
+                <tr key={variant.id}>
+                  <td style={tdStyle}>{variantLabel(variant)}</td>
+                  {locations.map((loc) => (
+                    <td style={tdStyle} key={loc.id}>
+                      {quantityFor(variant.id, loc.id)}
+                    </td>
+                  ))}
+                  <td style={tdStyle}>
+                    <span style={badgeStyle(isLow ? "warning" : "ok")}>{total}</span>
                   </td>
-                ))}
-                <td style={tdStyle}>
-                  <span style={badgeStyle(isLow ? "warning" : "ok")}>{total}</span>
+                </tr>
+              );
+            })}
+            {filteredVariants.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={locations.length + 2}>
+                  {t("stock.noProducts")}
                 </td>
               </tr>
-            );
-          })}
-          {filteredVariants.length === 0 && (
-            <tr>
-              <td style={tdStyle} colSpan={locations.length + 2}>
-                {t("stock.noProducts")}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {canManage && (
         <>
@@ -531,7 +533,7 @@ export function StockPage() {
                 placeholder={t("stock.searchProductPlaceholder")}
               />
             </label>
-            <div style={{ display: "flex", gap: 16 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
               <label style={{ flex: 1 }}>
                 {t("stock.transfer.from")}
                 <select

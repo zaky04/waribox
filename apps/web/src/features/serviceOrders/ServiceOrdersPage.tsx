@@ -414,9 +414,9 @@ export function ServiceOrdersPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1>{t("serviceOrders.title")}</h1>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button
             onClick={() => setView("new")}
             style={{
@@ -479,12 +479,14 @@ export function ServiceOrdersPage() {
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 8,
               }}
             >
               <span>
                 {t("serviceOrders.registered")} <strong>{lastOrderNumber}</strong>
               </span>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 <button
                   style={primaryButtonStyle}
                   disabled={!printer.connected || !lastTicket}
@@ -522,9 +524,9 @@ export function ServiceOrdersPage() {
           )}
           {printError && <p style={{ color: "#f87171" }}>{printError}</p>}
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 24, marginTop: 24 }}>
+          <div className="cart-layout-grid">
             <div style={cardStyle}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                 <strong>{t("serviceOrders.depositedItems")}</strong>
                 <button
                   type="button"
@@ -541,57 +543,59 @@ export function ServiceOrdersPage() {
               {lines.length === 0 ? (
                 <p style={{ color: "var(--color-text-muted)" }}>{t("serviceOrders.emptyItems")}</p>
               ) : (
-                <table style={tableStyle}>
-                  <thead>
-                    <tr>
-                      <th style={thStyle}>{t("serviceOrders.description")}</th>
-                      <th style={thStyle}>{t("serviceOrders.quantity")}</th>
-                      <th style={thStyle}>{t("serviceOrders.unitPrice")}</th>
-                      <th style={thStyle}>{t("serviceOrders.total")}</th>
-                      <th style={thStyle}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lines.map((line) => (
-                      <tr key={line.key}>
-                        <td style={tdStyle}>
-                          <input
-                            style={{ ...inputStyle, marginTop: 0 }}
-                            value={line.description}
-                            onChange={(e) => updateLine(line.key, { description: e.target.value })}
-                          />
-                        </td>
-                        <td style={tdStyle}>
-                          <input
-                            type="number"
-                            min={1}
-                            value={line.quantity}
-                            onChange={(e) => updateLine(line.key, { quantity: Number(e.target.value) })}
-                            style={{ ...inputStyle, width: 60, marginTop: 0 }}
-                          />
-                        </td>
-                        <td style={tdStyle}>
-                          <input
-                            type="number"
-                            min={0}
-                            value={line.unitPrice}
-                            onChange={(e) => updateLine(line.key, { unitPrice: Number(e.target.value) })}
-                            style={{ ...inputStyle, width: 90, marginTop: 0 }}
-                          />
-                        </td>
-                        <td style={tdStyle}>{(line.quantity * line.unitPrice).toFixed(0)}</td>
-                        <td style={tdStyle}>
-                          <button
-                            onClick={() => removeLine(line.key)}
-                            style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
-                          >
-                            ✕
-                          </button>
-                        </td>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={tableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>{t("serviceOrders.description")}</th>
+                        <th style={thStyle}>{t("serviceOrders.quantity")}</th>
+                        <th style={thStyle}>{t("serviceOrders.unitPrice")}</th>
+                        <th style={thStyle}>{t("serviceOrders.total")}</th>
+                        <th style={thStyle}></th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {lines.map((line) => (
+                        <tr key={line.key}>
+                          <td style={tdStyle}>
+                            <input
+                              style={{ ...inputStyle, marginTop: 0 }}
+                              value={line.description}
+                              onChange={(e) => updateLine(line.key, { description: e.target.value })}
+                            />
+                          </td>
+                          <td style={tdStyle}>
+                            <input
+                              type="number"
+                              min={1}
+                              value={line.quantity}
+                              onChange={(e) => updateLine(line.key, { quantity: Number(e.target.value) })}
+                              style={{ ...inputStyle, width: 60, marginTop: 0 }}
+                            />
+                          </td>
+                          <td style={tdStyle}>
+                            <input
+                              type="number"
+                              min={0}
+                              value={line.unitPrice}
+                              onChange={(e) => updateLine(line.key, { unitPrice: Number(e.target.value) })}
+                              style={{ ...inputStyle, width: 90, marginTop: 0 }}
+                            />
+                          </td>
+                          <td style={tdStyle}>{(line.quantity * line.unitPrice).toFixed(0)}</td>
+                          <td style={tdStyle}>
+                            <button
+                              onClick={() => removeLine(line.key)}
+                              style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
 
               <label>
@@ -703,149 +707,151 @@ export function ServiceOrdersPage() {
 
       {view === "track" && (
         <div style={cardStyle}>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>{t("serviceOrders.ticket")}</th>
-                <th style={thStyle}>{t("serviceOrders.customer")}</th>
-                <th style={thStyle}>{t("serviceOrders.status")}</th>
-                <th style={thStyle}>{t("serviceOrders.payment")}</th>
-                <th style={thStyle}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => {
-                const items = itemsByOrder[order.id] ?? [];
-                const summary = deriveOrderStatus(items);
-                const credit = creditForOrder(order.id);
-                const expanded = expandedOrderId === order.id;
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>{t("serviceOrders.ticket")}</th>
+                  <th style={thStyle}>{t("serviceOrders.customer")}</th>
+                  <th style={thStyle}>{t("serviceOrders.status")}</th>
+                  <th style={thStyle}>{t("serviceOrders.payment")}</th>
+                  <th style={thStyle}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((order) => {
+                  const items = itemsByOrder[order.id] ?? [];
+                  const summary = deriveOrderStatus(items);
+                  const credit = creditForOrder(order.id);
+                  const expanded = expandedOrderId === order.id;
 
-                return (
-                  <Fragment key={order.id}>
-                    <tr>
-                      <td style={tdStyle}>{order.number}</td>
-                      <td style={tdStyle}>{customerName(order.customerId)}</td>
-                      <td style={tdStyle}>
-                        {expanded
-                          ? `${AGGREGATE_STATUS_LABELS[summary.status]} (${summary.pickedUpCount}/${summary.totalCount})`
-                          : order.closedAt
-                            ? t("serviceOrders.closedStatus")
-                            : "—"}
-                      </td>
-                      <td style={tdStyle}>
-                        <span style={badgeStyle(order.paymentStatus === "paid" ? "ok" : "warning")}>
-                          {PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus}
-                        </span>
-                      </td>
-                      <td style={tdStyle}>
-                        <button
-                          style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                          onClick={() => toggleExpand(order.id)}
-                        >
-                          {expanded ? t("serviceOrders.close") : t("serviceOrders.detail")}
-                        </button>
-                      </td>
-                    </tr>
-                    {expanded && (
+                  return (
+                    <Fragment key={order.id}>
                       <tr>
-                        <td style={tdStyle} colSpan={5}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                            {items.map((item) => (
-                              <div
-                                key={item.id}
-                                style={{ display: "flex", alignItems: "center", gap: 12 }}
-                              >
-                                <span style={{ flex: 1 }}>
-                                  {item.quantity} x {item.description || t("serviceOrders.itemFallback")}
-                                </span>
-                                <select
-                                  style={{ ...inputStyle, width: 160, marginTop: 0 }}
-                                  value={item.status}
-                                  onChange={(e) =>
-                                    handleStatusChange(item, e.target.value as ServiceOrderItemStatus)
-                                  }
-                                >
-                                  {ITEM_STATUSES.map((s) => (
-                                    <option key={s} value={s}>
-                                      {ITEM_STATUS_LABELS[s]}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            ))}
-
-                            {summary.status === "ready" && customerPhone(order.customerId) && (
-                              <button
-                                style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14, alignSelf: "flex-start" }}
-                                onClick={() => {
-                                  const phone = customerPhone(order.customerId)!;
-                                  const message = t("whatsapp.serviceOrderReady", {
-                                    customerName: customerName(order.customerId),
-                                    orderNumber: order.number,
-                                    business: businessSettings?.businessName ?? t("whatsapp.defaultBusinessName"),
-                                  });
-                                  void openExternalUrl(
-                                    buildWhatsAppLink(phone, businessSettings?.whatsappCountryCode, message),
-                                  );
-                                }}
-                              >
-                                {t("serviceOrders.notifyWhatsapp")}
-                              </button>
-                            )}
-
-                            {order.notes && (
-                              <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("serviceOrders.notesLabel")} {order.notes}</p>
-                            )}
-                            {order.promisedDate && (
-                              <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-                                {t("serviceOrders.promisedPickup")} {order.promisedDate}
-                              </p>
-                            )}
-
-                            {credit && (
-                              <div
-                                style={{
-                                  borderTop: "1px solid var(--color-border)",
-                                  paddingTop: 12,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 8,
-                                }}
-                              >
-                                <span>{t("serviceOrders.remainingBalance")} {credit.remainingBalance.toFixed(0)}</span>
-                                <input
-                                  type="number"
-                                  style={{ ...inputStyle, width: 90, marginTop: 0 }}
-                                  value={repayAmount}
-                                  onChange={(e) => setRepayAmount(e.target.value)}
-                                  placeholder={credit.remainingBalance.toFixed(0)}
-                                />
-                                <button
-                                  style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                                  onClick={() => handleRepay(credit)}
-                                  disabled={repaying}
-                                >
-                                  {t("serviceOrders.collectBalance")}
-                                </button>
-                              </div>
-                            )}
-                            {repayError && <p style={{ color: "#f87171" }}>{repayError}</p>}
-                          </div>
+                        <td style={tdStyle}>{order.number}</td>
+                        <td style={tdStyle}>{customerName(order.customerId)}</td>
+                        <td style={tdStyle}>
+                          {expanded
+                            ? `${AGGREGATE_STATUS_LABELS[summary.status]} (${summary.pickedUpCount}/${summary.totalCount})`
+                            : order.closedAt
+                              ? t("serviceOrders.closedStatus")
+                              : "—"}
+                        </td>
+                        <td style={tdStyle}>
+                          <span style={badgeStyle(order.paymentStatus === "paid" ? "ok" : "warning")}>
+                            {PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus}
+                          </span>
+                        </td>
+                        <td style={tdStyle}>
+                          <button
+                            style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                            onClick={() => toggleExpand(order.id)}
+                          >
+                            {expanded ? t("serviceOrders.close") : t("serviceOrders.detail")}
+                          </button>
                         </td>
                       </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-              {orders.length === 0 && (
-                <tr>
-                  <td style={tdStyle} colSpan={5}>
-                    {t("serviceOrders.noTickets")}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                      {expanded && (
+                        <tr>
+                          <td style={tdStyle} colSpan={5}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                              {items.map((item) => (
+                                <div
+                                  key={item.id}
+                                  style={{ display: "flex", alignItems: "center", gap: 12 }}
+                                >
+                                  <span style={{ flex: 1 }}>
+                                    {item.quantity} x {item.description || t("serviceOrders.itemFallback")}
+                                  </span>
+                                  <select
+                                    style={{ ...inputStyle, width: 160, marginTop: 0 }}
+                                    value={item.status}
+                                    onChange={(e) =>
+                                      handleStatusChange(item, e.target.value as ServiceOrderItemStatus)
+                                    }
+                                  >
+                                    {ITEM_STATUSES.map((s) => (
+                                      <option key={s} value={s}>
+                                        {ITEM_STATUS_LABELS[s]}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              ))}
+
+                              {summary.status === "ready" && customerPhone(order.customerId) && (
+                                <button
+                                  style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14, alignSelf: "flex-start" }}
+                                  onClick={() => {
+                                    const phone = customerPhone(order.customerId)!;
+                                    const message = t("whatsapp.serviceOrderReady", {
+                                      customerName: customerName(order.customerId),
+                                      orderNumber: order.number,
+                                      business: businessSettings?.businessName ?? t("whatsapp.defaultBusinessName"),
+                                    });
+                                    void openExternalUrl(
+                                      buildWhatsAppLink(phone, businessSettings?.whatsappCountryCode, message),
+                                    );
+                                  }}
+                                >
+                                  {t("serviceOrders.notifyWhatsapp")}
+                                </button>
+                              )}
+
+                              {order.notes && (
+                                <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("serviceOrders.notesLabel")} {order.notes}</p>
+                              )}
+                              {order.promisedDate && (
+                                <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
+                                  {t("serviceOrders.promisedPickup")} {order.promisedDate}
+                                </p>
+                              )}
+
+                              {credit && (
+                                <div
+                                  style={{
+                                    borderTop: "1px solid var(--color-border)",
+                                    paddingTop: 12,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                  }}
+                                >
+                                  <span>{t("serviceOrders.remainingBalance")} {credit.remainingBalance.toFixed(0)}</span>
+                                  <input
+                                    type="number"
+                                    style={{ ...inputStyle, width: 90, marginTop: 0 }}
+                                    value={repayAmount}
+                                    onChange={(e) => setRepayAmount(e.target.value)}
+                                    placeholder={credit.remainingBalance.toFixed(0)}
+                                  />
+                                  <button
+                                    style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                                    onClick={() => handleRepay(credit)}
+                                    disabled={repaying}
+                                  >
+                                    {t("serviceOrders.collectBalance")}
+                                  </button>
+                                </div>
+                              )}
+                              {repayError && <p style={{ color: "#f87171" }}>{repayError}</p>}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+                {orders.length === 0 && (
+                  <tr>
+                    <td style={tdStyle} colSpan={5}>
+                      {t("serviceOrders.noTickets")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -854,156 +860,160 @@ export function ServiceOrdersPage() {
           <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
             {t("serviceOrders.historyHint")}
           </p>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>{t("serviceOrders.ticket")}</th>
-                <th style={thStyle}>{t("serviceOrders.customer")}</th>
-                <th style={thStyle}>{t("serviceOrders.total")}</th>
-                <th style={thStyle}>{t("serviceOrders.payment")}</th>
-                <th style={thStyle}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => {
-                const expanded = expandedOrderId === order.id;
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>{t("serviceOrders.ticket")}</th>
+                  <th style={thStyle}>{t("serviceOrders.customer")}</th>
+                  <th style={thStyle}>{t("serviceOrders.total")}</th>
+                  <th style={thStyle}>{t("serviceOrders.payment")}</th>
+                  <th style={thStyle}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((order) => {
+                  const expanded = expandedOrderId === order.id;
 
-                return (
-                  <Fragment key={order.id}>
-                    <tr>
-                      <td style={tdStyle}>{order.number}</td>
-                      <td style={tdStyle}>{customerName(order.customerId)}</td>
-                      <td style={tdStyle}>{order.total.toFixed(0)}</td>
-                      <td style={tdStyle}>
-                        <span style={badgeStyle(order.paymentStatus === "paid" ? "ok" : "warning")}>
-                          {PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus}
-                        </span>
-                      </td>
-                      <td style={tdStyle}>
-                        <button
-                          style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                          onClick={() => historyToggleExpand(order)}
-                        >
-                          {expanded ? t("serviceOrders.close") : t("serviceOrders.correct")}
-                        </button>
-                      </td>
-                    </tr>
-                    {expanded && (
+                  return (
+                    <Fragment key={order.id}>
                       <tr>
-                        <td style={tdStyle} colSpan={5}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                            <label>
-                              {t("serviceOrders.customer")}
-                              <SearchableSelect
-                                value={editCustomerId}
-                                onChange={setEditCustomerId}
-                                options={customers.map((c) => ({ value: String(c.id), label: c.fullName }))}
-                                emptyLabel={t("serviceOrders.noCustomerEditOption")}
-                                placeholder={t("serviceOrders.searchCustomerPlaceholder")}
-                              />
-                            </label>
-                            <label>
-                              {t("serviceOrders.promisedDate")}
-                              <input
-                                style={inputStyle}
-                                type="date"
-                                value={editPromisedDate}
-                                onChange={(e) => setEditPromisedDate(e.target.value)}
-                              />
-                            </label>
-                            <label>
-                              {t("serviceOrders.notes")}
-                              <textarea
-                                style={{ ...inputStyle, minHeight: 60 }}
-                                value={editNotes}
-                                onChange={(e) => setEditNotes(e.target.value)}
-                              />
-                            </label>
-
-                            <table style={tableStyle}>
-                              <thead>
-                                <tr>
-                                  <th style={thStyle}>{t("serviceOrders.description")}</th>
-                                  <th style={thStyle}>{t("serviceOrders.quantity")}</th>
-                                  <th style={thStyle}>{t("serviceOrders.unitPrice")}</th>
-                                  <th style={thStyle}>{t("serviceOrders.taxRatePercent")}</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {editItems.map((item) => (
-                                  <tr key={item.id}>
-                                    <td style={tdStyle}>
-                                      <input
-                                        style={{ ...inputStyle, marginTop: 0 }}
-                                        value={item.description}
-                                        onChange={(e) =>
-                                          updateEditItem(item.id, { description: e.target.value })
-                                        }
-                                      />
-                                    </td>
-                                    <td style={tdStyle}>
-                                      <input
-                                        type="number"
-                                        min={1}
-                                        value={item.quantity}
-                                        onChange={(e) =>
-                                          updateEditItem(item.id, { quantity: Number(e.target.value) })
-                                        }
-                                        style={{ ...inputStyle, width: 60, marginTop: 0 }}
-                                      />
-                                    </td>
-                                    <td style={tdStyle}>
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        value={item.unitPrice}
-                                        onChange={(e) =>
-                                          updateEditItem(item.id, { unitPrice: Number(e.target.value) })
-                                        }
-                                        style={{ ...inputStyle, width: 90, marginTop: 0 }}
-                                      />
-                                    </td>
-                                    <td style={tdStyle}>
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        value={item.taxRate}
-                                        onChange={(e) =>
-                                          updateEditItem(item.id, { taxRate: Number(e.target.value) })
-                                        }
-                                        style={{ ...inputStyle, width: 70, marginTop: 0 }}
-                                      />
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-
-                            {historyError && <p style={{ color: "#f87171" }}>{historyError}</p>}
-
-                            <button
-                              style={primaryButtonStyle}
-                              onClick={() => handleSaveHistory(order.id)}
-                              disabled={savingHistory}
-                            >
-                              {savingHistory ? t("serviceOrders.saving") : t("serviceOrders.save")}
-                            </button>
-                          </div>
+                        <td style={tdStyle}>{order.number}</td>
+                        <td style={tdStyle}>{customerName(order.customerId)}</td>
+                        <td style={tdStyle}>{order.total.toFixed(0)}</td>
+                        <td style={tdStyle}>
+                          <span style={badgeStyle(order.paymentStatus === "paid" ? "ok" : "warning")}>
+                            {PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus}
+                          </span>
+                        </td>
+                        <td style={tdStyle}>
+                          <button
+                            style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                            onClick={() => historyToggleExpand(order)}
+                          >
+                            {expanded ? t("serviceOrders.close") : t("serviceOrders.correct")}
+                          </button>
                         </td>
                       </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-              {orders.length === 0 && (
-                <tr>
-                  <td style={tdStyle} colSpan={5}>
-                    {t("serviceOrders.noTickets")}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                      {expanded && (
+                        <tr>
+                          <td style={tdStyle} colSpan={5}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                              <label>
+                                {t("serviceOrders.customer")}
+                                <SearchableSelect
+                                  value={editCustomerId}
+                                  onChange={setEditCustomerId}
+                                  options={customers.map((c) => ({ value: String(c.id), label: c.fullName }))}
+                                  emptyLabel={t("serviceOrders.noCustomerEditOption")}
+                                  placeholder={t("serviceOrders.searchCustomerPlaceholder")}
+                                />
+                              </label>
+                              <label>
+                                {t("serviceOrders.promisedDate")}
+                                <input
+                                  style={inputStyle}
+                                  type="date"
+                                  value={editPromisedDate}
+                                  onChange={(e) => setEditPromisedDate(e.target.value)}
+                                />
+                              </label>
+                              <label>
+                                {t("serviceOrders.notes")}
+                                <textarea
+                                  style={{ ...inputStyle, minHeight: 60 }}
+                                  value={editNotes}
+                                  onChange={(e) => setEditNotes(e.target.value)}
+                                />
+                              </label>
+
+                              <div style={{ overflowX: "auto" }}>
+                                <table style={tableStyle}>
+                                  <thead>
+                                    <tr>
+                                      <th style={thStyle}>{t("serviceOrders.description")}</th>
+                                      <th style={thStyle}>{t("serviceOrders.quantity")}</th>
+                                      <th style={thStyle}>{t("serviceOrders.unitPrice")}</th>
+                                      <th style={thStyle}>{t("serviceOrders.taxRatePercent")}</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {editItems.map((item) => (
+                                      <tr key={item.id}>
+                                        <td style={tdStyle}>
+                                          <input
+                                            style={{ ...inputStyle, marginTop: 0 }}
+                                            value={item.description}
+                                            onChange={(e) =>
+                                              updateEditItem(item.id, { description: e.target.value })
+                                            }
+                                          />
+                                        </td>
+                                        <td style={tdStyle}>
+                                          <input
+                                            type="number"
+                                            min={1}
+                                            value={item.quantity}
+                                            onChange={(e) =>
+                                              updateEditItem(item.id, { quantity: Number(e.target.value) })
+                                            }
+                                            style={{ ...inputStyle, width: 60, marginTop: 0 }}
+                                          />
+                                        </td>
+                                        <td style={tdStyle}>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            value={item.unitPrice}
+                                            onChange={(e) =>
+                                              updateEditItem(item.id, { unitPrice: Number(e.target.value) })
+                                            }
+                                            style={{ ...inputStyle, width: 90, marginTop: 0 }}
+                                          />
+                                        </td>
+                                        <td style={tdStyle}>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            value={item.taxRate}
+                                            onChange={(e) =>
+                                              updateEditItem(item.id, { taxRate: Number(e.target.value) })
+                                            }
+                                            style={{ ...inputStyle, width: 70, marginTop: 0 }}
+                                          />
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {historyError && <p style={{ color: "#f87171" }}>{historyError}</p>}
+
+                              <button
+                                style={primaryButtonStyle}
+                                onClick={() => handleSaveHistory(order.id)}
+                                disabled={savingHistory}
+                              >
+                                {savingHistory ? t("serviceOrders.saving") : t("serviceOrders.save")}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+                {orders.length === 0 && (
+                  <tr>
+                    <td style={tdStyle} colSpan={5}>
+                      {t("serviceOrders.noTickets")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </main>

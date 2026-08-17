@@ -202,7 +202,7 @@ export function UsersPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1>{t("users.title")}</h1>
         <button
           style={primaryButtonStyle}
@@ -300,65 +300,67 @@ export function UsersPage() {
         </div>
       )}
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>{t("users.name")}</th>
-            <th style={thStyle}>{t("users.username")}</th>
-            <th style={thStyle}>{t("users.emailColumn")}</th>
-            <th style={thStyle}>{t("users.role")}</th>
-            {multiStoreEnabled && <th style={thStyle}>{t("users.storeColumn")}</th>}
-            <th style={thStyle}>{t("users.status")}</th>
-            <th style={thStyle}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((u) => (
-            <tr key={u.id}>
-              <td style={tdStyle}>{u.fullName}</td>
-              <td style={tdStyle}>{u.username ?? "—"}</td>
-              <td style={tdStyle}>{u.email ?? "—"}</td>
-              <td style={tdStyle}>{getRoleDisplayName(u.roleName)}</td>
-              {multiStoreEnabled && (
-                <td style={tdStyle}>
-                  {u.storeId ? (stores.find((s) => s.id === u.storeId)?.name ?? "—") : t("users.allStores")}
-                </td>
-              )}
-              <td style={tdStyle}>
-                <span style={badgeStyle(u.isActive ? "ok" : "warning")}>
-                  {u.isActive ? t("users.active") : t("users.inactive")}
-                </span>
-              </td>
-              <td style={tdStyle}>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button style={secondaryButtonStyle} onClick={() => startEdit(u)}>
-                    {t("users.edit")}
-                  </button>
-                  {u.id !== user?.id && (
-                    <>
-                      <button style={secondaryButtonStyle} onClick={() => handleToggleActive(u)}>
-                        {u.isActive ? t("users.deactivate") : t("users.reactivate")}
-                      </button>
-                      {u.isActive && (
-                        <button style={secondaryButtonStyle} onClick={() => handleImpersonate(u)}>
-                          {t("users.impersonate")}
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </td>
-            </tr>
-          ))}
-          {users.length === 0 && (
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
             <tr>
-              <td style={tdStyle} colSpan={multiStoreEnabled ? 7 : 6}>
-                {t("users.none")}
-              </td>
+              <th style={thStyle}>{t("users.name")}</th>
+              <th style={thStyle}>{t("users.username")}</th>
+              <th style={thStyle}>{t("users.emailColumn")}</th>
+              <th style={thStyle}>{t("users.role")}</th>
+              {multiStoreEnabled && <th style={thStyle}>{t("users.storeColumn")}</th>}
+              <th style={thStyle}>{t("users.status")}</th>
+              <th style={thStyle}></th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id}>
+                <td style={tdStyle}>{u.fullName}</td>
+                <td style={tdStyle}>{u.username ?? "—"}</td>
+                <td style={tdStyle}>{u.email ?? "—"}</td>
+                <td style={tdStyle}>{getRoleDisplayName(u.roleName)}</td>
+                {multiStoreEnabled && (
+                  <td style={tdStyle}>
+                    {u.storeId ? (stores.find((s) => s.id === u.storeId)?.name ?? "—") : t("users.allStores")}
+                  </td>
+                )}
+                <td style={tdStyle}>
+                  <span style={badgeStyle(u.isActive ? "ok" : "warning")}>
+                    {u.isActive ? t("users.active") : t("users.inactive")}
+                  </span>
+                </td>
+                <td style={tdStyle}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    <button style={secondaryButtonStyle} onClick={() => startEdit(u)}>
+                      {t("users.edit")}
+                    </button>
+                    {u.id !== user?.id && (
+                      <>
+                        <button style={secondaryButtonStyle} onClick={() => handleToggleActive(u)}>
+                          {u.isActive ? t("users.deactivate") : t("users.reactivate")}
+                        </button>
+                        {u.isActive && (
+                          <button style={secondaryButtonStyle} onClick={() => handleImpersonate(u)}>
+                            {t("users.impersonate")}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {users.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={multiStoreEnabled ? 7 : 6}>
+                  {t("users.none")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </main>
   );
 }

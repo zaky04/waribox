@@ -39,7 +39,7 @@ export function CloseCashSessionPanel({ expectedAmount, onClose, onCancel }: Clo
         {t("sales.closeSession.difference")} {difference > 0 ? "+" : ""}
         {difference}
       </p>
-      <div style={{ display: "flex", gap: 12 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
         <button style={primaryButtonStyle} onClick={handleClose} disabled={loading}>
           {loading ? t("sales.closeSession.closing") : t("sales.closeSession.confirm")}
         </button>

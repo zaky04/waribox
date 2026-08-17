@@ -3,7 +3,9 @@ import type { CSSProperties } from "react";
 export const pageStyle: CSSProperties = {
   maxWidth: 960,
   margin: "0 auto",
-  padding: 24,
+  // clamp() plutôt qu'une valeur fixe : réduit la marge sur un petit écran
+  // (moins d'espace perdu sur les côtés) sans avoir besoin d'une media query.
+  padding: "clamp(12px, 4vw, 24px)",
 };
 
 export const cardStyle: CSSProperties = {

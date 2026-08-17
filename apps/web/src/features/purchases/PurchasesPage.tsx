@@ -278,6 +278,8 @@ export function PurchasesPage() {
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 8,
           }}
         >
           <span>
@@ -305,45 +307,47 @@ export function PurchasesPage() {
           <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
             {t("purchases.reorderHint", { days: REORDER_WINDOW_DAYS })}
           </p>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>{t("purchases.product")}</th>
-                <th style={thStyle}>{t("purchases.currentStock")}</th>
-                <th style={thStyle}>{t("purchases.alertThreshold")}</th>
-                <th style={thStyle}>{t("purchases.suggestedQty")}</th>
-                <th style={thStyle}>{t("purchases.basedOn")}</th>
-                <th style={thStyle}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {lowStockEntries.map((entry) => (
-                <tr key={entry.product.id}>
-                  <td style={tdStyle}>{entry.product.name}</td>
-                  <td style={tdStyle}>{entry.totalStock}</td>
-                  <td style={tdStyle}>{entry.product.lowStockThreshold}</td>
-                  <td style={tdStyle}>{suggestedReorderQuantity(entry)}</td>
-                  <td style={tdStyle}>
-                    {isPredictedSuggestion(entry)
-                      ? t("purchases.basedOnVelocity", { days: REORDER_WINDOW_DAYS })
-                      : t("purchases.basedOnThreshold")}
-                  </td>
-                  <td style={tdStyle}>
-                    <button
-                      style={{ ...primaryButtonStyle, padding: "4px 12px", fontSize: 13 }}
-                      onClick={() => addToCart(entry.product, suggestedReorderQuantity(entry))}
-                    >
-                      {t("purchases.addToCart")}
-                    </button>
-                  </td>
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>{t("purchases.product")}</th>
+                  <th style={thStyle}>{t("purchases.currentStock")}</th>
+                  <th style={thStyle}>{t("purchases.alertThreshold")}</th>
+                  <th style={thStyle}>{t("purchases.suggestedQty")}</th>
+                  <th style={thStyle}>{t("purchases.basedOn")}</th>
+                  <th style={thStyle}></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {lowStockEntries.map((entry) => (
+                  <tr key={entry.product.id}>
+                    <td style={tdStyle}>{entry.product.name}</td>
+                    <td style={tdStyle}>{entry.totalStock}</td>
+                    <td style={tdStyle}>{entry.product.lowStockThreshold}</td>
+                    <td style={tdStyle}>{suggestedReorderQuantity(entry)}</td>
+                    <td style={tdStyle}>
+                      {isPredictedSuggestion(entry)
+                        ? t("purchases.basedOnVelocity", { days: REORDER_WINDOW_DAYS })
+                        : t("purchases.basedOnThreshold")}
+                    </td>
+                    <td style={tdStyle}>
+                      <button
+                        style={{ ...primaryButtonStyle, padding: "4px 12px", fontSize: 13 }}
+                        onClick={() => addToCart(entry.product, suggestedReorderQuantity(entry))}
+                      >
+                        {t("purchases.addToCart")}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 24, marginTop: 24 }}>
+      <div className="cart-layout-grid">
         <div style={cardStyle}>
           <label>
             {t("purchases.supplier")}
@@ -375,49 +379,51 @@ export function PurchasesPage() {
           {cart.length === 0 ? (
             <p style={{ color: "var(--color-text-muted)" }}>{t("purchases.emptyCart")}</p>
           ) : (
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>{t("purchases.item")}</th>
-                  <th style={thStyle}>{t("purchases.quantity")}</th>
-                  <th style={thStyle}>{t("purchases.unitCost")}</th>
-                  <th style={thStyle}>{t("purchases.total")}</th>
-                  <th style={thStyle}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {cart.map((line) => (
-                  <tr key={line.variantId}>
-                    <td style={tdStyle}>{line.productName}</td>
-                    <td style={tdStyle}>
-                      <input
-                        type="number"
-                        value={line.quantity}
-                        onChange={(e) => updateQuantity(line.variantId, Number(e.target.value))}
-                        style={{ ...inputStyle, width: 60, marginTop: 0 }}
-                      />
-                    </td>
-                    <td style={tdStyle}>
-                      <input
-                        type="number"
-                        value={line.unitCost}
-                        onChange={(e) => updateUnitCost(line.variantId, Number(e.target.value))}
-                        style={{ ...inputStyle, width: 80, marginTop: 0 }}
-                      />
-                    </td>
-                    <td style={tdStyle}>{(line.quantity * line.unitCost).toFixed(0)}</td>
-                    <td style={tdStyle}>
-                      <button
-                        onClick={() => removeLine(line.variantId)}
-                        style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
-                      >
-                        ✕
-                      </button>
-                    </td>
+            <div style={{ overflowX: "auto" }}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>{t("purchases.item")}</th>
+                    <th style={thStyle}>{t("purchases.quantity")}</th>
+                    <th style={thStyle}>{t("purchases.unitCost")}</th>
+                    <th style={thStyle}>{t("purchases.total")}</th>
+                    <th style={thStyle}></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {cart.map((line) => (
+                    <tr key={line.variantId}>
+                      <td style={tdStyle}>{line.productName}</td>
+                      <td style={tdStyle}>
+                        <input
+                          type="number"
+                          value={line.quantity}
+                          onChange={(e) => updateQuantity(line.variantId, Number(e.target.value))}
+                          style={{ ...inputStyle, width: 60, marginTop: 0 }}
+                        />
+                      </td>
+                      <td style={tdStyle}>
+                        <input
+                          type="number"
+                          value={line.unitCost}
+                          onChange={(e) => updateUnitCost(line.variantId, Number(e.target.value))}
+                          style={{ ...inputStyle, width: 80, marginTop: 0 }}
+                        />
+                      </td>
+                      <td style={tdStyle}>{(line.quantity * line.unitCost).toFixed(0)}</td>
+                      <td style={tdStyle}>
+                        <button
+                          onClick={() => removeLine(line.variantId)}
+                          style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
 
           <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12, fontWeight: 700, fontSize: 18 }}>
@@ -470,33 +476,35 @@ export function PurchasesPage() {
         </div>
       </div>
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>{t("purchases.number")}</th>
-            <th style={thStyle}>{t("purchases.date")}</th>
-            <th style={thStyle}>{t("purchases.supplier")}</th>
-            <th style={thStyle}>{t("purchases.total")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {purchases.map((p) => (
-            <tr key={p.id}>
-              <td style={tdStyle}>{p.number}</td>
-              <td style={tdStyle}>{p.createdAt}</td>
-              <td style={tdStyle}>{supplierName(p.supplierId)}</td>
-              <td style={tdStyle}>{p.total}</td>
-            </tr>
-          ))}
-          {purchases.length === 0 && (
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
             <tr>
-              <td style={tdStyle} colSpan={4}>
-                {t("purchases.none")}
-              </td>
+              <th style={thStyle}>{t("purchases.number")}</th>
+              <th style={thStyle}>{t("purchases.date")}</th>
+              <th style={thStyle}>{t("purchases.supplier")}</th>
+              <th style={thStyle}>{t("purchases.total")}</th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {purchases.map((p) => (
+              <tr key={p.id}>
+                <td style={tdStyle}>{p.number}</td>
+                <td style={tdStyle}>{p.createdAt}</td>
+                <td style={tdStyle}>{supplierName(p.supplierId)}</td>
+                <td style={tdStyle}>{p.total}</td>
+              </tr>
+            ))}
+            {purchases.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={4}>
+                  {t("purchases.none")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </main>
   );
 }

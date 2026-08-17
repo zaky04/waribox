@@ -213,7 +213,7 @@ export function DashboardPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1>{t("dashboard.title")}</h1>
         {canSwitchStore && multiStoreEnabled && stores.filter((s) => s.isActive).length > 1 && (
           <label>

@@ -233,9 +233,9 @@ export function ProductsPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1>{t("products.title")}</h1>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button style={primaryButtonStyle} onClick={handlePrintLabels} disabled={printingLabels}>
             {printingLabels ? t("products.printingLabels") : t("products.printLabels")}
           </button>
@@ -283,7 +283,7 @@ export function ProductsPage() {
             <input style={inputStyle} value={unit} onChange={(e) => setUnit(e.target.value)} />
           </label>
 
-          <div style={{ display: "flex", gap: 16 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
             <label style={{ flex: 1 }}>
               {t("products.purchasePrice")}
               <input
@@ -356,73 +356,75 @@ export function ProductsPage() {
         </div>
       )}
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>{t("products.name")}</th>
-            <th style={thStyle}>{t("products.category")}</th>
-            {canViewMargins && <th style={thStyle}>{t("products.purchase")}</th>}
-            <th style={thStyle}>{t("products.sale")}</th>
-            <th style={thStyle}>{t("products.stock")}</th>
-            <th style={thStyle}>{t("products.labels")}</th>
-            {canManage && <th style={thStyle}></th>}
-          </tr>
-        </thead>
-        <tbody>
-          {products.map((product) => {
-            const stock = productStock(product.id);
-            const isLow = stock <= product.lowStockThreshold;
-            const category = categories.find((c) => c.id === product.categoryId);
-            return (
-              <tr key={product.id}>
-                <td style={tdStyle}>{product.name}</td>
-                <td style={tdStyle}>{category?.name ?? "—"}</td>
-                {canViewMargins && <td style={tdStyle}>{product.purchasePrice}</td>}
-                <td style={tdStyle}>{product.salePrice}</td>
-                <td style={tdStyle}>
-                  <span style={badgeStyle(isLow ? "warning" : "ok")}>{stock}</span>
-                </td>
-                <td style={tdStyle}>
-                  <input
-                    type="number"
-                    min={0}
-                    value={labelQuantities[product.id] ?? ""}
-                    onChange={(e) =>
-                      setLabelQuantities((prev) => ({ ...prev, [product.id]: e.target.value }))
-                    }
-                    placeholder="0"
-                    style={{ ...inputStyle, width: 60, marginTop: 0 }}
-                  />
-                </td>
-                {canManage && (
-                  <td style={tdStyle}>
-                    <button
-                      style={{
-                        background: "transparent",
-                        border: "1px solid var(--color-border)",
-                        color: "var(--color-text)",
-                        borderRadius: 8,
-                        padding: "6px 12px",
-                        cursor: "pointer",
-                      }}
-                      onClick={() => startEdit(product)}
-                    >
-                      {t("products.edit")}
-                    </button>
-                  </td>
-                )}
-              </tr>
-            );
-          })}
-          {products.length === 0 && (
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
             <tr>
-              <td style={tdStyle} colSpan={(canViewMargins ? 6 : 5) + (canManage ? 1 : 0)}>
-                {t("products.none")}
-              </td>
+              <th style={thStyle}>{t("products.name")}</th>
+              <th style={thStyle}>{t("products.category")}</th>
+              {canViewMargins && <th style={thStyle}>{t("products.purchase")}</th>}
+              <th style={thStyle}>{t("products.sale")}</th>
+              <th style={thStyle}>{t("products.stock")}</th>
+              <th style={thStyle}>{t("products.labels")}</th>
+              {canManage && <th style={thStyle}></th>}
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {products.map((product) => {
+              const stock = productStock(product.id);
+              const isLow = stock <= product.lowStockThreshold;
+              const category = categories.find((c) => c.id === product.categoryId);
+              return (
+                <tr key={product.id}>
+                  <td style={tdStyle}>{product.name}</td>
+                  <td style={tdStyle}>{category?.name ?? "—"}</td>
+                  {canViewMargins && <td style={tdStyle}>{product.purchasePrice}</td>}
+                  <td style={tdStyle}>{product.salePrice}</td>
+                  <td style={tdStyle}>
+                    <span style={badgeStyle(isLow ? "warning" : "ok")}>{stock}</span>
+                  </td>
+                  <td style={tdStyle}>
+                    <input
+                      type="number"
+                      min={0}
+                      value={labelQuantities[product.id] ?? ""}
+                      onChange={(e) =>
+                        setLabelQuantities((prev) => ({ ...prev, [product.id]: e.target.value }))
+                      }
+                      placeholder="0"
+                      style={{ ...inputStyle, width: 60, marginTop: 0 }}
+                    />
+                  </td>
+                  {canManage && (
+                    <td style={tdStyle}>
+                      <button
+                        style={{
+                          background: "transparent",
+                          border: "1px solid var(--color-border)",
+                          color: "var(--color-text)",
+                          borderRadius: 8,
+                          padding: "6px 12px",
+                          cursor: "pointer",
+                        }}
+                        onClick={() => startEdit(product)}
+                      >
+                        {t("products.edit")}
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+            {products.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={(canViewMargins ? 6 : 5) + (canManage ? 1 : 0)}>
+                  {t("products.none")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </main>
   );
 }

@@ -334,9 +334,9 @@ export function ReportsPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1>{t("reports.title")}</h1>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {subTabs.map((tab) => (
             <button
               key={tab.key}
@@ -354,7 +354,7 @@ export function ReportsPage() {
         </div>
       </div>
 
-      <div style={{ ...cardStyle, flexDirection: "row", gap: 16, alignItems: "flex-end" }}>
+      <div style={{ ...cardStyle, flexDirection: "row", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
         <label>
           {t("reports.from")}
           <input
@@ -411,9 +411,9 @@ export function ReportsPage() {
             <BarChart data={salesSummary.byDay.map((d) => ({ label: d.date.slice(5), value: d.total }))} />
           </div>
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24, flexWrap: "wrap", gap: 8 }}>
             <strong>{t("reports.topProducts")}</strong>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               <button style={secondaryButtonStyle} onClick={exportSalesPdf}>
                 {t("reports.exportPdf")}
               </button>
@@ -422,31 +422,33 @@ export function ReportsPage() {
               </button>
             </div>
           </div>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>{t("reports.product")}</th>
-                <th style={thStyle}>{t("reports.quantity")}</th>
-                <th style={thStyle}>{t("reports.revenueColumn")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {topProducts.map((p) => (
-                <tr key={p.productId}>
-                  <td style={tdStyle}>{p.name}</td>
-                  <td style={tdStyle}>{p.quantity}</td>
-                  <td style={tdStyle}>{p.revenue.toFixed(0)}</td>
-                </tr>
-              ))}
-              {topProducts.length === 0 && (
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead>
                 <tr>
-                  <td style={tdStyle} colSpan={3}>
-                    {t("reports.noSalesPeriod")}
-                  </td>
+                  <th style={thStyle}>{t("reports.product")}</th>
+                  <th style={thStyle}>{t("reports.quantity")}</th>
+                  <th style={thStyle}>{t("reports.revenueColumn")}</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {topProducts.map((p) => (
+                  <tr key={p.productId}>
+                    <td style={tdStyle}>{p.name}</td>
+                    <td style={tdStyle}>{p.quantity}</td>
+                    <td style={tdStyle}>{p.revenue.toFixed(0)}</td>
+                  </tr>
+                ))}
+                {topProducts.length === 0 && (
+                  <tr>
+                    <td style={tdStyle} colSpan={3}>
+                      {t("reports.noSalesPeriod")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
@@ -489,41 +491,43 @@ export function ReportsPage() {
           <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: "4px 0 12px" }}>
             {t("reports.abcHint")}
           </p>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>{t("reports.product")}</th>
-                <th style={thStyle}>{t("reports.quantitySold")}</th>
-                <th style={thStyle}>{t("reports.margin")}</th>
-                <th style={thStyle}>{t("reports.rate")}</th>
-                <th style={thStyle}>{t("reports.cumulativeShare")}</th>
-                <th style={thStyle}>{t("reports.abcClass")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {productMargins.map((p) => (
-                <tr key={p.productId}>
-                  <td style={tdStyle}>{p.name}</td>
-                  <td style={tdStyle}>{p.quantity}</td>
-                  <td style={{ ...tdStyle, color: p.margin >= 0 ? "#86efac" : "#f87171" }}>
-                    {p.margin.toFixed(0)}
-                  </td>
-                  <td style={tdStyle}>{p.marginRate.toFixed(1)}%</td>
-                  <td style={tdStyle}>{p.cumulativeShare.toFixed(1)}%</td>
-                  <td style={tdStyle}>
-                    <span style={abcBadgeStyle(p.abcClass)}>{p.abcClass}</span>
-                  </td>
-                </tr>
-              ))}
-              {productMargins.length === 0 && (
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead>
                 <tr>
-                  <td style={tdStyle} colSpan={6}>
-                    {t("reports.noSalesPeriod")}
-                  </td>
+                  <th style={thStyle}>{t("reports.product")}</th>
+                  <th style={thStyle}>{t("reports.quantitySold")}</th>
+                  <th style={thStyle}>{t("reports.margin")}</th>
+                  <th style={thStyle}>{t("reports.rate")}</th>
+                  <th style={thStyle}>{t("reports.cumulativeShare")}</th>
+                  <th style={thStyle}>{t("reports.abcClass")}</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {productMargins.map((p) => (
+                  <tr key={p.productId}>
+                    <td style={tdStyle}>{p.name}</td>
+                    <td style={tdStyle}>{p.quantity}</td>
+                    <td style={{ ...tdStyle, color: p.margin >= 0 ? "#86efac" : "#f87171" }}>
+                      {p.margin.toFixed(0)}
+                    </td>
+                    <td style={tdStyle}>{p.marginRate.toFixed(1)}%</td>
+                    <td style={tdStyle}>{p.cumulativeShare.toFixed(1)}%</td>
+                    <td style={tdStyle}>
+                      <span style={abcBadgeStyle(p.abcClass)}>{p.abcClass}</span>
+                    </td>
+                  </tr>
+                ))}
+                {productMargins.length === 0 && (
+                  <tr>
+                    <td style={tdStyle} colSpan={6}>
+                      {t("reports.noSalesPeriod")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
@@ -534,7 +538,7 @@ export function ReportsPage() {
             <LineChart data={cashFlow.byMonth.map((m) => ({ label: m.month.slice(5), value: m.net }))} />
           </div>
 
-          <div style={{ ...cardStyle, flexDirection: "row", gap: 16, alignItems: "flex-end" }}>
+          <div style={{ ...cardStyle, flexDirection: "row", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
             <label>
               {t("reports.projectionYears")}
               <select style={inputStyle} value={years} onChange={(e) => setYears(Number(e.target.value))}>
@@ -574,30 +578,32 @@ export function ReportsPage() {
                 </button>
               </div>
 
-              <table style={tableStyle}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>{t("reports.year")}</th>
-                    <th style={thStyle}>{t("reports.projectedIn")}</th>
-                    <th style={thStyle}>{t("reports.projectedOut")}</th>
-                    <th style={thStyle}>{t("reports.net")}</th>
-                    <th style={thStyle}>{t("reports.cumulative")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {projection.byYear.map((y) => (
-                    <tr key={y.year}>
-                      <td style={tdStyle}>{y.year}</td>
-                      <td style={tdStyle}>{y.projectedIn.toFixed(0)}</td>
-                      <td style={tdStyle}>{y.projectedOut.toFixed(0)}</td>
-                      <td style={{ ...tdStyle, color: y.projectedNet >= 0 ? "#86efac" : "#f87171" }}>
-                        {y.projectedNet.toFixed(0)}
-                      </td>
-                      <td style={tdStyle}>{y.cumulative.toFixed(0)}</td>
+              <div style={{ overflowX: "auto" }}>
+                <table style={tableStyle}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>{t("reports.year")}</th>
+                      <th style={thStyle}>{t("reports.projectedIn")}</th>
+                      <th style={thStyle}>{t("reports.projectedOut")}</th>
+                      <th style={thStyle}>{t("reports.net")}</th>
+                      <th style={thStyle}>{t("reports.cumulative")}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {projection.byYear.map((y) => (
+                      <tr key={y.year}>
+                        <td style={tdStyle}>{y.year}</td>
+                        <td style={tdStyle}>{y.projectedIn.toFixed(0)}</td>
+                        <td style={tdStyle}>{y.projectedOut.toFixed(0)}</td>
+                        <td style={{ ...tdStyle, color: y.projectedNet >= 0 ? "#86efac" : "#f87171" }}>
+                          {y.projectedNet.toFixed(0)}
+                        </td>
+                        <td style={tdStyle}>{y.cumulative.toFixed(0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </>
           )}
         </>
@@ -650,46 +656,48 @@ export function ReportsPage() {
               {t("reports.exportExcel")}
             </button>
           </div>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>{t("reports.opening")}</th>
-                <th style={thStyle}>{t("reports.cashier")}</th>
-                <th style={thStyle}>{t("reports.openingAmount")}</th>
-                <th style={thStyle}>{t("reports.closing")}</th>
-                <th style={thStyle}>{t("reports.closingAmount")}</th>
-                <th style={thStyle}>{t("reports.expected")}</th>
-                <th style={thStyle}>{t("reports.difference")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cashSessionRows.map((r, i) => (
-                <tr key={i}>
-                  <td style={tdStyle}>{r.openedAt}</td>
-                  <td style={tdStyle}>{r.userName}</td>
-                  <td style={tdStyle}>{r.openingAmount.toFixed(0)}</td>
-                  <td style={tdStyle}>{r.closedAt ?? t("reports.inProgress")}</td>
-                  <td style={tdStyle}>{r.closingAmount != null ? r.closingAmount.toFixed(0) : "—"}</td>
-                  <td style={tdStyle}>{r.expectedAmount != null ? r.expectedAmount.toFixed(0) : "—"}</td>
-                  <td
-                    style={{
-                      ...tdStyle,
-                      color: r.difference == null ? undefined : r.difference === 0 ? "#86efac" : "#f87171",
-                    }}
-                  >
-                    {r.difference != null ? r.difference.toFixed(0) : "—"}
-                  </td>
-                </tr>
-              ))}
-              {cashSessionRows.length === 0 && (
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead>
                 <tr>
-                  <td style={tdStyle} colSpan={7}>
-                    {t("reports.noCashSessions")}
-                  </td>
+                  <th style={thStyle}>{t("reports.opening")}</th>
+                  <th style={thStyle}>{t("reports.cashier")}</th>
+                  <th style={thStyle}>{t("reports.openingAmount")}</th>
+                  <th style={thStyle}>{t("reports.closing")}</th>
+                  <th style={thStyle}>{t("reports.closingAmount")}</th>
+                  <th style={thStyle}>{t("reports.expected")}</th>
+                  <th style={thStyle}>{t("reports.difference")}</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {cashSessionRows.map((r, i) => (
+                  <tr key={i}>
+                    <td style={tdStyle}>{r.openedAt}</td>
+                    <td style={tdStyle}>{r.userName}</td>
+                    <td style={tdStyle}>{r.openingAmount.toFixed(0)}</td>
+                    <td style={tdStyle}>{r.closedAt ?? t("reports.inProgress")}</td>
+                    <td style={tdStyle}>{r.closingAmount != null ? r.closingAmount.toFixed(0) : "—"}</td>
+                    <td style={tdStyle}>{r.expectedAmount != null ? r.expectedAmount.toFixed(0) : "—"}</td>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        color: r.difference == null ? undefined : r.difference === 0 ? "#86efac" : "#f87171",
+                      }}
+                    >
+                      {r.difference != null ? r.difference.toFixed(0) : "—"}
+                    </td>
+                  </tr>
+                ))}
+                {cashSessionRows.length === 0 && (
+                  <tr>
+                    <td style={tdStyle} colSpan={7}>
+                      {t("reports.noCashSessions")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 

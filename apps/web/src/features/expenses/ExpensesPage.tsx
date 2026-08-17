@@ -157,7 +157,7 @@ export function ExpensesPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1>{t("expenses.title")}</h1>
         {canManage && (
           <button style={primaryButtonStyle} onClick={() => (showForm ? resetForm() : setShowForm(true))}>
@@ -252,62 +252,64 @@ export function ExpensesPage() {
         </label>
       </FilterBar>
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>{t("expenses.date")}</th>
-            <th style={thStyle}>{t("expenses.category")}</th>
-            <th style={thStyle}>{t("expenses.amount")}</th>
-            <th style={thStyle}>{t("expenses.note")}</th>
-            <th style={thStyle}>{t("expenses.user")}</th>
-            <th style={thStyle}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {expenses.map((expense) => (
-            <tr key={expense.id}>
-              <td style={tdStyle}>{expense.expenseDate}</td>
-              <td style={tdStyle}>{expense.category}</td>
-              <td style={tdStyle}>{expense.amount.toFixed(0)}</td>
-              <td style={tdStyle}>{expense.note ?? "—"}</td>
-              <td style={tdStyle}>{userName(expense.userId)}</td>
-              <td style={tdStyle}>
-                {canEdit && (
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                      onClick={() => startEdit(expense)}
-                    >
-                      {t("expenses.edit")}
-                    </button>
-                    <button
-                      style={{
-                        background: "transparent",
-                        border: "1px solid #f87171",
-                        color: "#f87171",
-                        borderRadius: 8,
-                        padding: "6px 12px",
-                        fontSize: 14,
-                        cursor: "pointer",
-                      }}
-                      onClick={() => handleDelete(expense)}
-                    >
-                      {t("expenses.delete")}
-                    </button>
-                  </div>
-                )}
-              </td>
-            </tr>
-          ))}
-          {expenses.length === 0 && (
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
             <tr>
-              <td style={tdStyle} colSpan={6}>
-                {t("expenses.none")}
-              </td>
+              <th style={thStyle}>{t("expenses.date")}</th>
+              <th style={thStyle}>{t("expenses.category")}</th>
+              <th style={thStyle}>{t("expenses.amount")}</th>
+              <th style={thStyle}>{t("expenses.note")}</th>
+              <th style={thStyle}>{t("expenses.user")}</th>
+              <th style={thStyle}></th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {expenses.map((expense) => (
+              <tr key={expense.id}>
+                <td style={tdStyle}>{expense.expenseDate}</td>
+                <td style={tdStyle}>{expense.category}</td>
+                <td style={tdStyle}>{expense.amount.toFixed(0)}</td>
+                <td style={tdStyle}>{expense.note ?? "—"}</td>
+                <td style={tdStyle}>{userName(expense.userId)}</td>
+                <td style={tdStyle}>
+                  {canEdit && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      <button
+                        style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                        onClick={() => startEdit(expense)}
+                      >
+                        {t("expenses.edit")}
+                      </button>
+                      <button
+                        style={{
+                          background: "transparent",
+                          border: "1px solid #f87171",
+                          color: "#f87171",
+                          borderRadius: 8,
+                          padding: "6px 12px",
+                          fontSize: 14,
+                          cursor: "pointer",
+                        }}
+                        onClick={() => handleDelete(expense)}
+                      >
+                        {t("expenses.delete")}
+                      </button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {expenses.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={6}>
+                  {t("expenses.none")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </main>
   );
 }

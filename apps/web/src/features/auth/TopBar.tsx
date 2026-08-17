@@ -29,9 +29,11 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
         <div
           style={{
             display: "flex",
+            flexWrap: "wrap",
             justifyContent: "space-between",
             alignItems: "center",
-            padding: "8px 24px",
+            gap: 8,
+            padding: "8px 16px",
             background: "#7c2d12",
             color: "#fdba74",
             fontSize: 14,
@@ -60,9 +62,11 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
       <div
         style={{
           display: "flex",
+          flexWrap: "wrap",
           justifyContent: "space-between",
           alignItems: "center",
-          padding: "12px 24px",
+          gap: 12,
+          padding: "12px 16px",
           background: "var(--color-bg-elevated)",
           borderBottom: "1px solid var(--color-border)",
         }}
@@ -71,7 +75,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
           <strong>{user?.fullName}</strong>{" "}
           <span style={{ color: "var(--color-text-muted)" }}>— {user?.roleName && getRoleDisplayName(user.roleName)}</span>
         </div>
-        <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <StoreSwitcher enabled={multiStoreEnabled} stores={stores} />
           <button
             onClick={() => setShowPasswordModal(true)}
