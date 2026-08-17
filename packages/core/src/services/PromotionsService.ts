@@ -1,5 +1,6 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { desc, eq } from "drizzle-orm";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 
@@ -17,15 +18,15 @@ export interface CreatePromotionInput {
 }
 
 function validatePromotionInput(input: CreatePromotionInput) {
-  if (!input.name.trim()) throw new Error("Le nom de la promotion est requis.");
+  if (!input.name.trim()) throw new Error(t("coreErrors.promotions.nameRequired"));
   if (!(input.discountPercent > 0 && input.discountPercent <= 100)) {
-    throw new Error("Le taux de remise doit être compris entre 0 et 100%.");
+    throw new Error(t("coreErrors.promotions.percentRange"));
   }
   if (input.startDate > input.endDate) {
-    throw new Error("La date de début doit précéder ou égaler la date de fin.");
+    throw new Error(t("coreErrors.promotions.dateOrder"));
   }
   if (input.scope === "product" && (!input.productIds || input.productIds.length === 0)) {
-    throw new Error("Sélectionne au moins un produit pour une remise de type \"produit\".");
+    throw new Error(t("coreErrors.promotions.productsRequired"));
   }
 }
 
@@ -74,15 +75,15 @@ export async function updatePromotion(
   requirePermission(actingPermissions, "manage_promotions");
 
   const existing = await db.select().from(schema.promotions).where(eq(schema.promotions.id, id)).get();
-  if (!existing) throw new Error("Promotion introuvable.");
+  if (!existing) throw new Error(t("coreErrors.promotions.notFound"));
 
   if (input.discountPercent !== undefined && !(input.discountPercent > 0 && input.discountPercent <= 100)) {
-    throw new Error("Le taux de remise doit être compris entre 0 et 100%.");
+    throw new Error(t("coreErrors.promotions.percentRange"));
   }
   const startDate = input.startDate ?? existing.startDate;
   const endDate = input.endDate ?? existing.endDate;
   if (startDate > endDate) {
-    throw new Error("La date de début doit précéder ou égaler la date de fin.");
+    throw new Error(t("coreErrors.promotions.dateOrder"));
   }
 
   const updated = await db

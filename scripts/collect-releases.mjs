@@ -50,16 +50,24 @@ if (exeFiles.length || msiFiles.length) {
   console.log("Installeur Windows introuvable — lance `pnpm build:desktop` d'abord.");
 }
 
-// --- Android : APK signé, produit sous WSL (voir tâche Android du projet) ---
+// --- Android : APK signé, produit par `pnpm --filter @gestion-boutique/desktop tauri android build` ---
+// Le nom exact dépend de la config de signature Gradle (voir
+// gen/android/app/build.gradle.kts + gen/android/keystore.properties, tous
+// deux ignorés par git comme tout `gen/`) : "app-universal-release.apk" (sans
+// suffixe) quand un signingConfig release est appliqué, sinon
+// "app-universal-release-unsigned.apk" — jamais copié, il ne s'installe sur
+// aucun appareil réel.
 const androidDest = join(releasesDir, "android");
 resetDir(androidDest);
 const apkDir = join(
   root,
   "apps/desktop/src-tauri/gen/android/app/build/outputs/apk/universal/release",
 );
-const apkFiles = copyMatching(apkDir, androidDest, (n) => n.endsWith("-signed.apk"));
+const apkFiles = copyMatching(apkDir, androidDest, (n) => n.endsWith(".apk") && !n.endsWith("-unsigned.apk"));
 if (apkFiles.length) {
   console.log(`Android copié dans releases/android : ${apkFiles.join(", ")}`);
 } else {
-  console.log("APK signé introuvable — recompile-le sous WSL puis signe-le avant de relancer ce script.");
+  console.log(
+    "APK signé introuvable — lance `pnpm --filter @gestion-boutique/desktop tauri android build` avec un signingConfig configuré (voir gen/android/keystore.properties).",
+  );
 }

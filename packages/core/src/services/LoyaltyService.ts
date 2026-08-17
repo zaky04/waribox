@@ -1,5 +1,6 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { desc, eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { getSettings } from "./SettingsService";
@@ -12,11 +13,12 @@ export function pointsToDiscount(points: number, ratio: number): number {
 
 export type LoyaltyTier = "bronze" | "silver" | "gold";
 
-export const TIER_LABELS: Record<LoyaltyTier, string> = {
-  bronze: "Bronze",
-  silver: "Argent",
-  gold: "Or",
-};
+// Fonction plutôt qu'un `Record` statique — un objet figé au chargement du
+// module ne suivrait pas un changement de langue en cours de session (même
+// piège que les listes d'options traduites côté UI, voir CLAUDE.md).
+export function getTierLabel(tier: LoyaltyTier): string {
+  return t(`loyaltyTiers.${tier}`);
+}
 
 // Bronze = palier de base (aucun seuil requis) — Argent/Or sont atteints sur
 // le cumul à VIE des points (lifetimeLoyaltyPoints, jamais décrémenté par un
@@ -51,13 +53,13 @@ export async function redeemPoints(db: Database, input: RedeemPointsInput) {
     .get();
 
   if (!customer) {
-    throw new Error("Client introuvable.");
+    throw new Error(t("coreErrors.loyalty.customerNotFound"));
   }
   if (input.points <= 0) {
-    throw new Error("Le nombre de points à utiliser doit être supérieur à zéro.");
+    throw new Error(t("coreErrors.loyalty.pointsPositive"));
   }
   if (input.points > customer.loyaltyPoints) {
-    throw new Error(`Le client ne dispose que de ${customer.loyaltyPoints} points.`);
+    throw new Error(t("coreErrors.common.insufficientLoyaltyPoints", { points: customer.loyaltyPoints }));
   }
 
   await db.insert(schema.loyaltyTransactions).values({
@@ -140,14 +142,14 @@ export async function adjustPoints(db: Database, input: AdjustPointsInput) {
     .where(eq(schema.customers.id, input.customerId))
     .get();
   if (!customer) {
-    throw new Error("Client introuvable.");
+    throw new Error(t("coreErrors.loyalty.customerNotFound"));
   }
   if (input.pointsDelta === 0) {
-    throw new Error("Le delta de points doit être différent de zéro.");
+    throw new Error(t("coreErrors.loyalty.deltaNonZero"));
   }
   const newBalance = customer.loyaltyPoints + input.pointsDelta;
   if (newBalance < 0) {
-    throw new Error(`Le client ne dispose que de ${customer.loyaltyPoints} points.`);
+    throw new Error(t("coreErrors.common.insufficientLoyaltyPoints", { points: customer.loyaltyPoints }));
   }
   // Un ajustement positif (bonus manuel) compte pour le palier au même titre
   // qu'un point gagné par achat (voir earnPoints) — sinon un client crédité

@@ -1,5 +1,6 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
@@ -136,7 +137,7 @@ export async function updateProduct(
     .returning()
     .get();
   if (!updated) {
-    throw new Error("Produit introuvable.");
+    throw new Error(t("coreErrors.products.notFound"));
   }
 
   if (input.updatedBy) {
@@ -230,7 +231,7 @@ export async function ensureVariantBarcode(db: Database, variantId: number): Pro
     .where(eq(schema.productVariants.id, variantId))
     .get();
   if (!variant) {
-    throw new Error("Variante introuvable.");
+    throw new Error(t("coreErrors.products.variantNotFound"));
   }
   if (variant.barcode) return variant.barcode;
 

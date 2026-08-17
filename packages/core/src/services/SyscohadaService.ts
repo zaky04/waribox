@@ -1,5 +1,6 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { eq } from "drizzle-orm";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { listExpenses } from "./ExpensesService";
@@ -21,21 +22,18 @@ import { getSettings } from "./SettingsService";
 // autre — seul le RÔLE comptable de chaque compte est fixe (ex: "le compte
 // Clients", quel que soit son numéro actuel), d'où les libellés ci-dessous
 // qui restent constants même quand le numéro change.
-const ROLE_LABELS = {
-  clients: "Clients",
-  fournisseurs: "Fournisseurs",
-  tvaVentes: "État, TVA facturée sur ventes de marchandises",
-  tvaServices: "État, TVA facturée sur prestations de services",
-  tvaAchats: "État, TVA récupérable sur achats",
-  banque: "Banques",
-  caisse: "Caisse",
-  mobileMoney: "Mobile Money",
-  achats: "Achats de marchandises",
-  ventes: "Ventes de marchandises",
-  services: "Services vendus",
-} as const;
-
-type AccountRole = keyof typeof ROLE_LABELS;
+type AccountRole =
+  | "clients"
+  | "fournisseurs"
+  | "tvaVentes"
+  | "tvaServices"
+  | "tvaAchats"
+  | "banque"
+  | "caisse"
+  | "mobileMoney"
+  | "achats"
+  | "ventes"
+  | "services";
 
 export interface SyscohadaAccount {
   code: string;
@@ -48,7 +46,10 @@ export type SyscohadaAccountSettings = Record<AccountRole, SyscohadaAccount> & {
 
 async function loadAccountSettings(db: Database): Promise<SyscohadaAccountSettings> {
   const s = await getSettings(db);
-  const account = (role: AccountRole, code: string): SyscohadaAccount => ({ code, label: ROLE_LABELS[role] });
+  const account = (role: AccountRole, code: string): SyscohadaAccount => ({
+    code,
+    label: t(`syscohadaRoleLabels.${role}`),
+  });
   return {
     clients: account("clients", s.syscohadaAccountClients),
     fournisseurs: account("fournisseurs", s.syscohadaAccountFournisseurs),
@@ -220,7 +221,9 @@ export async function getJournalVentes(
 
   const customersById = new Map(customers.map((c) => [c.id, c] as const));
   const customerLabel = (customerId: number | null) =>
-    customerId ? (customersById.get(customerId)?.fullName ?? "Client") : "Client comptant";
+    customerId
+      ? (customersById.get(customerId)?.fullName ?? t("syscohadaLabels.customerFallback"))
+      : t("syscohadaLabels.walkInCustomer");
 
   const paymentsByRef = new Map<string, typeof allPayments>();
   for (const p of allPayments) {
@@ -238,7 +241,7 @@ export async function getJournalVentes(
     if (!inRange(sale.createdAt, normalized)) continue;
 
     const date = sale.createdAt.slice(0, 10);
-    const libelle = `Vente ${sale.number} — ${customerLabel(sale.customerId)}`;
+    const libelle = t("syscohadaLabels.sale", { number: sale.number, customer: customerLabel(sale.customerId) });
     const ht = sale.subtotal - sale.discount;
 
     const salePayments = paymentsByRef.get(`sale:${sale.id}`) ?? [];
@@ -258,7 +261,10 @@ export async function getJournalVentes(
     if (!inRange(so.createdAt, normalized)) continue;
 
     const date = so.createdAt.slice(0, 10);
-    const libelle = `Ticket de service ${so.number} — ${customerLabel(so.customerId)}`;
+    const libelle = t("syscohadaLabels.serviceTicket", {
+      number: so.number,
+      customer: customerLabel(so.customerId),
+    });
     const ht = so.subtotal - so.discount;
 
     const soPayments = paymentsByRef.get(`service_order:${so.id}`) ?? [];
@@ -281,7 +287,7 @@ export async function getJournalVentes(
 
     const date = refund.createdAt.slice(0, 10);
     const piece = `AV-${sale?.number ?? refund.saleId}`;
-    const libelle = `Remboursement vente ${sale?.number ?? refund.saleId}`;
+    const libelle = t("syscohadaLabels.saleRefund", { number: sale?.number ?? refund.saleId });
 
     if (refund.subtotal > 0) lines.push(line(date, piece, accounts.ventes, libelle, refund.subtotal, 0));
     if (refund.taxTotal > 0) lines.push(line(date, piece, accounts.tvaVentes, libelle, refund.taxTotal, 0));
@@ -332,8 +338,8 @@ export async function getJournalAchats(
     if (!inRange(purchase.createdAt, normalized)) continue;
 
     const date = purchase.createdAt.slice(0, 10);
-    const supplierLabel = suppliersById.get(purchase.supplierId)?.name ?? "Fournisseur";
-    const libelle = `Achat ${purchase.number} — ${supplierLabel}`;
+    const supplierLabel = suppliersById.get(purchase.supplierId)?.name ?? t("syscohadaLabels.supplierFallback");
+    const libelle = t("syscohadaLabels.purchase", { number: purchase.number, supplier: supplierLabel });
 
     lines.push(line(date, purchase.number, accounts.achats, libelle, purchase.total, 0));
 
@@ -403,8 +409,10 @@ export async function getJournalTresorerie(
 
     const date = r.paidAt.slice(0, 10);
     const piece = `REG-C${r.creditId}`;
-    const label = credit?.customerId ? (customersById.get(credit.customerId)?.fullName ?? "Client") : "Client";
-    const libelle = `Règlement créance — ${label}`;
+    const label = credit?.customerId
+      ? (customersById.get(credit.customerId)?.fullName ?? t("syscohadaLabels.customerFallback"))
+      : t("syscohadaLabels.customerFallback");
+    const libelle = t("syscohadaLabels.creditRepayment", { label });
     lines.push(line(date, piece, treasuryAccount(accounts, r.method), libelle, r.amount, 0));
     lines.push(line(date, piece, accounts.clients, libelle, 0, r.amount));
   }
@@ -416,8 +424,10 @@ export async function getJournalTresorerie(
 
     const date = d.paidAt.slice(0, 10);
     const piece = `REG-F${d.debtId}`;
-    const label = debt?.supplierId ? (suppliersById.get(debt.supplierId)?.name ?? "Fournisseur") : "Fournisseur";
-    const libelle = `Règlement dette — ${label}`;
+    const label = debt?.supplierId
+      ? (suppliersById.get(debt.supplierId)?.name ?? t("syscohadaLabels.supplierFallback"))
+      : t("syscohadaLabels.supplierFallback");
+    const libelle = t("syscohadaLabels.debtRepayment", { label });
     lines.push(line(date, piece, accounts.fournisseurs, libelle, d.amount, 0));
     lines.push(line(date, piece, accounts.caisse, libelle, 0, d.amount));
   }

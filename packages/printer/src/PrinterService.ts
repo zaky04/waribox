@@ -1,3 +1,4 @@
+import { t } from "@gestion-boutique/i18n";
 import { EscPosBuilder } from "./escpos";
 import { connectPrinter, type PrinterConnection, type PrinterTransport } from "./transport";
 
@@ -27,14 +28,14 @@ export class PrinterService {
 
   async print(data: Uint8Array): Promise<void> {
     if (!this.connection) {
-      throw new Error("Aucune imprimante connectée.");
+      throw new Error(t("printerErrors.notConnected"));
     }
     await this.connection.write(data);
   }
 
   async openDrawer(): Promise<void> {
     if (!this.connection) {
-      throw new Error("Aucune imprimante connectée.");
+      throw new Error(t("printerErrors.notConnected"));
     }
     await this.connection.write(new EscPosBuilder().kickDrawer().build());
   }

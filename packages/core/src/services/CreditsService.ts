@@ -1,5 +1,6 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { desc, eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requireAnyPermission, type PermissionSet } from "../domain/permissions";
@@ -52,15 +53,13 @@ export async function recordCreditRepayment(
     .get();
 
   if (!credit) {
-    throw new Error("Créance introuvable.");
+    throw new Error(t("coreErrors.credits.notFound"));
   }
   if (input.amount <= 0) {
-    throw new Error("Le montant du remboursement doit être supérieur à zéro.");
+    throw new Error(t("coreErrors.credits.amountPositive"));
   }
   if (input.amount > credit.remainingBalance) {
-    throw new Error(
-      `Le montant dépasse le solde restant (${credit.remainingBalance}).`,
-    );
+    throw new Error(t("coreErrors.common.amountExceedsBalance", { balance: credit.remainingBalance }));
   }
 
   await db.insert(schema.creditRepayments).values({

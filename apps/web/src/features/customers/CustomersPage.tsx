@@ -6,12 +6,13 @@ import {
   hasPermission,
   listCustomerCredits,
   listCustomers,
-  TIER_LABELS,
+  getTierLabel,
   updateCustomer,
   type LoyaltyTier,
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import {
   cardStyle,
@@ -30,6 +31,7 @@ type Credit = typeof schema.customerCredits.$inferSelect;
 export function CustomersPage() {
   const db = useDatabase();
   const { user } = useAuth();
+  const { t } = useTranslation();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [credits, setCredits] = useState<Credit[]>([]);
@@ -115,7 +117,7 @@ export function CustomersPage() {
   const handleSubmit = async () => {
     setError(null);
     if (!fullName.trim()) {
-      setError("Le nom complet est requis.");
+      setError(t("customers.errors.nameRequired"));
       return;
     }
 
@@ -155,7 +157,7 @@ export function CustomersPage() {
     if (!user) return;
     const delta = Number(pointsDelta);
     if (!delta) {
-      setPointsError("Le delta doit être différent de zéro.");
+      setPointsError(t("customers.errors.deltaRequired"));
       return;
     }
 
@@ -170,7 +172,7 @@ export function CustomersPage() {
       setAdjustingId(null);
       await refresh();
     } catch (err) {
-      setPointsError(err instanceof Error ? err.message : "Impossible d'ajuster les points.");
+      setPointsError(err instanceof Error ? err.message : t("customers.errors.adjustFailed"));
     } finally {
       setAdjusting(false);
     }
@@ -179,27 +181,27 @@ export function CustomersPage() {
   return (
     <main style={pageStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Clients</h1>
+        <h1>{t("customers.title")}</h1>
         <button
           style={primaryButtonStyle}
           onClick={() => (showForm ? resetForm() : setShowForm(true))}
         >
-          {showForm ? "Annuler" : "+ Nouveau client"}
+          {showForm ? t("customers.cancel") : t("customers.new")}
         </button>
       </div>
 
       {showForm && (
         <div style={cardStyle}>
           <label>
-            Nom complet
+            {t("customers.fullName")}
             <input style={inputStyle} value={fullName} onChange={(e) => setFullName(e.target.value)} />
           </label>
           <label>
-            Téléphone
+            {t("customers.phone")}
             <input style={inputStyle} value={phone} onChange={(e) => setPhone(e.target.value)} />
           </label>
           <label>
-            Email
+            {t("customers.email")}
             <input
               style={inputStyle}
               type="email"
@@ -208,14 +210,14 @@ export function CustomersPage() {
             />
           </label>
           <label>
-            Adresse
+            {t("customers.address")}
             <input style={inputStyle} value={address} onChange={(e) => setAddress(e.target.value)} />
           </label>
 
           {error && <p style={{ color: "#f87171" }}>{error}</p>}
 
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
-            {saving ? "Enregistrement..." : editingId ? "Enregistrer les modifications" : "Créer le client"}
+            {saving ? t("customers.saving") : editingId ? t("customers.saveChanges") : t("customers.create")}
           </button>
         </div>
       )}
@@ -223,12 +225,12 @@ export function CustomersPage() {
       <table style={tableStyle}>
         <thead>
           <tr>
-            <th style={thStyle}>Nom</th>
-            <th style={thStyle}>Téléphone</th>
-            <th style={thStyle}>Email</th>
-            <th style={thStyle}>Solde créance</th>
-            <th style={thStyle}>Points fidélité</th>
-            <th style={thStyle}>Palier</th>
+            <th style={thStyle}>{t("customers.fullName")}</th>
+            <th style={thStyle}>{t("customers.phone")}</th>
+            <th style={thStyle}>{t("customers.email")}</th>
+            <th style={thStyle}>{t("customers.creditBalance")}</th>
+            <th style={thStyle}>{t("customers.loyaltyPoints")}</th>
+            <th style={thStyle}>{t("customers.tier")}</th>
             <th style={thStyle}></th>
           </tr>
         </thead>
@@ -245,7 +247,7 @@ export function CustomersPage() {
               <td style={tdStyle}>
                 {(() => {
                   const tier = computeTier(c.lifetimeLoyaltyPoints, tierThresholds.silver, tierThresholds.gold);
-                  return <span style={tierBadgeStyle(tier)}>{TIER_LABELS[tier]}</span>;
+                  return <span style={tierBadgeStyle(tier)}>{getTierLabel(tier)}</span>;
                 })()}
               </td>
               <td style={tdStyle}>
@@ -255,7 +257,7 @@ export function CustomersPage() {
                       style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
                       onClick={() => startEdit(c)}
                     >
-                      Modifier
+                      {t("customers.edit")}
                     </button>
                   )}
                   <button
@@ -269,20 +271,20 @@ export function CustomersPage() {
                     }}
                     onClick={() => startAdjust(c)}
                   >
-                    Ajuster points
+                    {t("customers.adjustPoints")}
                   </button>
                 </div>
                 {adjustingId === c.id && (
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
                     <input
                       type="number"
-                      placeholder="+/- points"
+                      placeholder={t("customers.pointsDeltaPlaceholder")}
                       style={{ ...inputStyle, width: 100, marginTop: 0 }}
                       value={pointsDelta}
                       onChange={(e) => setPointsDelta(e.target.value)}
                     />
                     <input
-                      placeholder="Motif (optionnel)"
+                      placeholder={t("customers.pointsReasonPlaceholder")}
                       style={{ ...inputStyle, width: 140, marginTop: 0 }}
                       value={pointsReason}
                       onChange={(e) => setPointsReason(e.target.value)}
@@ -292,13 +294,13 @@ export function CustomersPage() {
                       onClick={() => handleAdjustSubmit(c)}
                       disabled={adjusting}
                     >
-                      Valider
+                      {t("customers.confirm")}
                     </button>
                     <button
                       style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
                       onClick={() => setAdjustingId(null)}
                     >
-                      Annuler
+                      {t("customers.cancelAdjust")}
                     </button>
                   </div>
                 )}
@@ -311,7 +313,7 @@ export function CustomersPage() {
           {customers.length === 0 && (
             <tr>
               <td style={tdStyle} colSpan={7}>
-                Aucun client.
+                {t("customers.none")}
               </td>
             </tr>
           )}

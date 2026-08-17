@@ -1,3 +1,4 @@
+import { t } from "@gestion-boutique/i18n";
 import * as XLSX from "xlsx";
 import type {
   BalanceSheetReportData,
@@ -26,23 +27,30 @@ function buildWorkbookBlob(sheets: { name: string; rows: Record<string, unknown>
 export function buildSalesReportExcel(data: SalesReportData): Blob {
   return buildWorkbookBlob([
     {
-      name: "Résumé",
+      name: t("documents.reports.sales.excel.summarySheet"),
       rows: [
         {
-          Période: `${data.from} → ${data.to}`,
-          "CA total": data.totalRevenue,
-          Ventes: data.saleCount,
-          "Panier moyen": data.averageBasket,
+          [t("documents.reports.sales.excel.period")]: `${data.from} → ${data.to}`,
+          [t("documents.reports.sales.excel.totalRevenue")]: data.totalRevenue,
+          [t("documents.reports.sales.excel.sales")]: data.saleCount,
+          [t("documents.reports.sales.excel.averageBasket")]: data.averageBasket,
         },
       ],
     },
     {
-      name: "Par jour",
-      rows: data.byDay.map((d) => ({ Date: d.date, Total: d.total })),
+      name: t("documents.reports.sales.excel.byDaySheet"),
+      rows: data.byDay.map((d) => ({
+        [t("documents.reports.sales.excel.date")]: d.date,
+        [t("documents.reports.sales.excel.total")]: d.total,
+      })),
     },
     {
-      name: "Produits",
-      rows: data.topProducts.map((p) => ({ Produit: p.name, Quantité: p.quantity, Revenu: p.revenue })),
+      name: t("documents.reports.sales.excel.productsSheet"),
+      rows: data.topProducts.map((p) => ({
+        [t("documents.reports.sales.excel.product")]: p.name,
+        [t("documents.reports.sales.excel.quantity")]: p.quantity,
+        [t("documents.reports.sales.excel.revenue")]: p.revenue,
+      })),
     },
   ]);
 }
@@ -50,33 +58,36 @@ export function buildSalesReportExcel(data: SalesReportData): Blob {
 export function buildMarginsReportExcel(data: MarginsReportData): Blob {
   const sheets: { name: string; rows: Record<string, unknown>[] }[] = [
     {
-      name: "Résumé",
+      name: t("documents.reports.margins.excel.summarySheet"),
       rows: [
         {
-          Période: `${data.from} → ${data.to}`,
-          Revenu: data.revenue,
-          Coût: data.cost,
-          Marge: data.margin,
-          "Taux (%)": data.marginRate,
+          [t("documents.reports.margins.excel.period")]: `${data.from} → ${data.to}`,
+          [t("documents.reports.margins.excel.revenue")]: data.revenue,
+          [t("documents.reports.margins.excel.cost")]: data.cost,
+          [t("documents.reports.margins.excel.margin")]: data.margin,
+          [t("documents.reports.margins.excel.ratePercent")]: data.marginRate,
         },
       ],
     },
     {
-      name: "Par jour",
-      rows: data.byDay.map((d) => ({ Date: d.date, Marge: d.margin })),
+      name: t("documents.reports.margins.excel.byDaySheet"),
+      rows: data.byDay.map((d) => ({
+        [t("documents.reports.margins.excel.date")]: d.date,
+        [t("documents.reports.margins.excel.margin")]: d.margin,
+      })),
     },
   ];
   if (data.productBreakdown && data.productBreakdown.length > 0) {
     sheets.push({
-      name: "Produits (ABC)",
+      name: t("documents.reports.margins.excel.productsSheet"),
       rows: data.productBreakdown.map((p) => ({
-        Produit: p.name,
-        Quantité: p.quantity,
-        Marge: p.margin,
-        "Taux (%)": p.marginRate,
-        "Part marge (%)": p.marginShare,
-        "Cumul (%)": p.cumulativeShare,
-        Classe: p.abcClass,
+        [t("documents.reports.margins.excel.product")]: p.name,
+        [t("documents.reports.margins.excel.quantity")]: p.quantity,
+        [t("documents.reports.margins.excel.margin")]: p.margin,
+        [t("documents.reports.margins.excel.ratePercent")]: p.marginRate,
+        [t("documents.reports.margins.excel.marginSharePercent")]: p.marginShare,
+        [t("documents.reports.margins.excel.cumulativePercent")]: p.cumulativeShare,
+        [t("documents.reports.margins.excel.class")]: p.abcClass,
       })),
     });
   }
@@ -86,25 +97,25 @@ export function buildMarginsReportExcel(data: MarginsReportData): Blob {
 export function buildCashFlowReportExcel(data: CashFlowReportData): Blob {
   const sheets: { name: string; rows: Record<string, unknown>[] }[] = [
     {
-      name: "Par mois",
+      name: t("documents.reports.cashFlow.excel.byMonthSheet"),
       rows: data.byMonth.map((m) => ({
-        Mois: m.month,
-        Entrées: m.cashIn,
-        Sorties: m.cashOut,
-        Net: m.net,
+        [t("documents.reports.cashFlow.excel.month")]: m.month,
+        [t("documents.reports.cashFlow.excel.in")]: m.cashIn,
+        [t("documents.reports.cashFlow.excel.out")]: m.cashOut,
+        [t("documents.reports.cashFlow.excel.net")]: m.net,
       })),
     },
   ];
 
   if (data.projection) {
     sheets.push({
-      name: "Projection",
+      name: t("documents.reports.cashFlow.excel.projectionSheet"),
       rows: data.projection.byYear.map((p) => ({
-        Année: p.year,
-        Entrées: p.projectedIn,
-        Sorties: p.projectedOut,
-        Net: p.projectedNet,
-        Cumulé: p.cumulative,
+        [t("documents.reports.cashFlow.excel.year")]: p.year,
+        [t("documents.reports.cashFlow.excel.in")]: p.projectedIn,
+        [t("documents.reports.cashFlow.excel.out")]: p.projectedOut,
+        [t("documents.reports.cashFlow.excel.net")]: p.projectedNet,
+        [t("documents.reports.cashFlow.excel.cumulative")]: p.cumulative,
       })),
     });
   }
@@ -115,22 +126,25 @@ export function buildCashFlowReportExcel(data: CashFlowReportData): Blob {
 export function buildIncomeStatementReportExcel(data: IncomeStatementReportData): Blob {
   return buildWorkbookBlob([
     {
-      name: "Résumé",
+      name: t("documents.reports.incomeStatement.excel.summarySheet"),
       rows: [
         {
-          Période: `${data.from} → ${data.to}`,
-          "CA ventes": data.salesRevenue,
-          "CA services": data.serviceRevenue,
-          "CA total": data.revenue,
-          "Coût des ventes": data.cogs,
-          Charges: data.expensesTotal,
-          "Résultat net": data.netIncome,
+          [t("documents.reports.incomeStatement.excel.period")]: `${data.from} → ${data.to}`,
+          [t("documents.reports.incomeStatement.excel.salesRevenue")]: data.salesRevenue,
+          [t("documents.reports.incomeStatement.excel.serviceRevenue")]: data.serviceRevenue,
+          [t("documents.reports.incomeStatement.excel.totalRevenue")]: data.revenue,
+          [t("documents.reports.incomeStatement.excel.cogs")]: data.cogs,
+          [t("documents.reports.incomeStatement.excel.expenses")]: data.expensesTotal,
+          [t("documents.reports.incomeStatement.excel.netIncome")]: data.netIncome,
         },
       ],
     },
     {
-      name: "Charges par catégorie",
-      rows: data.expensesByCategory.map((e) => ({ Catégorie: e.category, Montant: e.amount })),
+      name: t("documents.reports.incomeStatement.excel.byCategorySheet"),
+      rows: data.expensesByCategory.map((e) => ({
+        [t("documents.reports.incomeStatement.excel.category")]: e.category,
+        [t("documents.reports.incomeStatement.excel.amount")]: e.amount,
+      })),
     },
   ]);
 }
@@ -138,20 +152,23 @@ export function buildIncomeStatementReportExcel(data: IncomeStatementReportData)
 export function buildTaxReportExcel(data: TaxReportData): Blob {
   return buildWorkbookBlob([
     {
-      name: "Résumé",
+      name: t("documents.reports.tax.excel.summarySheet"),
       rows: [
         {
-          Période: `${data.from} → ${data.to}`,
-          "TVA ventes": data.salesTaxTotal,
-          "TVA remboursée": data.refundsTaxTotal,
-          "TVA nette collectée": data.totalTaxCollected,
-          "CA taxable (TTC net)": data.taxableRevenue,
+          [t("documents.reports.tax.excel.period")]: `${data.from} → ${data.to}`,
+          [t("documents.reports.tax.excel.salesTax")]: data.salesTaxTotal,
+          [t("documents.reports.tax.excel.refundsTax")]: data.refundsTaxTotal,
+          [t("documents.reports.tax.excel.netTax")]: data.totalTaxCollected,
+          [t("documents.reports.tax.excel.taxableRevenue")]: data.taxableRevenue,
         },
       ],
     },
     {
-      name: "Par jour",
-      rows: data.byDay.map((d) => ({ Date: d.date, "TVA collectée": d.taxCollected })),
+      name: t("documents.reports.tax.excel.byDaySheet"),
+      rows: data.byDay.map((d) => ({
+        [t("documents.reports.tax.excel.date")]: d.date,
+        [t("documents.reports.tax.excel.taxCollected")]: d.taxCollected,
+      })),
     },
   ]);
 }
@@ -159,15 +176,15 @@ export function buildTaxReportExcel(data: TaxReportData): Blob {
 export function buildBalanceSheetReportExcel(data: BalanceSheetReportData): Blob {
   return buildWorkbookBlob([
     {
-      name: "Bilan",
+      name: t("documents.reports.balanceSheet.excel.sheet"),
       rows: [
-        { Poste: "Trésorerie", Montant: data.cash },
-        { Poste: "Valeur du stock", Montant: data.stockValue },
-        { Poste: "Créances clients", Montant: data.receivables },
-        { Poste: "Total Actif", Montant: data.actifTotal },
-        { Poste: "Dettes fournisseurs", Montant: data.payables },
-        { Poste: "Total Passif", Montant: data.passifTotal },
-        { Poste: "Capitaux propres (résiduel)", Montant: data.equity },
+        { [t("documents.reports.balanceSheet.columnItem")]: t("documents.reports.balanceSheet.rowCash"), [t("documents.reports.balanceSheet.columnAmount")]: data.cash },
+        { [t("documents.reports.balanceSheet.columnItem")]: t("documents.reports.balanceSheet.rowStockValue"), [t("documents.reports.balanceSheet.columnAmount")]: data.stockValue },
+        { [t("documents.reports.balanceSheet.columnItem")]: t("documents.reports.balanceSheet.rowReceivables"), [t("documents.reports.balanceSheet.columnAmount")]: data.receivables },
+        { [t("documents.reports.balanceSheet.columnItem")]: t("documents.reports.balanceSheet.rowTotalAssets"), [t("documents.reports.balanceSheet.columnAmount")]: data.actifTotal },
+        { [t("documents.reports.balanceSheet.columnItem")]: t("documents.reports.balanceSheet.rowPayables"), [t("documents.reports.balanceSheet.columnAmount")]: data.payables },
+        { [t("documents.reports.balanceSheet.columnItem")]: t("documents.reports.balanceSheet.rowTotalLiabilities"), [t("documents.reports.balanceSheet.columnAmount")]: data.passifTotal },
+        { [t("documents.reports.balanceSheet.columnItem")]: t("documents.reports.balanceSheet.rowEquity"), [t("documents.reports.balanceSheet.columnAmount")]: data.equity },
       ],
     },
   ]);
@@ -178,13 +195,13 @@ export function buildSyscohadaJournalExcel(data: SyscohadaJournalReportData): Bl
     {
       name: data.title.slice(0, 31),
       rows: data.lines.map((l) => ({
-        Date: l.date,
-        Pièce: l.piece,
-        Compte: l.compte,
-        Intitulé: l.intitule,
-        Libellé: l.libelle,
-        Débit: l.debit || "",
-        Crédit: l.credit || "",
+        [t("documents.reports.syscohadaJournal.excel.date")]: l.date,
+        [t("documents.reports.syscohadaJournal.excel.piece")]: l.piece,
+        [t("documents.reports.syscohadaJournal.excel.account")]: l.compte,
+        [t("documents.reports.syscohadaJournal.excel.label")]: l.intitule,
+        [t("documents.reports.syscohadaJournal.excel.description")]: l.libelle,
+        [t("documents.reports.syscohadaJournal.excel.debit")]: l.debit || "",
+        [t("documents.reports.syscohadaJournal.excel.credit")]: l.credit || "",
       })),
     },
   ]);
@@ -193,13 +210,13 @@ export function buildSyscohadaJournalExcel(data: SyscohadaJournalReportData): Bl
 export function buildSyscohadaBalanceExcel(data: SyscohadaBalanceReportData): Blob {
   return buildWorkbookBlob([
     {
-      name: "Balance générale",
+      name: t("documents.reports.syscohadaBalance.excel.sheet"),
       rows: data.rows.map((r) => ({
-        Compte: r.compte,
-        Intitulé: r.intitule,
-        Débit: r.debit,
-        Crédit: r.credit,
-        Solde: r.solde,
+        [t("documents.reports.syscohadaBalance.excel.account")]: r.compte,
+        [t("documents.reports.syscohadaBalance.excel.label")]: r.intitule,
+        [t("documents.reports.syscohadaBalance.excel.debit")]: r.debit,
+        [t("documents.reports.syscohadaBalance.excel.credit")]: r.credit,
+        [t("documents.reports.syscohadaBalance.excel.balance")]: r.solde,
       })),
     },
   ]);
@@ -208,15 +225,15 @@ export function buildSyscohadaBalanceExcel(data: SyscohadaBalanceReportData): Bl
 export function buildCashSessionsReportExcel(data: CashSessionsReportData): Blob {
   return buildWorkbookBlob([
     {
-      name: "Sessions de caisse",
+      name: t("documents.reports.cashSessions.excel.sheet"),
       rows: data.rows.map((r) => ({
-        Ouverture: r.openedAt,
-        Caissier: r.userName,
-        "Montant ouverture": r.openingAmount,
-        Fermeture: r.closedAt ?? "En cours",
-        "Montant fermeture": r.closingAmount ?? "",
-        Attendu: r.expectedAmount ?? "",
-        Écart: r.difference ?? "",
+        [t("documents.reports.cashSessions.excel.openedAt")]: r.openedAt,
+        [t("documents.reports.cashSessions.excel.cashier")]: r.userName,
+        [t("documents.reports.cashSessions.excel.openingAmount")]: r.openingAmount,
+        [t("documents.reports.cashSessions.excel.closedAt")]: r.closedAt ?? t("documents.reports.ongoing"),
+        [t("documents.reports.cashSessions.excel.closingAmount")]: r.closingAmount ?? "",
+        [t("documents.reports.cashSessions.excel.expected")]: r.expectedAmount ?? "",
+        [t("documents.reports.cashSessions.excel.difference")]: r.difference ?? "",
       })),
     },
   ]);

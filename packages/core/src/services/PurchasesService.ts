@@ -1,5 +1,6 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema, withTransaction } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { desc, eq, sql } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
@@ -37,11 +38,11 @@ export async function createPurchase(
 ) {
   requirePermission(actingPermissions, "manage_suppliers");
   if (input.items.length === 0) {
-    throw new Error("L'achat doit contenir au moins un article.");
+    throw new Error(t("coreErrors.purchases.itemRequired"));
   }
   for (const item of input.items) {
     if (item.quantity <= 0) {
-      throw new Error("La quantité de chaque article doit être supérieure à zéro.");
+      throw new Error(t("coreErrors.purchases.quantityPositive"));
     }
   }
 
@@ -53,7 +54,7 @@ export async function createPurchase(
     const locations = await listLocations(db, input.storeId);
     const reserve = locations.find((l) => l.type === "reserve" || l.type.startsWith("reserve#"));
     if (!reserve) {
-      throw new Error("Emplacement de réserve introuvable pour cette boutique.");
+      throw new Error(t("coreErrors.purchases.reserveLocationNotFound"));
     }
 
     const total = input.items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);

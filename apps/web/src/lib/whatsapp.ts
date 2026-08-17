@@ -1,3 +1,5 @@
+import { t } from "@gestion-boutique/i18n";
+
 // Lien "cliquer pour envoyer" wa.me — n'exige aucun compte/API WhatsApp
 // Business, ouvre WhatsApp (app ou web) avec le message pré-rempli, un clic
 // suffit ensuite pour l'envoyer.
@@ -26,30 +28,30 @@ export interface WhatsAppReceiptData {
   amountPaid: number;
 }
 
-const WHATSAPP_PAYMENT_LABELS: Record<string, string> = {
-  cash: "Espèces",
-  card: "Carte",
-  mobile_money: "Mobile Money",
-  credit: "Crédit",
-};
-
 // Version texte du ticket, pour l'envoi WhatsApp — l'app étant 100% locale
 // sans serveur, il n'existe pas de page de reçu à héberger : un message
 // pré-rempli est la seule forme de "reçu numérique" possible ici.
+// Appelle `t()` directement (import depuis @gestion-boutique/i18n) plutôt que
+// de recevoir la langue/fonction `t` en paramètre — même principe que les
+// messages d'erreur de packages/core, voir CLAUDE.md.
 export function buildReceiptWhatsAppMessage(data: WhatsAppReceiptData): string {
+  const business = data.businessName ?? t("whatsapp.defaultBusinessName");
   const lines = [
-    `🧾 *${data.businessName ?? "WariBox"}* — Ticket ${data.saleNumber}`,
+    t("whatsapp.receipt.header", { business, saleNumber: data.saleNumber }),
     data.date,
     "",
     ...data.lines.map((line) => `${line.quantity} x ${line.label} — ${line.total.toFixed(0)}`),
     "",
-    `Sous-total : ${data.subtotal.toFixed(0)}`,
+    t("whatsapp.receipt.subtotal", { amount: data.subtotal.toFixed(0) }),
   ];
-  if (data.discount > 0) lines.push(`Remise : -${data.discount.toFixed(0)}`);
-  lines.push(`*Total : ${data.total.toFixed(0)}*`);
+  if (data.discount > 0) lines.push(t("whatsapp.receipt.discount", { amount: data.discount.toFixed(0) }));
+  lines.push(t("whatsapp.receipt.total", { amount: data.total.toFixed(0) }));
   lines.push(
-    `Payé (${WHATSAPP_PAYMENT_LABELS[data.paymentMethod] ?? data.paymentMethod}) : ${data.amountPaid.toFixed(0)}`,
+    t("whatsapp.receipt.paid", {
+      method: t(`sales.paymentMethods.${data.paymentMethod}`, { defaultValue: data.paymentMethod }),
+      amount: data.amountPaid.toFixed(0),
+    }),
   );
-  lines.push("", "Merci de votre visite !");
+  lines.push("", t("whatsapp.receipt.thanks"));
   return lines.join("\n");
 }

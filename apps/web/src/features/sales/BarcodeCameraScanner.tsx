@@ -1,5 +1,6 @@
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 // Détecte si un scan par caméra est possible sur cet appareil/navigateur —
 // utilisé pour n'afficher le bouton "Scanner (caméra)" que là où il a une
@@ -26,6 +27,7 @@ interface BarcodeCameraScannerProps {
 // pour couvrir les navigateurs qui n'exposent pas BarcodeDetector (Firefox,
 // Safari desktop...).
 export function BarcodeCameraScanner({ onDetected, onClose }: BarcodeCameraScannerProps) {
+  const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
   const onDetectedRef = useRef(onDetected);
@@ -83,8 +85,8 @@ export function BarcodeCameraScanner({ onDetected, onClose }: BarcodeCameraScann
         if (!cancelled) {
           setError(
             err instanceof Error && err.name === "NotAllowedError"
-              ? "Accès à la caméra refusé — autorise la caméra dans les paramètres du navigateur/de l'application."
-              : "Impossible d'accéder à la caméra sur cet appareil.",
+              ? t("sales.scanner.permissionDenied")
+              : t("sales.scanner.accessFailed"),
           );
         }
       }
@@ -135,9 +137,7 @@ export function BarcodeCameraScanner({ onDetected, onClose }: BarcodeCameraScann
         <p style={{ color: "#f87171", marginTop: 16, textAlign: "center", maxWidth: 400 }}>{error}</p>
       )}
       {!error && (
-        <p style={{ color: "#e2e8f0", marginTop: 16, textAlign: "center" }}>
-          Vise le code-barres avec la caméra — l&apos;article sera ajouté automatiquement.
-        </p>
+        <p style={{ color: "#e2e8f0", marginTop: 16, textAlign: "center" }}>{t("sales.scanner.instructions")}</p>
       )}
       <button
         onClick={onClose}
@@ -152,7 +152,7 @@ export function BarcodeCameraScanner({ onDetected, onClose }: BarcodeCameraScann
           fontSize: 14,
         }}
       >
-        Fermer
+        {t("sales.scanner.close")}
       </button>
     </div>
   );

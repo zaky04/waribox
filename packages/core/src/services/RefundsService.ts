@@ -1,5 +1,6 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema, withTransaction } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { and, asc, eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
@@ -85,7 +86,7 @@ export async function createRefund(db: Database, input: CreateRefundInput, actin
   requirePermission(actingPermissions, "manage_refunds");
 
   if (input.items.length === 0) {
-    throw new Error("Sélectionne au moins un article à rembourser.");
+    throw new Error(t("coreErrors.refunds.selectAtLeastOne"));
   }
 
   // Toute la séquence lecture-validation-écriture est atomique (voir
@@ -99,7 +100,7 @@ export async function createRefund(db: Database, input: CreateRefundInput, actin
 async function createRefundInTransaction(db: Database, input: CreateRefundInput) {
   const sale = await db.select().from(schema.sales).where(eq(schema.sales.id, input.saleId)).get();
   if (!sale) {
-    throw new Error("Vente introuvable.");
+    throw new Error(t("coreErrors.refunds.saleNotFound"));
   }
 
   const saleItems = await db
@@ -119,13 +120,13 @@ async function createRefundInTransaction(db: Database, input: CreateRefundInput)
     if (requested.quantity <= 0) continue;
     const saleItem = saleItemById.get(requested.saleItemId);
     if (!saleItem) {
-      throw new Error("Article de vente introuvable pour cette vente.");
+      throw new Error(t("coreErrors.refunds.saleItemNotFound"));
     }
     const refundedSoFar = alreadyRefunded[saleItem.id] ?? 0;
     const remaining = saleItem.quantity - refundedSoFar;
     if (requested.quantity > remaining) {
       throw new Error(
-        `Quantité remboursable dépassée pour cet article (restant : ${remaining}, demandé : ${requested.quantity}).`,
+        t("coreErrors.refunds.quantityExceeded", { remaining, requested: requested.quantity }),
       );
     }
 
@@ -152,7 +153,7 @@ async function createRefundInTransaction(db: Database, input: CreateRefundInput)
   }
 
   if (lines.length === 0) {
-    throw new Error("Aucune quantité valide à rembourser.");
+    throw new Error(t("coreErrors.refunds.noValidQuantity"));
   }
 
   const refund = await db
@@ -207,7 +208,7 @@ async function createRefundInTransaction(db: Database, input: CreateRefundInput)
         .orderBy(asc(schema.stockMovements.id));
       const firstMovement = saleMovements[0];
       if (!firstMovement) {
-        throw new Error("Impossible de retrouver l'emplacement d'origine de cet article pour la remise en stock.");
+        throw new Error(t("coreErrors.refunds.cannotFindOriginalLocation"));
       }
       const locationId = firstMovement.locationId;
       const magnitudes = saleMovements.map((m) => ({ batchId: m.batchId, qty: -m.quantityDelta }));

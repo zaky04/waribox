@@ -22,6 +22,7 @@ import {
   type ServiceOrderTicketData,
 } from "@gestion-boutique/printer";
 import { Fragment, useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { buildWhatsAppLink } from "../../lib/whatsapp";
 import { openExternalUrl } from "../../lib/openExternalUrl";
@@ -61,13 +62,6 @@ interface EditableItem {
   taxRate: number;
 }
 
-const PAYMENT_METHODS: { value: ServiceOrderPaymentMethod; label: string }[] = [
-  { value: "cash", label: "Espèces" },
-  { value: "card", label: "Carte" },
-  { value: "mobile_money", label: "Mobile Money" },
-  { value: "credit", label: "Crédit" },
-];
-
 // Utilisé pour le nom du fichier PDF enregistré — inclut la date ET l'heure
 // pour distinguer plusieurs tickets générés le même jour.
 function timestampForFilename(): string {
@@ -86,29 +80,38 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 const ITEM_STATUSES: ServiceOrderItemStatus[] = ["received", "in_progress", "ready", "picked_up"];
-const ITEM_STATUS_LABELS: Record<ServiceOrderItemStatus, string> = {
-  received: "Reçu",
-  in_progress: "En cours",
-  ready: "Prêt",
-  picked_up: "Retiré",
-};
-const AGGREGATE_STATUS_LABELS: Record<ServiceOrderAggregateStatus, string> = {
-  received: "Reçu",
-  in_progress: "En cours",
-  ready: "Prêt",
-  partially_picked_up: "Partiellement retiré",
-  closed: "Clôturé",
-};
-const PAYMENT_STATUS_LABELS: Record<string, string> = {
-  paid: "Payé",
-  partial: "Partiel",
-  credit: "Crédit",
-};
 
 export function ServiceOrdersPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
+  const { t } = useTranslation();
   const printer = usePrinter();
+
+  const PAYMENT_METHODS: { value: ServiceOrderPaymentMethod; label: string }[] = [
+    { value: "cash", label: t("sales.paymentMethods.cash") },
+    { value: "card", label: t("sales.paymentMethods.card") },
+    { value: "mobile_money", label: t("sales.paymentMethods.mobile_money") },
+    { value: "credit", label: t("sales.paymentMethods.credit") },
+  ];
+
+  const ITEM_STATUS_LABELS: Record<ServiceOrderItemStatus, string> = {
+    received: t("serviceOrders.itemStatus.received"),
+    in_progress: t("serviceOrders.itemStatus.in_progress"),
+    ready: t("serviceOrders.itemStatus.ready"),
+    picked_up: t("serviceOrders.itemStatus.picked_up"),
+  };
+  const AGGREGATE_STATUS_LABELS: Record<ServiceOrderAggregateStatus, string> = {
+    received: t("serviceOrders.aggregateStatus.received"),
+    in_progress: t("serviceOrders.aggregateStatus.in_progress"),
+    ready: t("serviceOrders.aggregateStatus.ready"),
+    partially_picked_up: t("serviceOrders.aggregateStatus.partially_picked_up"),
+    closed: t("serviceOrders.aggregateStatus.closed"),
+  };
+  const PAYMENT_STATUS_LABELS: Record<string, string> = {
+    paid: t("serviceOrders.paymentStatus.paid"),
+    partial: t("serviceOrders.paymentStatus.partial"),
+    credit: t("serviceOrders.paymentStatus.credit"),
+  };
 
   const [view, setView] = useState<"new" | "track" | "history">("new");
   const [showPrinterPanel, setShowPrinterPanel] = useState(false);
@@ -161,7 +164,7 @@ export function ServiceOrdersPage() {
   const refreshTrack = useCallback(async () => {
     const storeId = currentStoreId ?? undefined;
     const [orderRows, creditRows] = await Promise.all([
-      listServiceOrders(db, storeId),
+      listServiceOrders(db, { storeId }),
       listCustomerCredits(db, storeId),
     ]);
     setOrders(orderRows);
@@ -214,11 +217,11 @@ export function ServiceOrdersPage() {
     setCheckoutError(null);
     if (!user) return;
     if (lines.length === 0) {
-      setCheckoutError("Le ticket doit contenir au moins un article.");
+      setCheckoutError(t("serviceOrders.errors.itemRequired"));
       return;
     }
     if (lines.some((l) => !l.description.trim())) {
-      setCheckoutError("Chaque article doit avoir une description.");
+      setCheckoutError(t("serviceOrders.errors.descriptionRequired"));
       return;
     }
 
@@ -284,7 +287,7 @@ export function ServiceOrdersPage() {
       setPaymentMethod("cash");
       await refreshCatalog();
     } catch (err) {
-      setCheckoutError(err instanceof Error ? err.message : "Impossible d'enregistrer le ticket.");
+      setCheckoutError(err instanceof Error ? err.message : t("serviceOrders.errors.saveFailed"));
     } finally {
       setCheckingOut(false);
     }
@@ -343,7 +346,7 @@ export function ServiceOrdersPage() {
     if (!user) return;
     setHistoryError(null);
     if (editItems.some((i) => !i.description.trim())) {
-      setHistoryError("Chaque article doit avoir une description.");
+      setHistoryError(t("serviceOrders.errors.historyDescriptionRequired"));
       return;
     }
     setSavingHistory(true);
@@ -378,7 +381,7 @@ export function ServiceOrdersPage() {
       await refreshTrack();
       setExpandedOrderId(null);
     } catch (err) {
-      setHistoryError(err instanceof Error ? err.message : "Impossible d'enregistrer les modifications.");
+      setHistoryError(err instanceof Error ? err.message : t("serviceOrders.errors.historySaveFailed"));
     } finally {
       setSavingHistory(false);
     }
@@ -394,7 +397,7 @@ export function ServiceOrdersPage() {
     setRepayError(null);
     const value = Number(repayAmount);
     if (!value || value <= 0) {
-      setRepayError("Le montant doit être supérieur à zéro.");
+      setRepayError(t("serviceOrders.errors.repayAmountPositive"));
       return;
     }
     setRepaying(true);
@@ -403,7 +406,7 @@ export function ServiceOrdersPage() {
       setRepayAmount("");
       await refreshTrack();
     } catch (err) {
-      setRepayError(err instanceof Error ? err.message : "Impossible d'enregistrer le remboursement.");
+      setRepayError(err instanceof Error ? err.message : t("serviceOrders.errors.repayFailed"));
     } finally {
       setRepaying(false);
     }
@@ -412,7 +415,7 @@ export function ServiceOrdersPage() {
   return (
     <main style={pageStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Tickets de service</h1>
+        <h1>{t("serviceOrders.title")}</h1>
         <div style={{ display: "flex", gap: 8 }}>
           <button
             onClick={() => setView("new")}
@@ -423,7 +426,7 @@ export function ServiceOrdersPage() {
               border: view === "new" ? "none" : "1px solid var(--color-border)",
             }}
           >
-            Nouveau ticket
+            {t("serviceOrders.newTicket")}
           </button>
           <button
             onClick={() => setView("track")}
@@ -434,7 +437,7 @@ export function ServiceOrdersPage() {
               border: view === "track" ? "none" : "1px solid var(--color-border)",
             }}
           >
-            Suivi
+            {t("serviceOrders.tracking")}
           </button>
           {user && hasPermission(user.permissions, "edit_service_orders") && (
             <button
@@ -446,7 +449,7 @@ export function ServiceOrdersPage() {
                 border: view === "history" ? "none" : "1px solid var(--color-border)",
               }}
             >
-              Historique
+              {t("serviceOrders.history")}
             </button>
           )}
           <button
@@ -459,7 +462,7 @@ export function ServiceOrdersPage() {
               padding: "0 16px",
             }}
           >
-            Imprimante
+            {t("serviceOrders.printer")}
           </button>
         </div>
       </div>
@@ -479,24 +482,24 @@ export function ServiceOrdersPage() {
               }}
             >
               <span>
-                Ticket enregistré : <strong>{lastOrderNumber}</strong>
+                {t("serviceOrders.registered")} <strong>{lastOrderNumber}</strong>
               </span>
               <div style={{ display: "flex", gap: 8 }}>
                 <button
                   style={primaryButtonStyle}
                   disabled={!printer.connected || !lastTicket}
-                  title={!printer.connected ? "Connecte une imprimante pour imprimer le ticket" : undefined}
+                  title={!printer.connected ? t("serviceOrders.printerRequiredTooltip") : undefined}
                   onClick={async () => {
                     if (!lastTicket) return;
                     setPrintError(null);
                     try {
                       await printer.print(await buildServiceOrderTicket(lastTicket));
                     } catch (err) {
-                      setPrintError(err instanceof Error ? err.message : "Impression impossible.");
+                      setPrintError(err instanceof Error ? err.message : t("serviceOrders.printError"));
                     }
                   }}
                 >
-                  Imprimer le ticket
+                  {t("serviceOrders.printTicket")}
                 </button>
                 <button
                   style={{
@@ -512,7 +515,7 @@ export function ServiceOrdersPage() {
                     downloadBlob(blob, `ticket-${lastOrderNumber}-${timestampForFilename()}.pdf`);
                   }}
                 >
-                  Enregistrer en PDF
+                  {t("serviceOrders.saveAsPdf")}
                 </button>
               </div>
             </div>
@@ -522,32 +525,29 @@ export function ServiceOrdersPage() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 24, marginTop: 24 }}>
             <div style={cardStyle}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <strong>Articles déposés</strong>
+                <strong>{t("serviceOrders.depositedItems")}</strong>
                 <button
                   type="button"
                   style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
                   onClick={addManualLine}
                 >
-                  + Ajouter un article
+                  {t("serviceOrders.addItem")}
                 </button>
               </div>
               <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-                Saisie libre — décris l'article (ex : "Chemise blanche col italien", "iPhone 12, écran
-                fissuré") et son prix. Ajoute une ligne par article à suivre individuellement (ex : une
-                ligne par chemise si le client peut les retirer séparément), ou une seule ligne avec
-                quantité &gt; 1 si le lot est toujours retiré ensemble.
+                {t("serviceOrders.freeEntryHint")}
               </p>
 
               {lines.length === 0 ? (
-                <p style={{ color: "var(--color-text-muted)" }}>Aucun article.</p>
+                <p style={{ color: "var(--color-text-muted)" }}>{t("serviceOrders.emptyItems")}</p>
               ) : (
                 <table style={tableStyle}>
                   <thead>
                     <tr>
-                      <th style={thStyle}>Description</th>
-                      <th style={thStyle}>Qté</th>
-                      <th style={thStyle}>Prix unit.</th>
-                      <th style={thStyle}>Total</th>
+                      <th style={thStyle}>{t("serviceOrders.description")}</th>
+                      <th style={thStyle}>{t("serviceOrders.quantity")}</th>
+                      <th style={thStyle}>{t("serviceOrders.unitPrice")}</th>
+                      <th style={thStyle}>{t("serviceOrders.total")}</th>
                       <th style={thStyle}></th>
                     </tr>
                   </thead>
@@ -595,7 +595,7 @@ export function ServiceOrdersPage() {
               )}
 
               <label>
-                Date de retrait prévue (optionnelle)
+                {t("serviceOrders.promisedDate")}
                 <input
                   style={inputStyle}
                   type="date"
@@ -604,7 +604,7 @@ export function ServiceOrdersPage() {
                 />
               </label>
               <label>
-                Notes
+                {t("serviceOrders.notes")}
                 <textarea
                   style={{ ...inputStyle, minHeight: 60 }}
                   value={notes}
@@ -614,33 +614,32 @@ export function ServiceOrdersPage() {
             </div>
 
             <div style={cardStyle}>
-              <strong>Client & paiement</strong>
+              <strong>{t("serviceOrders.customerAndPayment")}</strong>
               <div>
-                <div>Sous-total : {subtotal.toFixed(0)}</div>
-                <div>Taxe : {taxTotal.toFixed(0)}</div>
-                <div style={{ fontWeight: 700, fontSize: 18 }}>Total : {total.toFixed(0)}</div>
+                <div>{t("serviceOrders.subtotal")} {subtotal.toFixed(0)}</div>
+                <div>{t("serviceOrders.tax")} {taxTotal.toFixed(0)}</div>
+                <div style={{ fontWeight: 700, fontSize: 18 }}>{t("serviceOrders.totalLabel")} {total.toFixed(0)}</div>
               </div>
 
               <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-                Facultatif pour un ticket payé intégralement. Renseigne au moins un nom et un téléphone
-                pour un paiement partiel/à crédit, ou pour rattacher la fidélité d'un client déjà connu.
+                {t("serviceOrders.optionalPaidHint")}
               </p>
 
               <label>
-                Client déjà enregistré
+                {t("serviceOrders.registeredCustomer")}
                 <SearchableSelect
                   value={customerId}
                   onChange={setCustomerId}
                   options={customers.map((c) => ({ value: String(c.id), label: c.fullName }))}
-                  emptyLabel="— Aucun / nouveau —"
-                  placeholder="Rechercher un client..."
+                  emptyLabel={t("serviceOrders.noCustomerOption")}
+                  placeholder={t("serviceOrders.searchCustomerPlaceholder")}
                 />
               </label>
 
               {!customerId && (
                 <>
                   <label>
-                    Nom{needsCustomerIdentification ? " (requis)" : " (optionnel)"}
+                    {t("serviceOrders.name")}{needsCustomerIdentification ? t("serviceOrders.requiredSuffix") : t("serviceOrders.optionalSuffix")}
                     <input
                       style={{
                         ...inputStyle,
@@ -651,23 +650,23 @@ export function ServiceOrdersPage() {
                       }}
                       value={newCustomerName}
                       onChange={(e) => setNewCustomerName(e.target.value)}
-                      placeholder="Nom du client"
+                      placeholder={t("serviceOrders.namePlaceholder")}
                     />
                   </label>
                   <label>
-                    Téléphone
+                    {t("serviceOrders.phone")}
                     <input
                       style={inputStyle}
                       value={newCustomerPhone}
                       onChange={(e) => setNewCustomerPhone(e.target.value)}
-                      placeholder="07 00 00 00 00"
+                      placeholder={t("serviceOrders.phonePlaceholder")}
                     />
                   </label>
                 </>
               )}
 
               <label>
-                Méthode de paiement
+                {t("serviceOrders.paymentMethod")}
                 <select
                   style={inputStyle}
                   value={paymentMethod}
@@ -682,7 +681,7 @@ export function ServiceOrdersPage() {
               </label>
 
               <label>
-                Montant payé (laisser vide = total)
+                {t("serviceOrders.amountPaid")}
                 <input
                   style={inputStyle}
                   type="number"
@@ -695,7 +694,7 @@ export function ServiceOrdersPage() {
               {checkoutError && <p style={{ color: "#f87171" }}>{checkoutError}</p>}
 
               <button style={primaryButtonStyle} onClick={handleSubmit} disabled={checkingOut}>
-                {checkingOut ? "Enregistrement..." : "Enregistrer et imprimer"}
+                {checkingOut ? t("serviceOrders.saving") : t("serviceOrders.submitAndPrint")}
               </button>
             </div>
           </div>
@@ -707,10 +706,10 @@ export function ServiceOrdersPage() {
           <table style={tableStyle}>
             <thead>
               <tr>
-                <th style={thStyle}>Ticket</th>
-                <th style={thStyle}>Client</th>
-                <th style={thStyle}>Statut</th>
-                <th style={thStyle}>Paiement</th>
+                <th style={thStyle}>{t("serviceOrders.ticket")}</th>
+                <th style={thStyle}>{t("serviceOrders.customer")}</th>
+                <th style={thStyle}>{t("serviceOrders.status")}</th>
+                <th style={thStyle}>{t("serviceOrders.payment")}</th>
                 <th style={thStyle}></th>
               </tr>
             </thead>
@@ -730,7 +729,7 @@ export function ServiceOrdersPage() {
                         {expanded
                           ? `${AGGREGATE_STATUS_LABELS[summary.status]} (${summary.pickedUpCount}/${summary.totalCount})`
                           : order.closedAt
-                            ? "Clôturé"
+                            ? t("serviceOrders.closedStatus")
                             : "—"}
                       </td>
                       <td style={tdStyle}>
@@ -743,7 +742,7 @@ export function ServiceOrdersPage() {
                           style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
                           onClick={() => toggleExpand(order.id)}
                         >
-                          {expanded ? "Fermer" : "Détail"}
+                          {expanded ? t("serviceOrders.close") : t("serviceOrders.detail")}
                         </button>
                       </td>
                     </tr>
@@ -757,7 +756,7 @@ export function ServiceOrdersPage() {
                                 style={{ display: "flex", alignItems: "center", gap: 12 }}
                               >
                                 <span style={{ flex: 1 }}>
-                                  {item.quantity} x {item.description || "Article"}
+                                  {item.quantity} x {item.description || t("serviceOrders.itemFallback")}
                                 </span>
                                 <select
                                   style={{ ...inputStyle, width: 160, marginTop: 0 }}
@@ -780,22 +779,26 @@ export function ServiceOrdersPage() {
                                 style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14, alignSelf: "flex-start" }}
                                 onClick={() => {
                                   const phone = customerPhone(order.customerId)!;
-                                  const message = `Bonjour ${customerName(order.customerId)}, votre ticket ${order.number} est prêt à récupérer chez ${businessSettings?.businessName ?? "nous"}.`;
+                                  const message = t("whatsapp.serviceOrderReady", {
+                                    customerName: customerName(order.customerId),
+                                    orderNumber: order.number,
+                                    business: businessSettings?.businessName ?? t("whatsapp.defaultBusinessName"),
+                                  });
                                   void openExternalUrl(
                                     buildWhatsAppLink(phone, businessSettings?.whatsappCountryCode, message),
                                   );
                                 }}
                               >
-                                Notifier sur WhatsApp
+                                {t("serviceOrders.notifyWhatsapp")}
                               </button>
                             )}
 
                             {order.notes && (
-                              <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>Notes : {order.notes}</p>
+                              <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("serviceOrders.notesLabel")} {order.notes}</p>
                             )}
                             {order.promisedDate && (
                               <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-                                Retrait prévu : {order.promisedDate}
+                                {t("serviceOrders.promisedPickup")} {order.promisedDate}
                               </p>
                             )}
 
@@ -809,7 +812,7 @@ export function ServiceOrdersPage() {
                                   gap: 8,
                                 }}
                               >
-                                <span>Solde restant : {credit.remainingBalance.toFixed(0)}</span>
+                                <span>{t("serviceOrders.remainingBalance")} {credit.remainingBalance.toFixed(0)}</span>
                                 <input
                                   type="number"
                                   style={{ ...inputStyle, width: 90, marginTop: 0 }}
@@ -822,7 +825,7 @@ export function ServiceOrdersPage() {
                                   onClick={() => handleRepay(credit)}
                                   disabled={repaying}
                                 >
-                                  Encaisser le solde
+                                  {t("serviceOrders.collectBalance")}
                                 </button>
                               </div>
                             )}
@@ -837,7 +840,7 @@ export function ServiceOrdersPage() {
               {orders.length === 0 && (
                 <tr>
                   <td style={tdStyle} colSpan={5}>
-                    Aucun ticket pour le moment.
+                    {t("serviceOrders.noTickets")}
                   </td>
                 </tr>
               )}
@@ -849,17 +852,15 @@ export function ServiceOrdersPage() {
       {view === "history" && (
         <div style={cardStyle}>
           <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-            Corrige un ticket déjà créé (client, date prévue, notes, articles). Ces corrections ne
-            rejouent pas automatiquement les paiements ou créances déjà enregistrés — ajuste le solde
-            manuellement dans Créances si le total change après une correction de prix.
+            {t("serviceOrders.historyHint")}
           </p>
           <table style={tableStyle}>
             <thead>
               <tr>
-                <th style={thStyle}>Ticket</th>
-                <th style={thStyle}>Client</th>
-                <th style={thStyle}>Total</th>
-                <th style={thStyle}>Paiement</th>
+                <th style={thStyle}>{t("serviceOrders.ticket")}</th>
+                <th style={thStyle}>{t("serviceOrders.customer")}</th>
+                <th style={thStyle}>{t("serviceOrders.total")}</th>
+                <th style={thStyle}>{t("serviceOrders.payment")}</th>
                 <th style={thStyle}></th>
               </tr>
             </thead>
@@ -883,7 +884,7 @@ export function ServiceOrdersPage() {
                           style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
                           onClick={() => historyToggleExpand(order)}
                         >
-                          {expanded ? "Fermer" : "Corriger"}
+                          {expanded ? t("serviceOrders.close") : t("serviceOrders.correct")}
                         </button>
                       </td>
                     </tr>
@@ -892,17 +893,17 @@ export function ServiceOrdersPage() {
                         <td style={tdStyle} colSpan={5}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                             <label>
-                              Client
+                              {t("serviceOrders.customer")}
                               <SearchableSelect
                                 value={editCustomerId}
                                 onChange={setEditCustomerId}
                                 options={customers.map((c) => ({ value: String(c.id), label: c.fullName }))}
-                                emptyLabel="— Aucun —"
-                                placeholder="Rechercher un client..."
+                                emptyLabel={t("serviceOrders.noCustomerEditOption")}
+                                placeholder={t("serviceOrders.searchCustomerPlaceholder")}
                               />
                             </label>
                             <label>
-                              Date de retrait prévue
+                              {t("serviceOrders.promisedDate")}
                               <input
                                 style={inputStyle}
                                 type="date"
@@ -911,7 +912,7 @@ export function ServiceOrdersPage() {
                               />
                             </label>
                             <label>
-                              Notes
+                              {t("serviceOrders.notes")}
                               <textarea
                                 style={{ ...inputStyle, minHeight: 60 }}
                                 value={editNotes}
@@ -922,10 +923,10 @@ export function ServiceOrdersPage() {
                             <table style={tableStyle}>
                               <thead>
                                 <tr>
-                                  <th style={thStyle}>Description</th>
-                                  <th style={thStyle}>Qté</th>
-                                  <th style={thStyle}>Prix unit.</th>
-                                  <th style={thStyle}>TVA %</th>
+                                  <th style={thStyle}>{t("serviceOrders.description")}</th>
+                                  <th style={thStyle}>{t("serviceOrders.quantity")}</th>
+                                  <th style={thStyle}>{t("serviceOrders.unitPrice")}</th>
+                                  <th style={thStyle}>{t("serviceOrders.taxRatePercent")}</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -985,7 +986,7 @@ export function ServiceOrdersPage() {
                               onClick={() => handleSaveHistory(order.id)}
                               disabled={savingHistory}
                             >
-                              {savingHistory ? "Enregistrement..." : "Enregistrer"}
+                              {savingHistory ? t("serviceOrders.saving") : t("serviceOrders.save")}
                             </button>
                           </div>
                         </td>
@@ -997,7 +998,7 @@ export function ServiceOrdersPage() {
               {orders.length === 0 && (
                 <tr>
                   <td style={tdStyle} colSpan={5}>
-                    Aucun ticket pour le moment.
+                    {t("serviceOrders.noTickets")}
                   </td>
                 </tr>
               )}

@@ -98,7 +98,11 @@ export async function closeSession(
     .set({
       closingAmount: input.closingAmount,
       expectedAmount: input.expectedAmount,
-      closedAt: new Date().toISOString(),
+      // Même format que `openedAt` (défaut SQL CURRENT_TIMESTAMP : "YYYY-MM-DD
+      // HH:MM:SS", UTC, sans millisecondes) — un .toISOString() brut produit
+      // un format différent ("...T...Z" + ms) qui s'affichait de façon
+      // incohérente à côté d'openedAt dans le rapport Caisse.
+      closedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
     })
     .where(eq(schema.cashSessions.id, input.sessionId))
     .returning()

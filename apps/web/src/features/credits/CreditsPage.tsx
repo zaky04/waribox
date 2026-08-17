@@ -11,6 +11,7 @@ import {
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import {
   badgeStyle,
@@ -34,15 +35,16 @@ type ServiceOrderItem = typeof schema.serviceOrderItems.$inferSelect;
 type Variant = typeof schema.productVariants.$inferSelect;
 type Product = typeof schema.products.$inferSelect;
 
-const STATUS_LABELS: Record<string, string> = {
-  open: "Ouverte",
-  partial: "Partielle",
-  settled: "Soldée",
-};
-
 export function CreditsPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
+  const { t } = useTranslation();
+
+  const STATUS_LABELS: Record<string, string> = {
+    open: t("common.debtCreditStatus.open"),
+    partial: t("common.debtCreditStatus.partial"),
+    settled: t("common.debtCreditStatus.settled"),
+  };
 
   const [credits, setCredits] = useState<Credit[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -129,7 +131,13 @@ export function CreditsPage() {
   const handleNotifyOverdue = (credit: Credit) => {
     const phone = customerPhone(credit.customerId);
     if (!phone) return;
-    const message = `Bonjour ${customerName(credit.customerId)}, vous avez une créance de ${credit.remainingBalance} en retard depuis le ${credit.dueDate} chez ${businessSettings?.businessName ?? "nous"} (réf. ${referenceNumber(credit)}). Merci de bien vouloir régulariser dès que possible.`;
+    const message = t("whatsapp.overdueDebt", {
+      customerName: customerName(credit.customerId),
+      amount: credit.remainingBalance,
+      dueDate: credit.dueDate,
+      business: businessSettings?.businessName ?? t("whatsapp.defaultBusinessName"),
+      reference: referenceNumber(credit),
+    });
     void openExternalUrl(buildWhatsAppLink(phone, businessSettings?.whatsappCountryCode, message));
   };
 
@@ -144,7 +152,7 @@ export function CreditsPage() {
     if (!user) return;
     const value = Number(amount);
     if (!value || value <= 0) {
-      setError("Le montant doit être supérieur à zéro.");
+      setError(t("credits.errors.amountPositive"));
       return;
     }
 
@@ -155,7 +163,7 @@ export function CreditsPage() {
       setAmount("");
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible d'enregistrer le remboursement.");
+      setError(err instanceof Error ? err.message : t("credits.errors.paymentFailed"));
     } finally {
       setSaving(false);
     }
@@ -164,7 +172,7 @@ export function CreditsPage() {
   return (
     <main style={pageStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Créances</h1>
+        <h1>{t("credits.title")}</h1>
         <button
           style={{
             ...primaryButtonStyle,
@@ -174,21 +182,21 @@ export function CreditsPage() {
           }}
           onClick={() => setShowSettled((v) => !v)}
         >
-          {showSettled ? "Masquer les soldées" : "Afficher les soldées"}
+          {showSettled ? t("credits.hideSettled") : t("credits.showSettled")}
         </button>
       </div>
 
       <table style={tableStyle}>
         <thead>
           <tr>
-            <th style={thStyle}>Date</th>
-            <th style={thStyle}>Client</th>
-            <th style={thStyle}>Référence</th>
-            <th style={thStyle}>Article</th>
-            <th style={thStyle}>Montant initial</th>
-            <th style={thStyle}>Solde restant</th>
-            <th style={thStyle}>Échéance</th>
-            <th style={thStyle}>Statut</th>
+            <th style={thStyle}>{t("credits.date")}</th>
+            <th style={thStyle}>{t("credits.customer")}</th>
+            <th style={thStyle}>{t("credits.reference")}</th>
+            <th style={thStyle}>{t("credits.article")}</th>
+            <th style={thStyle}>{t("credits.originalAmount")}</th>
+            <th style={thStyle}>{t("credits.remainingBalance")}</th>
+            <th style={thStyle}>{t("credits.dueDate")}</th>
+            <th style={thStyle}>{t("credits.status")}</th>
             <th style={thStyle}></th>
           </tr>
         </thead>
@@ -207,7 +215,7 @@ export function CreditsPage() {
                 <td style={tdStyle}>{credit.dueDate ?? "—"}</td>
                 <td style={tdStyle}>
                   <span style={badgeStyle(credit.status === "settled" ? "ok" : overdue ? "danger" : "warning")}>
-                    {overdue ? "En retard" : STATUS_LABELS[credit.status] ?? credit.status}
+                    {overdue ? t("credits.overdue") : STATUS_LABELS[credit.status] ?? credit.status}
                   </span>
                 </td>
                 <td style={tdStyle}>
@@ -226,13 +234,13 @@ export function CreditsPage() {
                             onClick={() => handleSubmit(credit)}
                             disabled={saving}
                           >
-                            Valider
+                            {t("credits.confirm")}
                           </button>
                           <button
                             style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
                             onClick={() => setPayingId(null)}
                           >
-                            Annuler
+                            {t("credits.cancel")}
                           </button>
                         </div>
                       ) : (
@@ -240,7 +248,7 @@ export function CreditsPage() {
                           style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
                           onClick={() => startPayment(credit)}
                         >
-                          Enregistrer un paiement
+                          {t("credits.recordPayment")}
                         </button>
                       ))}
                     {overdue && phone && (
@@ -257,7 +265,7 @@ export function CreditsPage() {
                         }}
                         onClick={() => handleNotifyOverdue(credit)}
                       >
-                        Notifier sur WhatsApp
+                        {t("credits.notifyWhatsapp")}
                       </button>
                     )}
                   </div>
@@ -268,7 +276,7 @@ export function CreditsPage() {
           {visibleCredits.length === 0 && (
             <tr>
               <td style={tdStyle} colSpan={9}>
-                Aucune créance.
+                {t("credits.none")}
               </td>
             </tr>
           )}

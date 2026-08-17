@@ -1,6 +1,7 @@
 import {
   createUser,
   ensureDefaultRoles,
+  getRoleDisplayName,
   getSettings,
   hasPermission,
   listRoles,
@@ -12,6 +13,7 @@ import {
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import {
   badgeStyle,
@@ -30,6 +32,7 @@ type Role = typeof schema.roles.$inferSelect;
 export function UsersPage() {
   const db = useDatabase();
   const { user, impersonateUserById } = useAuth();
+  const { t } = useTranslation();
 
   const [users, setUsers] = useState<Awaited<ReturnType<typeof listUsers>>>([]);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -107,24 +110,24 @@ export function UsersPage() {
   const handleSubmit = async () => {
     setError(null);
     if (!fullName.trim() || !username.trim() || !roleId) {
-      setError("Nom, pseudo et rôle sont requis.");
+      setError(t("users.errors.requiredFields"));
       return;
     }
     if (!editingUserId && password.length < 8) {
-      setError("Le mot de passe doit contenir au moins 8 caractères.");
+      setError(t("users.errors.passwordLength"));
       return;
     }
     if (editingUserId && password && password.length < 8) {
-      setError("Le nouveau mot de passe doit contenir au moins 8 caractères.");
+      setError(t("users.errors.newPasswordLength"));
       return;
     }
     if (pin && !/^\d{4}$/.test(pin)) {
-      setError("Le code PIN doit contenir exactement 4 chiffres.");
+      setError(t("users.errors.pinFormat"));
       return;
     }
     const needsStore = multiStoreEnabled && !roleCanSwitchStore(roleId);
     if (needsStore && !storeId) {
-      setError("Ce rôle doit être rattaché à une boutique (il ne peut pas en changer lui-même).");
+      setError(t("users.errors.storeRequired"));
       return;
     }
 
@@ -168,7 +171,7 @@ export function UsersPage() {
       await refresh();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setError(message.includes("UNIQUE") ? "Cet email est déjà utilisé." : message);
+      setError(message.includes("UNIQUE") ? t("users.errors.emailInUse") : message);
     } finally {
       setSaving(false);
     }
@@ -184,7 +187,7 @@ export function UsersPage() {
     try {
       await impersonateUserById(target.id);
     } catch (err) {
-      setImpersonateError(err instanceof Error ? err.message : "Impossible d'ouvrir une session pour ce compte.");
+      setImpersonateError(err instanceof Error ? err.message : t("users.errors.impersonateFailed"));
     }
   };
 
@@ -200,12 +203,12 @@ export function UsersPage() {
   return (
     <main style={pageStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Utilisateurs</h1>
+        <h1>{t("users.title")}</h1>
         <button
           style={primaryButtonStyle}
           onClick={() => (showForm ? setShowForm(false) : startCreate())}
         >
-          {showForm ? "Annuler" : "+ Nouvel utilisateur"}
+          {showForm ? t("users.cancel") : t("users.new")}
         </button>
       </div>
 
@@ -213,17 +216,17 @@ export function UsersPage() {
 
       {showForm && (
         <div style={cardStyle}>
-          <h2 style={{ margin: 0 }}>{editingUserId ? "Modifier l'utilisateur" : "Nouvel utilisateur"}</h2>
+          <h2 style={{ margin: 0 }}>{editingUserId ? t("users.editTitle") : t("users.newTitle")}</h2>
           <label>
-            Nom complet
+            {t("users.fullName")}
             <input style={inputStyle} value={fullName} onChange={(e) => setFullName(e.target.value)} />
           </label>
           <label>
-            Pseudo
+            {t("users.username")}
             <input style={inputStyle} value={username} onChange={(e) => setUsername(e.target.value)} />
           </label>
           <label>
-            Email (optionnel)
+            {t("users.email")}
             <input
               style={inputStyle}
               type="email"
@@ -232,7 +235,7 @@ export function UsersPage() {
             />
           </label>
           <label>
-            {editingUserId ? "Nouveau mot de passe (laisser vide = inchangé)" : "Mot de passe"}
+            {editingUserId ? t("users.newPassword") : t("users.password")}
             <input
               style={inputStyle}
               type="password"
@@ -243,7 +246,7 @@ export function UsersPage() {
           </label>
           {!editingUserId && (
             <label>
-              Code PIN (4 chiffres, optionnel)
+              {t("users.pin")}
               <input
                 style={inputStyle}
                 inputMode="numeric"
@@ -254,7 +257,7 @@ export function UsersPage() {
             </label>
           )}
           <label>
-            Rôle
+            {t("users.role")}
             <select
               style={inputStyle}
               value={roleId}
@@ -263,19 +266,19 @@ export function UsersPage() {
                 if (roleCanSwitchStore(e.target.value)) setStoreId("");
               }}
             >
-              <option value="">— Choisir —</option>
+              <option value="">{t("users.chooseOption")}</option>
               {roles.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.name}
+                  {getRoleDisplayName(r.name)}
                 </option>
               ))}
             </select>
           </label>
           {multiStoreEnabled && roleId && !roleCanSwitchStore(roleId) && (
             <label>
-              Boutique (ce rôle ne peut pas en changer lui-même)
+              {t("users.storeLabel")}
               <select style={inputStyle} value={storeId} onChange={(e) => setStoreId(e.target.value)}>
-                <option value="">— Choisir —</option>
+                <option value="">{t("users.chooseOption")}</option>
                 {stores.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -289,10 +292,10 @@ export function UsersPage() {
 
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
             {saving
-              ? "Enregistrement..."
+              ? t("users.saving")
               : editingUserId
-                ? "Enregistrer les modifications"
-                : "Créer l'utilisateur"}
+                ? t("users.saveChanges")
+                : t("users.create")}
           </button>
         </div>
       )}
@@ -300,12 +303,12 @@ export function UsersPage() {
       <table style={tableStyle}>
         <thead>
           <tr>
-            <th style={thStyle}>Nom</th>
-            <th style={thStyle}>Pseudo</th>
-            <th style={thStyle}>Email</th>
-            <th style={thStyle}>Rôle</th>
-            {multiStoreEnabled && <th style={thStyle}>Boutique</th>}
-            <th style={thStyle}>Statut</th>
+            <th style={thStyle}>{t("users.name")}</th>
+            <th style={thStyle}>{t("users.username")}</th>
+            <th style={thStyle}>{t("users.emailColumn")}</th>
+            <th style={thStyle}>{t("users.role")}</th>
+            {multiStoreEnabled && <th style={thStyle}>{t("users.storeColumn")}</th>}
+            <th style={thStyle}>{t("users.status")}</th>
             <th style={thStyle}></th>
           </tr>
         </thead>
@@ -315,30 +318,30 @@ export function UsersPage() {
               <td style={tdStyle}>{u.fullName}</td>
               <td style={tdStyle}>{u.username ?? "—"}</td>
               <td style={tdStyle}>{u.email ?? "—"}</td>
-              <td style={tdStyle}>{u.roleName}</td>
+              <td style={tdStyle}>{getRoleDisplayName(u.roleName)}</td>
               {multiStoreEnabled && (
                 <td style={tdStyle}>
-                  {u.storeId ? (stores.find((s) => s.id === u.storeId)?.name ?? "—") : "Toutes"}
+                  {u.storeId ? (stores.find((s) => s.id === u.storeId)?.name ?? "—") : t("users.allStores")}
                 </td>
               )}
               <td style={tdStyle}>
                 <span style={badgeStyle(u.isActive ? "ok" : "warning")}>
-                  {u.isActive ? "Actif" : "Inactif"}
+                  {u.isActive ? t("users.active") : t("users.inactive")}
                 </span>
               </td>
               <td style={tdStyle}>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button style={secondaryButtonStyle} onClick={() => startEdit(u)}>
-                    Modifier
+                    {t("users.edit")}
                   </button>
                   {u.id !== user?.id && (
                     <>
                       <button style={secondaryButtonStyle} onClick={() => handleToggleActive(u)}>
-                        {u.isActive ? "Désactiver" : "Réactiver"}
+                        {u.isActive ? t("users.deactivate") : t("users.reactivate")}
                       </button>
                       {u.isActive && (
                         <button style={secondaryButtonStyle} onClick={() => handleImpersonate(u)}>
-                          Se connecter en tant que
+                          {t("users.impersonate")}
                         </button>
                       )}
                     </>
@@ -350,7 +353,7 @@ export function UsersPage() {
           {users.length === 0 && (
             <tr>
               <td style={tdStyle} colSpan={multiStoreEnabled ? 7 : 6}>
-                Aucun utilisateur.
+                {t("users.none")}
               </td>
             </tr>
           )}

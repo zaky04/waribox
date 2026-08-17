@@ -1,5 +1,6 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { desc, eq, sql } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
@@ -39,7 +40,7 @@ export interface CreateQuoteInput {
 export async function createQuote(db: Database, input: CreateQuoteInput, actingPermissions: PermissionSet) {
   requirePermission(actingPermissions, "manage_quotes");
   if (input.items.length === 0) {
-    throw new Error("Le devis doit contenir au moins un article.");
+    throw new Error(t("coreErrors.quotes.itemRequired"));
   }
 
   const trimmedName = input.newCustomerName?.trim();
@@ -135,15 +136,15 @@ export async function convertQuoteToSale(
   requirePermission(actingPermissions, "manage_quotes");
   const quote = await db.select().from(schema.quotes).where(eq(schema.quotes.id, quoteId)).get();
   if (!quote) {
-    throw new Error("Devis introuvable.");
+    throw new Error(t("coreErrors.quotes.notFound"));
   }
   if (quote.status === "converted") {
-    throw new Error("Ce devis a déjà été converti en vente.");
+    throw new Error(t("coreErrors.quotes.alreadyConverted"));
   }
 
   const items = await listQuoteItems(db, quoteId);
   if (items.length === 0) {
-    throw new Error("Le devis ne contient aucun article.");
+    throw new Error(t("coreErrors.quotes.noItems"));
   }
 
   const sale = await createSale(

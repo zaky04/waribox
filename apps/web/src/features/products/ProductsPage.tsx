@@ -14,6 +14,7 @@ import {
 import { schema } from "@gestion-boutique/database";
 import { buildLabelSheetPdf } from "@gestion-boutique/printer";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
@@ -50,6 +51,7 @@ function downloadBlob(blob: Blob, filename: string) {
 export function ProductsPage() {
   const db = useDatabase();
   const { user } = useAuth();
+  const { t } = useTranslation();
   const canManage = hasPermission(user?.permissions ?? {}, "manage_products");
   const canViewMargins = hasPermission(user?.permissions ?? {}, "view_margins");
 
@@ -145,7 +147,7 @@ export function ProductsPage() {
   const handleSubmit = async () => {
     setError(null);
     if (!name.trim()) {
-      setError("Le nom du produit est requis.");
+      setError(t("products.errors.nameRequired"));
       return;
     }
 
@@ -192,7 +194,7 @@ export function ProductsPage() {
       resetForm();
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible d'enregistrer le produit.");
+      setError(err instanceof Error ? err.message : t("products.errors.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -204,7 +206,7 @@ export function ProductsPage() {
       .map(([productId, qty]) => ({ productId: Number(productId), copies: Number(qty) }))
       .filter((e) => e.copies > 0);
     if (entries.length === 0) {
-      setLabelsError("Indique une quantité d'étiquettes pour au moins un produit.");
+      setLabelsError(t("products.errors.labelsQuantityRequired"));
       return;
     }
 
@@ -223,7 +225,7 @@ export function ProductsPage() {
       setLabelQuantities({});
       await refresh();
     } catch (err) {
-      setLabelsError(err instanceof Error ? err.message : "Impossible de générer les étiquettes.");
+      setLabelsError(err instanceof Error ? err.message : t("products.errors.labelsFailed"));
     } finally {
       setPrintingLabels(false);
     }
@@ -232,14 +234,14 @@ export function ProductsPage() {
   return (
     <main style={pageStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Produits</h1>
+        <h1>{t("products.title")}</h1>
         <div style={{ display: "flex", gap: 8 }}>
           <button style={primaryButtonStyle} onClick={handlePrintLabels} disabled={printingLabels}>
-            {printingLabels ? "Génération..." : "Imprimer les étiquettes sélectionnées"}
+            {printingLabels ? t("products.printingLabels") : t("products.printLabels")}
           </button>
           {canManage && (
             <button style={primaryButtonStyle} onClick={() => (showForm ? resetForm() : setShowForm(true))}>
-              {showForm ? "Annuler" : "+ Nouveau produit"}
+              {showForm ? t("products.cancel") : t("products.new")}
             </button>
           )}
         </div>
@@ -248,42 +250,42 @@ export function ProductsPage() {
 
       {showForm && (
         <div style={cardStyle}>
-          <h2 style={{ margin: 0 }}>{editingProductId ? "Modifier le produit" : "Nouveau produit"}</h2>
+          <h2 style={{ margin: 0 }}>{editingProductId ? t("products.editTitle") : t("products.newTitle")}</h2>
           <label>
-            Nom du produit
+            {t("products.name")}
             <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
           </label>
 
           <label>
-            Catégorie existante
+            {t("products.existingCategory")}
             <SearchableSelect
               value={categoryId}
               onChange={setCategoryId}
               options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
-              emptyLabel="— Aucune —"
-              placeholder="Rechercher une catégorie..."
+              emptyLabel={t("products.noCategoryOption")}
+              placeholder={t("products.searchCategoryPlaceholder")}
             />
           </label>
 
           <label>
-            Ou nouvelle catégorie
+            {t("products.orNewCategory")}
             <input
               style={inputStyle}
               value={newCategoryName}
               onChange={(e) => setNewCategoryName(e.target.value)}
-              placeholder="ex: Épicerie"
+              placeholder={t("products.newCategoryPlaceholder")}
               disabled={!!categoryId}
             />
           </label>
 
           <label>
-            Unité
+            {t("products.unit")}
             <input style={inputStyle} value={unit} onChange={(e) => setUnit(e.target.value)} />
           </label>
 
           <div style={{ display: "flex", gap: 16 }}>
             <label style={{ flex: 1 }}>
-              Prix d'achat
+              {t("products.purchasePrice")}
               <input
                 style={inputStyle}
                 type="number"
@@ -292,7 +294,7 @@ export function ProductsPage() {
               />
             </label>
             <label style={{ flex: 1 }}>
-              Prix de vente
+              {t("products.salePrice")}
               <input
                 style={inputStyle}
                 type="number"
@@ -303,7 +305,7 @@ export function ProductsPage() {
           </div>
 
           <label>
-            Seuil d'alerte stock bas
+            {t("products.lowStockThreshold")}
             <input
               style={inputStyle}
               type="number"
@@ -318,12 +320,12 @@ export function ProductsPage() {
               checked={trackExpiry}
               onChange={(e) => setTrackExpiry(e.target.checked)}
             />
-            Produit périssable (suivi de péremption)
+            {t("products.trackExpiry")}
           </label>
 
           {businessSettings?.taxEnabled && (
             <label>
-              Taux de TVA (%) — laisser vide = taux par défaut ({businessSettings.defaultTaxRate}%)
+              {t("products.taxRate", { rate: businessSettings.defaultTaxRate })}
               <input
                 style={inputStyle}
                 type="number"
@@ -337,19 +339,19 @@ export function ProductsPage() {
           )}
 
           <label>
-            Code-barres (optionnel)
+            {t("products.barcode")}
             <input
               style={inputStyle}
               value={barcode}
               onChange={(e) => setBarcode(e.target.value)}
-              placeholder="Scanne avec la douchette ou saisis manuellement"
+              placeholder={t("products.barcodePlaceholder")}
             />
           </label>
 
           {error && <p style={{ color: "#f87171" }}>{error}</p>}
 
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
-            {saving ? "Enregistrement..." : editingProductId ? "Enregistrer les modifications" : "Créer le produit"}
+            {saving ? t("products.saving") : editingProductId ? t("products.saveChanges") : t("products.create")}
           </button>
         </div>
       )}
@@ -357,12 +359,12 @@ export function ProductsPage() {
       <table style={tableStyle}>
         <thead>
           <tr>
-            <th style={thStyle}>Nom</th>
-            <th style={thStyle}>Catégorie</th>
-            {canViewMargins && <th style={thStyle}>Achat</th>}
-            <th style={thStyle}>Vente</th>
-            <th style={thStyle}>Stock</th>
-            <th style={thStyle}>Étiquettes</th>
+            <th style={thStyle}>{t("products.name")}</th>
+            <th style={thStyle}>{t("products.category")}</th>
+            {canViewMargins && <th style={thStyle}>{t("products.purchase")}</th>}
+            <th style={thStyle}>{t("products.sale")}</th>
+            <th style={thStyle}>{t("products.stock")}</th>
+            <th style={thStyle}>{t("products.labels")}</th>
             {canManage && <th style={thStyle}></th>}
           </tr>
         </thead>
@@ -405,7 +407,7 @@ export function ProductsPage() {
                       }}
                       onClick={() => startEdit(product)}
                     >
-                      Modifier
+                      {t("products.edit")}
                     </button>
                   </td>
                 )}
@@ -415,7 +417,7 @@ export function ProductsPage() {
           {products.length === 0 && (
             <tr>
               <td style={tdStyle} colSpan={(canViewMargins ? 6 : 5) + (canManage ? 1 : 0)}>
-                Aucun produit pour le moment.
+                {t("products.none")}
               </td>
             </tr>
           )}

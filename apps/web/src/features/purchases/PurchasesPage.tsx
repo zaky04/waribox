@@ -2,6 +2,7 @@ import {
   createPurchase,
   ensureVariantBarcode,
   getLowStockProducts,
+  getSalesVelocity,
   listAllVariants,
   listProducts,
   listPurchases,
@@ -12,6 +13,7 @@ import {
 import { buildLabelSheetPdf } from "@gestion-boutique/printer";
 import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
@@ -52,22 +54,30 @@ interface CartLine {
   unitCost: number;
 }
 
-const PAYMENT_METHODS: { value: PurchasePaymentMethod; label: string }[] = [
-  { value: "cash", label: "Espèces" },
-  { value: "card", label: "Carte" },
-  { value: "mobile_money", label: "Mobile Money" },
-  { value: "credit", label: "Crédit" },
-];
+// Fenêtre à la fois utilisée pour lire la vitesse de vente passée (30
+// derniers jours) et pour dimensionner la quantité suggérée (couvrir les 30
+// prochains jours au même rythme) — une seule constante pour garder les deux
+// symétriques et faciles à expliquer.
+const REORDER_WINDOW_DAYS = 30;
 
 export function PurchasesPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
+  const { t } = useTranslation();
+
+  const PAYMENT_METHODS: { value: PurchasePaymentMethod; label: string }[] = [
+    { value: "cash", label: t("purchases.paymentMethods.cash") },
+    { value: "card", label: t("purchases.paymentMethods.card") },
+    { value: "mobile_money", label: t("purchases.paymentMethods.mobile_money") },
+    { value: "credit", label: t("purchases.paymentMethods.credit") },
+  ];
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [lowStockEntries, setLowStockEntries] = useState<LowStockEntry[]>([]);
+  const [salesVelocity, setSalesVelocity] = useState<Map<number, number>>(new Map());
 
   const [supplierId, setSupplierId] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -82,18 +92,20 @@ export function PurchasesPage() {
   const [lastPurchaseNumber, setLastPurchaseNumber] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const [supplierRows, productRows, variantRows, purchaseRows, lowStockRows] = await Promise.all([
+    const [supplierRows, productRows, variantRows, purchaseRows, lowStockRows, velocityMap] = await Promise.all([
       listSuppliers(db),
       listProducts(db),
       listAllVariants(db),
       listPurchases(db, currentStoreId ?? undefined),
       getLowStockProducts(db, currentStoreId ?? undefined),
+      getSalesVelocity(db, REORDER_WINDOW_DAYS, currentStoreId ?? undefined),
     ]);
     setSuppliers(supplierRows);
     setProducts(productRows);
     setVariants(variantRows);
     setPurchases(purchaseRows);
     setLowStockEntries(lowStockRows);
+    setSalesVelocity(velocityMap);
   }, [db, currentStoreId]);
 
   useEffect(() => {
@@ -122,11 +134,29 @@ export function PurchasesPage() {
     });
   };
 
-  // Quantité suggérée pour ramener le stock au double du seuil d'alerte —
-  // repère de réappro simple et transparent, pas une prévision de vente :
-  // le commerçant reste libre de l'ajuster avant de valider l'achat.
-  const suggestedReorderQuantity = (entry: LowStockEntry): number =>
-    Math.max(1, Math.ceil(entry.product.lowStockThreshold * 2 - entry.totalStock));
+  // Vitesse de vente quotidienne réelle du produit (somme sur toutes ses
+  // variantes) — 0 si aucune vente enregistrée sur la fenêtre.
+  const productDailyVelocity = (productId: number): number =>
+    variants
+      .filter((v) => v.productId === productId)
+      .reduce((sum, v) => sum + (salesVelocity.get(v.id) ?? 0), 0);
+
+  // Quantité suggérée : couvre les `REORDER_WINDOW_DAYS` prochains jours au
+  // rythme de vente réel des `REORDER_WINDOW_DAYS` derniers jours, moins le
+  // stock déjà disponible — bascule sur l'ancien repère (ramener au double
+  // du seuil d'alerte) quand le produit n'a aucune vente sur la période
+  // (vitesse nulle, ex. produit tout juste ajouté au catalogue), pour rester
+  // utile même sans historique. Dans les deux cas, un simple repère que le
+  // commerçant reste libre d'ajuster avant de valider l'achat.
+  const suggestedReorderQuantity = (entry: LowStockEntry): number => {
+    const dailyVelocity = productDailyVelocity(entry.product.id);
+    if (dailyVelocity > 0) {
+      return Math.max(1, Math.ceil(dailyVelocity * REORDER_WINDOW_DAYS - entry.totalStock));
+    }
+    return Math.max(1, Math.ceil(entry.product.lowStockThreshold * 2 - entry.totalStock));
+  };
+
+  const isPredictedSuggestion = (entry: LowStockEntry): boolean => productDailyVelocity(entry.product.id) > 0;
 
   const updateQuantity = (variantId: number, quantity: number) => {
     setCart((prev) =>
@@ -165,11 +195,11 @@ export function PurchasesPage() {
     setError(null);
     if (!user || !currentStoreId) return;
     if (!supplierId) {
-      setError("Choisis un fournisseur.");
+      setError(t("purchases.errors.supplierRequired"));
       return;
     }
     if (cart.length === 0) {
-      setError("Ajoute au moins un article.");
+      setError(t("purchases.errors.itemRequired"));
       return;
     }
 
@@ -200,7 +230,7 @@ export function PurchasesPage() {
       setPaymentMethod("cash");
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible d'enregistrer l'achat.");
+      setError(err instanceof Error ? err.message : t("purchases.errors.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -230,7 +260,7 @@ export function PurchasesPage() {
       const blob = buildLabelSheetPdf(labels);
       downloadBlob(blob, `etiquettes-${timestampForFilename()}.pdf`);
     } catch (err) {
-      setLabelsError(err instanceof Error ? err.message : "Impossible de générer les étiquettes.");
+      setLabelsError(err instanceof Error ? err.message : t("purchases.errors.labelsFailed"));
     } finally {
       setPrintingLabels(false);
     }
@@ -238,7 +268,7 @@ export function PurchasesPage() {
 
   return (
     <main style={pageStyle}>
-      <h1>Achats</h1>
+      <h1>{t("purchases.title")}</h1>
 
       {lastPurchaseNumber && (
         <div
@@ -251,7 +281,7 @@ export function PurchasesPage() {
           }}
         >
           <span>
-            Achat enregistré : <strong>{lastPurchaseNumber}</strong>
+            {t("purchases.registered")} <strong>{lastPurchaseNumber}</strong>
           </span>
           <button
             style={{
@@ -263,7 +293,7 @@ export function PurchasesPage() {
             disabled={printingLabels || lastPurchaseLines.length === 0}
             onClick={handlePrintLabels}
           >
-            {printingLabels ? "Génération..." : "Imprimer les étiquettes"}
+            {printingLabels ? t("purchases.printingLabels") : t("purchases.printLabels")}
           </button>
         </div>
       )}
@@ -271,19 +301,18 @@ export function PurchasesPage() {
 
       {lowStockEntries.length > 0 && (
         <div style={{ ...cardStyle, borderLeft: "4px solid #fbbf24", marginTop: 24 }}>
-          <strong>Suggestions de réappro (stock bas)</strong>
+          <strong>{t("purchases.reorderHeading")}</strong>
           <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-            Quantité suggérée pour ramener le stock au double du seuil d'alerte — à ajuster avant
-            de valider l'achat. Choisis d'abord un fournisseur ci-dessous si tu veux enregistrer
-            l'achat directement.
+            {t("purchases.reorderHint", { days: REORDER_WINDOW_DAYS })}
           </p>
           <table style={tableStyle}>
             <thead>
               <tr>
-                <th style={thStyle}>Produit</th>
-                <th style={thStyle}>Stock actuel</th>
-                <th style={thStyle}>Seuil d'alerte</th>
-                <th style={thStyle}>Qté suggérée</th>
+                <th style={thStyle}>{t("purchases.product")}</th>
+                <th style={thStyle}>{t("purchases.currentStock")}</th>
+                <th style={thStyle}>{t("purchases.alertThreshold")}</th>
+                <th style={thStyle}>{t("purchases.suggestedQty")}</th>
+                <th style={thStyle}>{t("purchases.basedOn")}</th>
                 <th style={thStyle}></th>
               </tr>
             </thead>
@@ -295,11 +324,16 @@ export function PurchasesPage() {
                   <td style={tdStyle}>{entry.product.lowStockThreshold}</td>
                   <td style={tdStyle}>{suggestedReorderQuantity(entry)}</td>
                   <td style={tdStyle}>
+                    {isPredictedSuggestion(entry)
+                      ? t("purchases.basedOnVelocity", { days: REORDER_WINDOW_DAYS })
+                      : t("purchases.basedOnThreshold")}
+                  </td>
+                  <td style={tdStyle}>
                     <button
                       style={{ ...primaryButtonStyle, padding: "4px 12px", fontSize: 13 }}
                       onClick={() => addToCart(entry.product, suggestedReorderQuantity(entry))}
                     >
-                      Ajouter au panier
+                      {t("purchases.addToCart")}
                     </button>
                   </td>
                 </tr>
@@ -312,17 +346,17 @@ export function PurchasesPage() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 24, marginTop: 24 }}>
         <div style={cardStyle}>
           <label>
-            Fournisseur
+            {t("purchases.supplier")}
             <SearchableSelect
               value={supplierId}
               onChange={setSupplierId}
               options={suppliers.map((s) => ({ value: String(s.id), label: s.name }))}
-              emptyLabel="— Choisir un fournisseur —"
-              placeholder="Rechercher un fournisseur..."
+              emptyLabel={t("purchases.chooseSupplier")}
+              placeholder={t("purchases.searchSupplierPlaceholder")}
             />
           </label>
           <label>
-            Ajouter un article
+            {t("purchases.addItem")}
             <SearchableSelect
               value=""
               onChange={(id) => {
@@ -330,24 +364,24 @@ export function PurchasesPage() {
                 if (product) addToCart(product);
               }}
               options={products.map((p) => ({ value: String(p.id), label: p.name }))}
-              emptyLabel="— Choisir un produit —"
-              placeholder="Rechercher un produit..."
+              emptyLabel={t("purchases.chooseProduct")}
+              placeholder={t("purchases.searchProductPlaceholder")}
             />
           </label>
         </div>
 
         <div style={cardStyle}>
-          <strong>Articles</strong>
+          <strong>{t("purchases.items")}</strong>
           {cart.length === 0 ? (
-            <p style={{ color: "var(--color-text-muted)" }}>Aucun article.</p>
+            <p style={{ color: "var(--color-text-muted)" }}>{t("purchases.emptyCart")}</p>
           ) : (
             <table style={tableStyle}>
               <thead>
                 <tr>
-                  <th style={thStyle}>Article</th>
-                  <th style={thStyle}>Qté</th>
-                  <th style={thStyle}>Coût unit.</th>
-                  <th style={thStyle}>Total</th>
+                  <th style={thStyle}>{t("purchases.item")}</th>
+                  <th style={thStyle}>{t("purchases.quantity")}</th>
+                  <th style={thStyle}>{t("purchases.unitCost")}</th>
+                  <th style={thStyle}>{t("purchases.total")}</th>
                   <th style={thStyle}></th>
                 </tr>
               </thead>
@@ -387,11 +421,11 @@ export function PurchasesPage() {
           )}
 
           <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12, fontWeight: 700, fontSize: 18 }}>
-            Total : {total.toFixed(0)}
+            {t("purchases.totalLabel")} {total.toFixed(0)}
           </div>
 
           <label>
-            Méthode de paiement
+            {t("purchases.paymentMethod")}
             <select
               style={inputStyle}
               value={paymentMethod}
@@ -406,7 +440,7 @@ export function PurchasesPage() {
           </label>
 
           <label>
-            Montant payé
+            {t("purchases.amountPaid")}
             <input
               style={inputStyle}
               type="number"
@@ -418,7 +452,7 @@ export function PurchasesPage() {
 
           {willCreateDebt && (
             <label>
-              Échéance de la dette (optionnel)
+              {t("purchases.debtDueDate")}
               <input
                 style={inputStyle}
                 type="date"
@@ -431,7 +465,7 @@ export function PurchasesPage() {
           {error && <p style={{ color: "#f87171" }}>{error}</p>}
 
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
-            {saving ? "Enregistrement..." : "Enregistrer l'achat"}
+            {saving ? t("purchases.saving") : t("purchases.submit")}
           </button>
         </div>
       </div>
@@ -439,10 +473,10 @@ export function PurchasesPage() {
       <table style={tableStyle}>
         <thead>
           <tr>
-            <th style={thStyle}>Numéro</th>
-            <th style={thStyle}>Date</th>
-            <th style={thStyle}>Fournisseur</th>
-            <th style={thStyle}>Total</th>
+            <th style={thStyle}>{t("purchases.number")}</th>
+            <th style={thStyle}>{t("purchases.date")}</th>
+            <th style={thStyle}>{t("purchases.supplier")}</th>
+            <th style={thStyle}>{t("purchases.total")}</th>
           </tr>
         </thead>
         <tbody>
@@ -457,7 +491,7 @@ export function PurchasesPage() {
           {purchases.length === 0 && (
             <tr>
               <td style={tdStyle} colSpan={4}>
-                Aucun achat pour le moment.
+                {t("purchases.none")}
               </td>
             </tr>
           )}

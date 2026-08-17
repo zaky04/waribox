@@ -1,6 +1,7 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
-import { and, desc, eq, gte, like, lte, sql } from "drizzle-orm";
+import { t } from "@gestion-boutique/i18n";
+import { and, desc, eq, gte, inArray, like, lte, sql } from "drizzle-orm";
 import { withTransaction } from "@gestion-boutique/database";
 import { logAction } from "./AuditService";
 import { findOrCreateCustomerByName } from "./CustomersService";
@@ -64,7 +65,7 @@ export function computeTaxAmount(grossTtc: number, taxRate: number): number {
 export async function createSale(db: Database, input: CreateSaleInput, actingPermissions: PermissionSet) {
   requirePermission(actingPermissions, "manage_sales");
   if (input.items.length === 0) {
-    throw new Error("La vente doit contenir au moins un article.");
+    throw new Error(t("coreErrors.sales.itemRequired"));
   }
 
   // Toute la séquence lecture-validation-écriture est atomique (voir
@@ -79,9 +80,7 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
         .filter((l) => l.variantId === item.variantId && l.locationId === input.surfaceLocationId)
         .reduce((sum, l) => sum + l.quantity, 0);
       if (item.quantity > available) {
-        throw new Error(
-          `Stock insuffisant en surface de vente pour cet article (disponible : ${available}).`,
-        );
+        throw new Error(t("coreErrors.sales.insufficientStock", { available }));
       }
     }
 
@@ -100,11 +99,11 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
 
     if (input.redeemPoints) {
       if (!customerId) {
-        throw new Error("Impossible d'utiliser des points de fidélité sans client identifié.");
+        throw new Error(t("coreErrors.sales.loyaltyRequiresCustomer"));
       }
       const customer = await db.select().from(schema.customers).where(eq(schema.customers.id, customerId)).get();
       if (!customer || input.redeemPoints > customer.loyaltyPoints) {
-        throw new Error(`Le client ne dispose que de ${customer?.loyaltyPoints ?? 0} points.`);
+        throw new Error(t("coreErrors.common.insufficientLoyaltyPoints", { points: customer?.loyaltyPoints ?? 0 }));
       }
     }
 
@@ -117,15 +116,13 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
     const redemptionDiscount = input.redeemPoints ? pointsToDiscount(input.redeemPoints, ratio) : 0;
     const discount = (input.discount ?? 0) + redemptionDiscount;
     if (discount > itemsTotal) {
-      throw new Error("La réduction (y compris les points utilisés) dépasse le montant de la vente.");
+      throw new Error(t("coreErrors.sales.discountExceedsTotal"));
     }
     const total = Math.max(0, itemsTotal - discount);
 
     const amountPaid = input.amountPaid ?? total;
     if (amountPaid < total && !customerId) {
-      throw new Error(
-        "Indique au moins le nom du client pour une vente à crédit ou un paiement partiel (pas besoin d'un compte client existant).",
-      );
+      throw new Error(t("coreErrors.sales.customerIdRequiredCredit"));
     }
 
     const paymentStatus = amountPaid >= total ? "paid" : amountPaid > 0 ? "partial" : "credit";
@@ -217,6 +214,9 @@ export interface SaleFilters {
   userId?: number;
   paymentStatus?: string;
   search?: string; // LIKE sur number
+  storeId?: number;
+  customerId?: number;
+  paymentMethod?: string;
 }
 
 export async function listSales(db: Database, filters: SaleFilters = {}) {
@@ -226,6 +226,26 @@ export async function listSales(db: Database, filters: SaleFilters = {}) {
   if (filters.userId) conditions.push(eq(schema.sales.userId, filters.userId));
   if (filters.paymentStatus) conditions.push(eq(schema.sales.paymentStatus, filters.paymentStatus));
   if (filters.search) conditions.push(like(schema.sales.number, `%${filters.search}%`));
+  if (filters.storeId) conditions.push(eq(schema.sales.storeId, filters.storeId));
+  if (filters.customerId) conditions.push(eq(schema.sales.customerId, filters.customerId));
+
+  // Le mode de paiement vit sur `payments` (referenceType='sale'), pas sur
+  // `sales` — résolu ici en deux requêtes plutôt qu'une jointure pour rester
+  // dans le style du reste du fichier (pas de leftJoin ailleurs dans ce
+  // service). Un tableau vide ici veut dire "aucune vente ne correspond".
+  if (filters.paymentMethod) {
+    const paymentRows = await db
+      .select({ referenceId: schema.payments.referenceId })
+      .from(schema.payments)
+      .where(and(eq(schema.payments.referenceType, "sale"), eq(schema.payments.method, filters.paymentMethod)));
+    if (paymentRows.length === 0) return [];
+    conditions.push(
+      inArray(
+        schema.sales.id,
+        paymentRows.map((p) => p.referenceId),
+      ),
+    );
+  }
 
   const query = db.select().from(schema.sales).orderBy(desc(schema.sales.id));
   return conditions.length > 0 ? query.where(and(...conditions)) : query;
@@ -233,4 +253,22 @@ export async function listSales(db: Database, filters: SaleFilters = {}) {
 
 export async function listSaleItems(db: Database, saleId: number) {
   return db.select().from(schema.saleItems).where(eq(schema.saleItems.saleId, saleId));
+}
+
+// Une seule ligne de paiement par vente à la création (voir createSale) — un
+// rachat de créance ultérieur crée sa propre ligne avec referenceType
+// 'credit_repayment', jamais 'sale', donc `.get()` reste correct même après.
+export async function getSalePayment(db: Database, saleId: number) {
+  return db
+    .select()
+    .from(schema.payments)
+    .where(and(eq(schema.payments.referenceType, "sale"), eq(schema.payments.referenceId, saleId)))
+    .get();
+}
+
+// Charge tous les paiements de vente en une fois (utilisé par les vues qui
+// affichent une liste de ventes et ont besoin du mode de paiement de chacune
+// sans faire une requête par ligne).
+export async function listSalePayments(db: Database) {
+  return db.select().from(schema.payments).where(eq(schema.payments.referenceType, "sale"));
 }

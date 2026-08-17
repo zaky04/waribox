@@ -1,3 +1,5 @@
+import { t } from "@gestion-boutique/i18n";
+
 export interface PrinterConnection {
   write(data: Uint8Array): Promise<void>;
   disconnect(): Promise<void>;
@@ -26,7 +28,7 @@ export function isUsbSupported(): boolean {
 
 async function connectBluetooth(): Promise<PrinterConnection> {
   if (!isBluetoothSupported()) {
-    throw new Error("Web Bluetooth n'est pas disponible sur ce navigateur.");
+    throw new Error(t("printerErrors.bluetoothUnavailable"));
   }
 
   const bluetooth = (navigator as unknown as { bluetooth: any }).bluetooth;
@@ -52,7 +54,7 @@ async function connectBluetooth(): Promise<PrinterConnection> {
 
 async function connectUsb(): Promise<PrinterConnection> {
   if (!isUsbSupported()) {
-    throw new Error("WebUSB n'est pas disponible sur ce navigateur.");
+    throw new Error(t("printerErrors.usbUnavailable"));
   }
 
   const usb = (navigator as unknown as { usb: any }).usb;
@@ -65,7 +67,7 @@ async function connectUsb(): Promise<PrinterConnection> {
   await device.claimInterface(iface.interfaceNumber);
   const endpoint = iface.alternate.endpoints.find((e: { direction: string }) => e.direction === "out");
   if (!endpoint) {
-    throw new Error("Aucun point de sortie USB trouvé sur cet appareil.");
+    throw new Error(t("printerErrors.noUsbOutEndpoint"));
   }
 
   return {

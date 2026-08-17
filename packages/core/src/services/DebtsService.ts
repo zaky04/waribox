@@ -1,5 +1,6 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { desc, eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
@@ -36,15 +37,13 @@ export async function recordDebtPayment(
     .get();
 
   if (!debt) {
-    throw new Error("Dette introuvable.");
+    throw new Error(t("coreErrors.debts.notFound"));
   }
   if (input.amount <= 0) {
-    throw new Error("Le montant du paiement doit être supérieur à zéro.");
+    throw new Error(t("coreErrors.debts.amountPositive"));
   }
   if (input.amount > debt.remainingBalance) {
-    throw new Error(
-      `Le montant dépasse le solde restant (${debt.remainingBalance}).`,
-    );
+    throw new Error(t("coreErrors.common.amountExceedsBalance", { balance: debt.remainingBalance }));
   }
 
   await db.insert(schema.supplierDebtPayments).values({

@@ -1,5 +1,6 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { asc, eq } from "drizzle-orm";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { ensureLocationsForStore } from "./StockService";
@@ -14,7 +15,7 @@ export async function listStores(db: Database) {
 export async function getDefaultStore(db: Database) {
   const store = await db.select().from(schema.stores).orderBy(asc(schema.stores.id)).get();
   if (!store) {
-    throw new Error("Aucune boutique n'existe — la migration de la base a dû échouer.");
+    throw new Error(t("coreErrors.stores.noStoreExists"));
   }
   return store;
 }

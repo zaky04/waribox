@@ -1,5 +1,6 @@
 import { createUser, ensureDefaultRoles } from "@gestion-boutique/core";
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { useSessionStore } from "../../stores/session";
 import { authCardStyle, authInputStyle, authPrimaryButtonStyle } from "./styles";
@@ -7,6 +8,7 @@ import { authCardStyle, authInputStyle, authPrimaryButtonStyle } from "./styles"
 export function SetupAdminScreen() {
   const db = useDatabase();
   const setUser = useSessionStore((s) => s.setUser);
+  const { t } = useTranslation();
 
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
@@ -21,15 +23,15 @@ export function SetupAdminScreen() {
     setError(null);
 
     if (!username.trim()) {
-      setError("Le pseudo est requis.");
+      setError(t("auth.setupAdmin.errors.usernameRequired"));
       return;
     }
     if (password.length < 8) {
-      setError("Le mot de passe doit contenir au moins 8 caractères.");
+      setError(t("auth.setupAdmin.errors.passwordLength"));
       return;
     }
     if (!/^\d{4}$/.test(pin)) {
-      setError("Le code PIN doit contenir exactement 4 chiffres.");
+      setError(t("auth.setupAdmin.errors.pinFormat"));
       return;
     }
 
@@ -51,7 +53,7 @@ export function SetupAdminScreen() {
       setUser(admin);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setError(message.includes("UNIQUE") ? "Cet email est déjà utilisé." : message);
+      setError(message.includes("UNIQUE") ? t("auth.setupAdmin.errors.emailInUse") : message);
     } finally {
       setLoading(false);
     }
@@ -59,14 +61,12 @@ export function SetupAdminScreen() {
 
   return (
     <main style={{ maxWidth: 420, margin: "60px auto", padding: 24 }}>
-      <h1>Bienvenue</h1>
-      <p style={{ color: "var(--color-text-muted)" }}>
-        Aucun compte n'existe encore. Crée le compte administrateur du commerce.
-      </p>
+      <h1>{t("auth.setupAdmin.title")}</h1>
+      <p style={{ color: "var(--color-text-muted)" }}>{t("auth.setupAdmin.hint")}</p>
 
       <form onSubmit={handleSubmit} style={authCardStyle}>
         <label>
-          Nom complet
+          {t("auth.setupAdmin.fullName")}
           <input
             style={authInputStyle}
             value={fullName}
@@ -76,7 +76,7 @@ export function SetupAdminScreen() {
         </label>
 
         <label>
-          Pseudo
+          {t("auth.setupAdmin.username")}
           <input
             style={authInputStyle}
             value={username}
@@ -86,7 +86,7 @@ export function SetupAdminScreen() {
         </label>
 
         <label>
-          Email (optionnel)
+          {t("auth.setupAdmin.email")}
           <input
             type="email"
             style={authInputStyle}
@@ -96,7 +96,7 @@ export function SetupAdminScreen() {
         </label>
 
         <label>
-          Mot de passe
+          {t("auth.setupAdmin.password")}
           <input
             type="password"
             style={authInputStyle}
@@ -108,7 +108,7 @@ export function SetupAdminScreen() {
         </label>
 
         <label>
-          Code PIN (4 chiffres) — pour le verrouillage rapide
+          {t("auth.setupAdmin.pin")}
           <input
             style={authInputStyle}
             inputMode="numeric"
@@ -123,7 +123,7 @@ export function SetupAdminScreen() {
         {error && <p style={{ color: "#f87171" }}>{error}</p>}
 
         <button type="submit" style={authPrimaryButtonStyle} disabled={loading}>
-          {loading ? "Création..." : "Créer le compte administrateur"}
+          {loading ? t("auth.setupAdmin.creating") : t("auth.setupAdmin.submit")}
         </button>
       </form>
     </main>

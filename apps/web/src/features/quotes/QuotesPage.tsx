@@ -15,6 +15,7 @@ import {
 import { schema } from "@gestion-boutique/database";
 import { buildQuotePdf } from "@gestion-boutique/printer";
 import { Fragment, useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
@@ -42,20 +43,6 @@ interface CartLine {
   taxRate: number;
 }
 
-const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
-  { value: "cash", label: "Espèces" },
-  { value: "card", label: "Carte" },
-  { value: "mobile_money", label: "Mobile Money" },
-  { value: "credit", label: "Crédit" },
-];
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: "En attente",
-  accepted: "Accepté",
-  expired: "Expiré",
-  converted: "Converti",
-};
-
 function timestampForFilename(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -74,8 +61,23 @@ function downloadBlob(blob: Blob, filename: string) {
 export function QuotesPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
+  const { t } = useTranslation();
   const canManage = hasPermission(user?.permissions ?? {}, "manage_quotes");
   const canEdit = hasPermission(user?.permissions ?? {}, "edit_quotes");
+
+  const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
+    { value: "cash", label: t("sales.paymentMethods.cash") },
+    { value: "card", label: t("sales.paymentMethods.card") },
+    { value: "mobile_money", label: t("sales.paymentMethods.mobile_money") },
+    { value: "credit", label: t("sales.paymentMethods.credit") },
+  ];
+
+  const STATUS_LABELS: Record<string, string> = {
+    pending: t("quotes.status.pending"),
+    accepted: t("quotes.status.accepted"),
+    expired: t("quotes.status.expired"),
+    converted: t("quotes.status.converted"),
+  };
 
   const [products, setProducts] = useState<Product[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
@@ -174,7 +176,7 @@ export function QuotesPage() {
   const handleCreateQuote = async () => {
     setError(null);
     if (cart.length === 0) {
-      setError("Le devis doit contenir au moins un article.");
+      setError(t("quotes.errors.itemRequired"));
       return;
     }
     setSaving(true);
@@ -198,7 +200,7 @@ export function QuotesPage() {
       setValidUntil("");
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible d'enregistrer le devis.");
+      setError(err instanceof Error ? err.message : t("quotes.errors.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -261,7 +263,7 @@ export function QuotesPage() {
       setExpandedQuoteId(null);
       await refresh();
     } catch (err) {
-      setConvertError(err instanceof Error ? err.message : "Impossible de convertir ce devis en vente.");
+      setConvertError(err instanceof Error ? err.message : t("quotes.errors.convertFailed"));
     } finally {
       setConverting(false);
     }
@@ -275,12 +277,12 @@ export function QuotesPage() {
 
   return (
     <main style={pageStyle}>
-      <h1>Devis</h1>
+      <h1>{t("quotes.title")}</h1>
 
       {canManage && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 24, marginTop: 24 }}>
           <div style={cardStyle}>
-            <strong>Ajouter des articles</strong>
+            <strong>{t("quotes.addItems")}</strong>
             <SearchableSelect
               value=""
               onChange={(id) => {
@@ -288,19 +290,19 @@ export function QuotesPage() {
                 if (product) addToCart(product);
               }}
               options={products.map((p) => ({ value: String(p.id), label: p.name }))}
-              emptyLabel="— Choisir un produit —"
-              placeholder="Rechercher un produit..."
+              emptyLabel={t("quotes.chooseProduct")}
+              placeholder={t("quotes.searchProductPlaceholder")}
             />
 
             {cart.length === 0 ? (
-              <p style={{ color: "var(--color-text-muted)" }}>Aucun article.</p>
+              <p style={{ color: "var(--color-text-muted)" }}>{t("quotes.emptyCart")}</p>
             ) : (
               <table style={tableStyle}>
                 <thead>
                   <tr>
-                    <th style={thStyle}>Article</th>
-                    <th style={thStyle}>Qté</th>
-                    <th style={thStyle}>Total</th>
+                    <th style={thStyle}>{t("quotes.item")}</th>
+                    <th style={thStyle}>{t("quotes.quantity")}</th>
+                    <th style={thStyle}>{t("quotes.total")}</th>
                     <th style={thStyle}></th>
                   </tr>
                 </thead>
@@ -333,38 +335,38 @@ export function QuotesPage() {
           </div>
 
           <div style={cardStyle}>
-            <strong>Client & validité</strong>
+            <strong>{t("quotes.customerAndValidity")}</strong>
             <div>
-              <div>Sous-total : {subtotal.toFixed(0)}</div>
-              <div>Taxe : {taxTotal.toFixed(0)}</div>
-              <div style={{ fontWeight: 700, fontSize: 18 }}>Total : {total.toFixed(0)}</div>
+              <div>{t("quotes.subtotal")} {subtotal.toFixed(0)}</div>
+              <div>{t("quotes.tax")} {taxTotal.toFixed(0)}</div>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>{t("quotes.totalLabel")} {total.toFixed(0)}</div>
             </div>
 
             <label>
-              Client déjà enregistré
+              {t("quotes.registeredCustomer")}
               <SearchableSelect
                 value={customerId}
                 onChange={setCustomerId}
                 options={customers.map((c) => ({ value: String(c.id), label: c.fullName }))}
-                emptyLabel="— Aucun / nouveau —"
-                placeholder="Rechercher un client..."
+                emptyLabel={t("quotes.noCustomerOption")}
+                placeholder={t("quotes.searchCustomerPlaceholder")}
               />
             </label>
 
             {!customerId && (
               <label>
-                Ou nom du client (optionnel)
+                {t("quotes.orCustomerName")}
                 <input
                   style={inputStyle}
                   value={newCustomerName}
                   onChange={(e) => setNewCustomerName(e.target.value)}
-                  placeholder="Nom du client"
+                  placeholder={t("quotes.customerNamePlaceholder")}
                 />
               </label>
             )}
 
             <label>
-              Valable jusqu'au (optionnel)
+              {t("quotes.validUntil")}
               <input
                 style={inputStyle}
                 type="date"
@@ -376,21 +378,21 @@ export function QuotesPage() {
             {error && <p style={{ color: "#f87171" }}>{error}</p>}
 
             <button style={primaryButtonStyle} onClick={handleCreateQuote} disabled={saving}>
-              {saving ? "Enregistrement..." : "Enregistrer le devis"}
+              {saving ? t("quotes.saving") : t("quotes.submit")}
             </button>
           </div>
         </div>
       )}
 
       <div style={cardStyle}>
-        <strong>Devis enregistrés</strong>
+        <strong>{t("quotes.savedQuotes")}</strong>
         <table style={tableStyle}>
           <thead>
             <tr>
-              <th style={thStyle}>Devis</th>
-              <th style={thStyle}>Client</th>
-              <th style={thStyle}>Total</th>
-              <th style={thStyle}>Statut</th>
+              <th style={thStyle}>{t("quotes.quoteColumn")}</th>
+              <th style={thStyle}>{t("quotes.customer")}</th>
+              <th style={thStyle}>{t("quotes.total")}</th>
+              <th style={thStyle}>{t("quotes.statusColumn")}</th>
               <th style={thStyle}></th>
             </tr>
           </thead>
@@ -414,7 +416,7 @@ export function QuotesPage() {
                           style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
                           onClick={() => handleDownloadPdf(quote)}
                         >
-                          PDF
+                          {t("quotes.pdf")}
                         </button>
                         {canEdit && quote.status === "pending" && (
                           <>
@@ -422,7 +424,7 @@ export function QuotesPage() {
                               style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
                               onClick={() => handleStatusChange(quote, "accepted")}
                             >
-                              Accepter
+                              {t("quotes.accept")}
                             </button>
                             <button
                               style={{
@@ -435,7 +437,7 @@ export function QuotesPage() {
                               }}
                               onClick={() => handleStatusChange(quote, "expired")}
                             >
-                              Marquer expiré
+                              {t("quotes.markExpired")}
                             </button>
                           </>
                         )}
@@ -444,7 +446,7 @@ export function QuotesPage() {
                             style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
                             onClick={() => toggleConvert(quote)}
                           >
-                            {expanded ? "Fermer" : "Convertir en vente"}
+                            {expanded ? t("quotes.close") : t("quotes.convertToSale")}
                           </button>
                         )}
                       </div>
@@ -455,7 +457,7 @@ export function QuotesPage() {
                       <td style={tdStyle} colSpan={5}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                           <label>
-                            Méthode de paiement
+                            {t("quotes.paymentMethod")}
                             <select
                               style={inputStyle}
                               value={convertPaymentMethod}
@@ -469,7 +471,7 @@ export function QuotesPage() {
                             </select>
                           </label>
                           <label>
-                            Montant payé (laisser vide = total)
+                            {t("quotes.amountPaid")}
                             <input
                               style={inputStyle}
                               type="number"
@@ -484,7 +486,7 @@ export function QuotesPage() {
                             onClick={() => handleConvert(quote)}
                             disabled={converting}
                           >
-                            {converting ? "Conversion..." : "Confirmer la conversion"}
+                            {converting ? t("quotes.converting") : t("quotes.confirmConversion")}
                           </button>
                         </div>
                       </td>
@@ -496,7 +498,7 @@ export function QuotesPage() {
             {quotes.length === 0 && (
               <tr>
                 <td style={tdStyle} colSpan={5}>
-                  Aucun devis pour le moment.
+                  {t("quotes.none")}
                 </td>
               </tr>
             )}

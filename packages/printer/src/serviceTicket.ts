@@ -1,3 +1,4 @@
+import { t } from "@gestion-boutique/i18n";
 import { DOTS_PER_COLUMN, MAX_LOGO_HEIGHT_DOTS, padLine } from "./receipt";
 import { EscPosBuilder } from "./escpos";
 import { rasterizeLogo } from "./logo";
@@ -53,16 +54,18 @@ export async function buildServiceOrderTicket(data: ServiceOrderTicketData): Pro
   builder.text(data.businessName ?? "WariBox").newline();
   builder.doubleHeight(false).bold(false);
   if (data.businessAddress) builder.text(data.businessAddress).newline();
-  if (data.businessPhone) builder.text(`Tél : ${data.businessPhone}`).newline();
+  if (data.businessPhone) builder.text(t("documents.common.phone", { phone: data.businessPhone })).newline();
   if (data.businessEmail) builder.text(data.businessEmail).newline();
 
-  builder.bold(true).text("BON DE DEPOT").newline().bold(false);
-  builder.text(`Ticket ${data.orderNumber}`).newline();
+  builder.bold(true).text(t("documents.serviceTicket.title")).newline().bold(false);
+  builder.text(t("documents.common.ticketLabel", { number: data.orderNumber })).newline();
   builder.text(data.date).newline();
-  if (data.customerName) builder.text(`Client : ${data.customerName}`).newline();
-  if (data.customerPhone) builder.text(`Tél client : ${data.customerPhone}`).newline();
+  if (data.customerName) builder.text(t("documents.common.customer", { name: data.customerName })).newline();
+  if (data.customerPhone) {
+    builder.text(t("documents.serviceTicket.customerPhone", { phone: data.customerPhone })).newline();
+  }
   if (data.showPromisedDate && data.promisedDate) {
-    builder.text(`Retrait prevu : ${data.promisedDate}`).newline();
+    builder.text(t("documents.serviceTicket.promisedDate", { date: data.promisedDate })).newline();
   }
 
   builder.align("left");
@@ -82,21 +85,25 @@ export async function buildServiceOrderTicket(data: ServiceOrderTicketData): Pro
   }
 
   builder.text(separator).newline();
-  builder.text(`Sous-total : ${data.subtotal.toFixed(0)}`).newline();
+  builder.text(t("documents.common.subtotal", { amount: data.subtotal.toFixed(0) })).newline();
   if (data.tax > 0) {
-    builder.text(`dont TVA : ${data.tax.toFixed(0)}`).newline();
+    builder.text(t("documents.common.tax", { amount: data.tax.toFixed(0) })).newline();
   }
-  builder.bold(true).text(`TOTAL : ${data.total.toFixed(0)}`).newline().bold(false);
-  builder.text(`Paye : ${data.amountPaid.toFixed(0)}`).newline();
+  builder.bold(true).text(t("documents.common.total", { amount: data.total.toFixed(0) })).newline().bold(false);
+  builder.text(t("documents.serviceTicket.paid", { amount: data.amountPaid.toFixed(0) })).newline();
   const balance = data.total - data.amountPaid;
   if (balance > 0) {
-    builder.bold(true).text(`SOLDE DU : ${balance.toFixed(0)}`).newline().bold(false);
+    builder
+      .bold(true)
+      .text(t("documents.serviceTicket.balanceDue", { amount: balance.toFixed(0) }))
+      .newline()
+      .bold(false);
   }
 
   builder
     .align("center")
     .newline(2)
-    .text("Conservez ce ticket, il vous sera demande au retrait.")
+    .text(t("documents.serviceTicket.keepTicket"))
     .newline(3);
   builder.cut();
 

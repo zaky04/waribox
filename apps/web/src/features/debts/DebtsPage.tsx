@@ -8,6 +8,7 @@ import {
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import {
   badgeStyle,
@@ -27,15 +28,16 @@ type PurchaseItem = typeof schema.purchaseItems.$inferSelect;
 type Variant = typeof schema.productVariants.$inferSelect;
 type Product = typeof schema.products.$inferSelect;
 
-const STATUS_LABELS: Record<string, string> = {
-  open: "Ouverte",
-  partial: "Partielle",
-  settled: "Soldée",
-};
-
 export function DebtsPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
+  const { t } = useTranslation();
+
+  const STATUS_LABELS: Record<string, string> = {
+    open: t("common.debtCreditStatus.open"),
+    partial: t("common.debtCreditStatus.partial"),
+    settled: t("common.debtCreditStatus.settled"),
+  };
 
   const [debts, setDebts] = useState<Debt[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -99,7 +101,7 @@ export function DebtsPage() {
     if (!user) return;
     const value = Number(amount);
     if (!value || value <= 0) {
-      setError("Le montant doit être supérieur à zéro.");
+      setError(t("debts.errors.amountPositive"));
       return;
     }
 
@@ -110,7 +112,7 @@ export function DebtsPage() {
       setAmount("");
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible d'enregistrer le paiement.");
+      setError(err instanceof Error ? err.message : t("debts.errors.paymentFailed"));
     } finally {
       setSaving(false);
     }
@@ -119,7 +121,7 @@ export function DebtsPage() {
   return (
     <main style={pageStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Dettes</h1>
+        <h1>{t("debts.title")}</h1>
         <button
           style={{
             ...primaryButtonStyle,
@@ -129,20 +131,20 @@ export function DebtsPage() {
           }}
           onClick={() => setShowSettled((v) => !v)}
         >
-          {showSettled ? "Masquer les soldées" : "Afficher les soldées"}
+          {showSettled ? t("debts.hideSettled") : t("debts.showSettled")}
         </button>
       </div>
 
       <table style={tableStyle}>
         <thead>
           <tr>
-            <th style={thStyle}>Date</th>
-            <th style={thStyle}>Fournisseur</th>
-            <th style={thStyle}>Achat</th>
-            <th style={thStyle}>Article</th>
-            <th style={thStyle}>Montant initial</th>
-            <th style={thStyle}>Solde restant</th>
-            <th style={thStyle}>Statut</th>
+            <th style={thStyle}>{t("debts.date")}</th>
+            <th style={thStyle}>{t("debts.supplier")}</th>
+            <th style={thStyle}>{t("debts.purchase")}</th>
+            <th style={thStyle}>{t("debts.article")}</th>
+            <th style={thStyle}>{t("debts.originalAmount")}</th>
+            <th style={thStyle}>{t("debts.remainingBalance")}</th>
+            <th style={thStyle}>{t("debts.status")}</th>
             <th style={thStyle}></th>
           </tr>
         </thead>
@@ -175,13 +177,13 @@ export function DebtsPage() {
                         onClick={() => handleSubmit(debt)}
                         disabled={saving}
                       >
-                        Valider
+                        {t("debts.confirm")}
                       </button>
                       <button
                         style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
                         onClick={() => setPayingId(null)}
                       >
-                        Annuler
+                        {t("debts.cancel")}
                       </button>
                     </div>
                   ) : (
@@ -189,7 +191,7 @@ export function DebtsPage() {
                       style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
                       onClick={() => startPayment(debt)}
                     >
-                      Enregistrer un paiement
+                      {t("debts.recordPayment")}
                     </button>
                   ))}
               </td>
@@ -198,7 +200,7 @@ export function DebtsPage() {
           {visibleDebts.length === 0 && (
             <tr>
               <td style={tdStyle} colSpan={8}>
-                Aucune dette.
+                {t("debts.none")}
               </td>
             </tr>
           )}

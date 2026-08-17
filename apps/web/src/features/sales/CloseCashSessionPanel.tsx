@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { cardStyle, inputStyle, primaryButtonStyle } from "../../components/sharedStyles";
 
 interface CloseCashSessionPanelProps {
@@ -8,6 +9,7 @@ interface CloseCashSessionPanelProps {
 }
 
 export function CloseCashSessionPanel({ expectedAmount, onClose, onCancel }: CloseCashSessionPanelProps) {
+  const { t } = useTranslation();
   const [counted, setCounted] = useState(String(expectedAmount));
   const [loading, setLoading] = useState(false);
 
@@ -25,25 +27,27 @@ export function CloseCashSessionPanel({ expectedAmount, onClose, onCancel }: Clo
 
   return (
     <div style={cardStyle}>
-      <strong>Fermeture de caisse</strong>
-      <p style={{ color: "var(--color-text-muted)", margin: 0 }}>Montant attendu (ouverture + encaissements espèces) : {expectedAmount}</p>
+      <strong>{t("sales.closeSession.title")}</strong>
+      <p style={{ color: "var(--color-text-muted)", margin: 0 }}>
+        {t("sales.closeSession.expectedAmount")} {expectedAmount}
+      </p>
       <label>
-        Montant compté dans le tiroir
+        {t("sales.closeSession.countedAmount")}
         <input style={inputStyle} type="number" value={counted} onChange={(e) => setCounted(e.target.value)} />
       </label>
       <p style={{ color: difference === 0 ? "#86efac" : "#fdba74" }}>
-        Écart : {difference > 0 ? "+" : ""}
+        {t("sales.closeSession.difference")} {difference > 0 ? "+" : ""}
         {difference}
       </p>
       <div style={{ display: "flex", gap: 12 }}>
         <button style={primaryButtonStyle} onClick={handleClose} disabled={loading}>
-          {loading ? "Fermeture..." : "Confirmer la fermeture"}
+          {loading ? t("sales.closeSession.closing") : t("sales.closeSession.confirm")}
         </button>
         <button
           onClick={onCancel}
           style={{ background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)", borderRadius: 8, padding: "0 16px" }}
         >
-          Annuler
+          {t("sales.closeSession.cancel")}
         </button>
       </div>
     </div>

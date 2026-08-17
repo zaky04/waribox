@@ -1,5 +1,6 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { eq } from "drizzle-orm";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { logAction } from "../services/AuditService";
@@ -102,7 +103,7 @@ export async function createUser(
   // vérification côté application, uniforme pour toute installation.
   const existing = await db.select().from(schema.users).where(eq(schema.users.username, username)).get();
   if (existing) {
-    throw new Error("Ce pseudo est déjà utilisé.");
+    throw new Error(t("coreErrors.auth.usernameTaken"));
   }
 
   const passwordHash = await hashSecret(input.password);
@@ -165,7 +166,7 @@ export async function verifyPassword(
 
   const lockedSeconds = remainingLockSeconds(user.lockedUntil);
   if (lockedSeconds > 0) {
-    throw new Error(`Trop de tentatives. Réessaie dans ${lockedSeconds} seconde(s).`);
+    throw new Error(t("coreErrors.common.tooManyAttempts", { seconds: lockedSeconds }));
   }
 
   const valid = await verifySecret(password, user.passwordHash);
@@ -193,7 +194,7 @@ export async function verifyPin(db: Database, userId: number, pin: string): Prom
 
   const lockedSeconds = remainingLockSeconds(user.lockedUntil);
   if (lockedSeconds > 0) {
-    throw new Error(`Trop de tentatives. Réessaie dans ${lockedSeconds} seconde(s).`);
+    throw new Error(t("coreErrors.common.tooManyAttempts", { seconds: lockedSeconds }));
   }
 
   const valid = await verifySecret(pin, user.pinHash);
@@ -251,18 +252,18 @@ export async function changeOwnPassword(
 ): Promise<void> {
   const user = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get();
   if (!user?.passwordHash) {
-    throw new Error("Compte introuvable.");
+    throw new Error(t("coreErrors.auth.accountNotFound"));
   }
 
   const lockedSeconds = remainingLockSeconds(user.lockedUntil);
   if (lockedSeconds > 0) {
-    throw new Error(`Trop de tentatives. Réessaie dans ${lockedSeconds} seconde(s).`);
+    throw new Error(t("coreErrors.common.tooManyAttempts", { seconds: lockedSeconds }));
   }
 
   const valid = await verifySecret(currentPassword, user.passwordHash);
   if (!valid) {
     await registerFailedAttempt(db, userId, user.failedAttempts);
-    throw new Error("Mot de passe actuel incorrect.");
+    throw new Error(t("coreErrors.auth.wrongCurrentPassword"));
   }
   await clearFailedAttempts(db, userId);
 
@@ -304,7 +305,7 @@ export async function updateUser(
     const username = input.username.trim().toLowerCase();
     const existing = await db.select().from(schema.users).where(eq(schema.users.username, username)).get();
     if (existing && existing.id !== userId) {
-      throw new Error("Ce pseudo est déjà utilisé.");
+      throw new Error(t("coreErrors.auth.usernameTaken"));
     }
     updates.username = username;
   }
@@ -315,7 +316,7 @@ export async function updateUser(
 
   const updated = await db.update(schema.users).set(updates).where(eq(schema.users.id, userId)).returning().get();
   if (!updated) {
-    throw new Error("Utilisateur introuvable.");
+    throw new Error(t("coreErrors.auth.userNotFound"));
   }
 
   if (updatedBy) {
@@ -347,10 +348,10 @@ export async function impersonateUser(
 
   const target = await getUserById(db, targetUserId);
   if (!target) {
-    throw new Error("Utilisateur introuvable.");
+    throw new Error(t("coreErrors.auth.userNotFound"));
   }
   if (!target.isActive) {
-    throw new Error("Ce compte est désactivé.");
+    throw new Error(t("coreErrors.auth.accountDisabled"));
   }
 
   await logAction(db, {

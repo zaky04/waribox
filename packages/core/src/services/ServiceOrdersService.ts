@@ -1,6 +1,7 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
-import { desc, eq, sql } from "drizzle-orm";
+import { t } from "@gestion-boutique/i18n";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { findOrCreateCustomerByNameAndPhone } from "./CustomersService";
@@ -61,7 +62,7 @@ export async function createServiceOrder(
 ) {
   requirePermission(actingPermissions, "manage_service_orders");
   if (input.items.length === 0) {
-    throw new Error("Le ticket doit contenir au moins un article.");
+    throw new Error(t("coreErrors.serviceOrders.itemRequired"));
   }
 
   const trimmedName = input.newCustomerName?.trim();
@@ -89,9 +90,7 @@ export async function createServiceOrder(
 
   const amountPaid = input.amountPaid ?? total;
   if (amountPaid < total && !customerId) {
-    throw new Error(
-      "Indique au moins le nom du client pour un ticket à crédit ou un paiement partiel (pas besoin d'un compte client existant).",
-    );
+    throw new Error(t("coreErrors.serviceOrders.customerIdRequiredCredit"));
   }
 
   const paymentStatus = amountPaid >= total ? "paid" : amountPaid > 0 ? "partial" : "credit";
@@ -165,9 +164,20 @@ export async function createServiceOrder(
   return order;
 }
 
-export async function listServiceOrders(db: Database, storeId?: number) {
+export interface ServiceOrderFilters {
+  storeId?: number;
+  from?: string; // "YYYY-MM-DD"
+  to?: string;
+}
+
+export async function listServiceOrders(db: Database, filters: ServiceOrderFilters = {}) {
+  const conditions = [];
+  if (filters.storeId) conditions.push(eq(schema.serviceOrders.storeId, filters.storeId));
+  if (filters.from) conditions.push(gte(schema.serviceOrders.createdAt, `${filters.from.slice(0, 10)} 00:00:00`));
+  if (filters.to) conditions.push(lte(schema.serviceOrders.createdAt, `${filters.to.slice(0, 10)} 23:59:59`));
+
   const query = db.select().from(schema.serviceOrders).orderBy(desc(schema.serviceOrders.id));
-  return storeId ? query.where(eq(schema.serviceOrders.storeId, storeId)) : query;
+  return conditions.length > 0 ? query.where(and(...conditions)) : query;
 }
 
 export async function listServiceOrderItems(db: Database, serviceOrderId: number) {
@@ -175,6 +185,16 @@ export async function listServiceOrderItems(db: Database, serviceOrderId: number
     .select()
     .from(schema.serviceOrderItems)
     .where(eq(schema.serviceOrderItems.serviceOrderId, serviceOrderId));
+}
+
+// Une seule ligne de paiement par ticket à la création (voir
+// createServiceOrder) — même raisonnement que SalesService.getSalePayment.
+export async function getServiceOrderPayment(db: Database, serviceOrderId: number) {
+  return db
+    .select()
+    .from(schema.payments)
+    .where(and(eq(schema.payments.referenceType, "service_order"), eq(schema.payments.referenceId, serviceOrderId)))
+    .get();
 }
 
 type ServiceOrderItem = typeof schema.serviceOrderItems.$inferSelect;
@@ -241,7 +261,7 @@ export async function updateServiceOrderItemStatus(
     .get();
 
   if (!item) {
-    throw new Error("Article introuvable.");
+    throw new Error(t("coreErrors.serviceOrders.itemNotFound"));
   }
 
   const siblings = await listServiceOrderItems(db, item.serviceOrderId);
@@ -323,7 +343,7 @@ export async function updateServiceOrderItem(
     .where(eq(schema.serviceOrderItems.id, itemId))
     .get();
   if (!current) {
-    throw new Error("Article introuvable.");
+    throw new Error(t("coreErrors.serviceOrders.itemNotFound"));
   }
 
   const merged: ServiceOrderItemInput = {

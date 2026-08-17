@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "./useAuth";
 import { authCardStyle, authInputStyle, authPrimaryButtonStyle } from "./styles";
 
 export function LoginScreen() {
   const { login } = useAuth();
+  const { t } = useTranslation();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -24,11 +26,11 @@ export function LoginScreen() {
 
   return (
     <main style={{ maxWidth: 420, margin: "60px auto", padding: 24 }}>
-      <h1>Connexion</h1>
+      <h1>{t("auth.login.title")}</h1>
 
       <form onSubmit={handleSubmit} style={authCardStyle}>
         <label>
-          Pseudo
+          {t("auth.login.username")}
           <input
             type="text"
             style={authInputStyle}
@@ -40,7 +42,7 @@ export function LoginScreen() {
         </label>
 
         <label>
-          Mot de passe
+          {t("auth.login.password")}
           <input
             type="password"
             style={authInputStyle}
@@ -53,7 +55,7 @@ export function LoginScreen() {
         {error && <p style={{ color: "#f87171" }}>{error}</p>}
 
         <button type="submit" style={authPrimaryButtonStyle} disabled={loading}>
-          {loading ? "Connexion..." : "Se connecter"}
+          {loading ? t("auth.login.connecting") : t("auth.login.submit")}
         </button>
       </form>
     </main>

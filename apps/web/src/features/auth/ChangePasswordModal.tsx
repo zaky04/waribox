@@ -1,5 +1,6 @@
 import { changeOwnPassword } from "@gestion-boutique/core";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { cardStyle, inputStyle, primaryButtonStyle } from "../../components/sharedStyles";
 import { useAuth } from "./useAuth";
@@ -7,6 +8,7 @@ import { useAuth } from "./useAuth";
 export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   const db = useDatabase();
   const { user } = useAuth();
+  const { t } = useTranslation();
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -18,11 +20,11 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   const handleSubmit = async () => {
     setError(null);
     if (newPassword.length < 8) {
-      setError("Le nouveau mot de passe doit contenir au moins 8 caractères.");
+      setError(t("auth.changePassword.errors.passwordLength"));
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError("La confirmation ne correspond pas au nouveau mot de passe.");
+      setError(t("auth.changePassword.errors.passwordMismatch"));
       return;
     }
     if (!user) return;
@@ -33,7 +35,7 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
       setSaved(true);
       setTimeout(onClose, 1200);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible de changer le mot de passe.");
+      setError(err instanceof Error ? err.message : t("auth.changePassword.errors.changeFailed"));
     } finally {
       setSaving(false);
     }
@@ -53,10 +55,10 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div style={{ ...cardStyle, width: 380, marginTop: 0 }} onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ margin: 0 }}>Changer mon mot de passe</h2>
+        <h2 style={{ margin: 0 }}>{t("auth.changePassword.title")}</h2>
 
         <label>
-          Mot de passe actuel
+          {t("auth.changePassword.currentPassword")}
           <input
             style={inputStyle}
             type="password"
@@ -65,7 +67,7 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
           />
         </label>
         <label>
-          Nouveau mot de passe
+          {t("auth.changePassword.newPassword")}
           <input
             style={inputStyle}
             type="password"
@@ -75,7 +77,7 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
           />
         </label>
         <label>
-          Confirmer le nouveau mot de passe
+          {t("auth.changePassword.confirmPassword")}
           <input
             style={inputStyle}
             type="password"
@@ -86,11 +88,11 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
         </label>
 
         {error && <p style={{ color: "#f87171" }}>{error}</p>}
-        {saved && <p style={{ color: "#86efac" }}>Mot de passe modifié.</p>}
+        {saved && <p style={{ color: "#86efac" }}>{t("auth.changePassword.saved")}</p>}
 
         <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
-            {saving ? "Enregistrement..." : "Enregistrer"}
+            {saving ? t("auth.changePassword.saving") : t("auth.changePassword.save")}
           </button>
           <button
             onClick={onClose}
@@ -103,7 +105,7 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
               cursor: "pointer",
             }}
           >
-            Annuler
+            {t("auth.changePassword.cancel")}
           </button>
         </div>
       </div>

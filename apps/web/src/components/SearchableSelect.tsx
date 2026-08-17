@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useTranslation } from "react-i18next";
 import { inputStyle } from "./sharedStyles";
 
 export interface SearchableSelectOption {
@@ -18,6 +19,7 @@ interface SearchableSelectProps {
 // Champ texte + suggestions filtrées en direct, pour remplacer les <select>
 // natifs dès que la liste (produits, clients...) peut devenir longue.
 export function SearchableSelect({ options, value, onChange, placeholder, emptyLabel }: SearchableSelectProps) {
+  const { t } = useTranslation();
   const selected = options.find((o) => o.value === value);
   const [query, setQuery] = useState(selected?.label ?? "");
   const [open, setOpen] = useState(false);
@@ -96,7 +98,7 @@ export function SearchableSelect({ options, value, onChange, placeholder, emptyL
             </div>
           ))}
           {filtered.length === 0 && (
-            <div style={{ padding: "8px 12px", color: "var(--color-text-muted)" }}>Aucun résultat</div>
+            <div style={{ padding: "8px 12px", color: "var(--color-text-muted)" }}>{t("common.noResults")}</div>
           )}
         </div>
       )}

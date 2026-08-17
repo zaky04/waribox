@@ -277,6 +277,42 @@ export async function getLowStockProducts(db: Database, storeId?: number): Promi
   return result;
 }
 
+// Vitesse de vente réelle sur les `days` derniers jours (par variante), lue
+// depuis le grand livre `stock_movements` (mouvements `movementType='sale'`
+// — `quantityDelta` y est négatif, donc `-quantityDelta` = unités vendues).
+// Sert de base au réappro prédictif (voir PurchasesPage.tsx) : couvrir la
+// consommation réelle plutôt qu'un simple multiple du seuil d'alerte fixe.
+export async function getSalesVelocity(
+  db: Database,
+  days = 30,
+  storeId?: number,
+): Promise<Map<number, number>> {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .replace("T", " ")
+    .slice(0, 19);
+
+  const conditions = [eq(schema.stockMovements.movementType, "sale"), gte(schema.stockMovements.createdAt, since)];
+  if (storeId) {
+    conditions.push(inArray(schema.stockMovements.locationId, await locationIdsForStore(db, storeId)));
+  }
+
+  const rows = await db
+    .select({
+      variantId: schema.stockMovements.variantId,
+      sold: sql<number>`SUM(-${schema.stockMovements.quantityDelta})`,
+    })
+    .from(schema.stockMovements)
+    .where(and(...conditions))
+    .groupBy(schema.stockMovements.variantId);
+
+  const velocity = new Map<number, number>();
+  for (const row of rows) {
+    velocity.set(row.variantId, Number(row.sold) / days);
+  }
+  return velocity;
+}
+
 export interface CreateBatchInput {
   variantId: number;
   locationId: number;

@@ -1,5 +1,6 @@
 import { recordBackup } from "@gestion-boutique/core";
 import { exportDatabaseFile, type Database } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import {
   ensureFolderPermission,
   loadFolderHandle,
@@ -11,11 +12,11 @@ import {
 export async function runLocalBackup(db: Database): Promise<void> {
   const handle = await loadFolderHandle();
   if (!handle) {
-    throw new Error("Aucun dossier de sauvegarde choisi.");
+    throw new Error(t("settings.backups.errors.noFolderChosen"));
   }
   const granted = await ensureFolderPermission(handle);
   if (!granted) {
-    throw new Error("Permission d'écriture refusée pour le dossier de sauvegarde.");
+    throw new Error(t("settings.backups.errors.writePermissionDenied"));
   }
 
   try {

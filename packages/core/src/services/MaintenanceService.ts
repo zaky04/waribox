@@ -1,5 +1,6 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { eq } from "drizzle-orm";
 import { hashSecret, verifySecret } from "../auth/hash";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
@@ -34,17 +35,17 @@ export interface SetMaintenanceCodeInput {
 export async function setMaintenanceCode(db: Database, input: SetMaintenanceCodeInput): Promise<void> {
   requirePermission(input.actingPermissions, "manage_settings");
   if (input.newCode.length < 6) {
-    throw new Error("Le code de maintenance doit contenir au moins 6 caractères.");
+    throw new Error(t("coreErrors.maintenance.codeTooShort"));
   }
 
   const settings = await getSettings(db);
   if (settings.maintenanceCodeHash) {
     if (!input.currentCode) {
-      throw new Error("Le code de maintenance actuel est requis pour le changer.");
+      throw new Error(t("coreErrors.maintenance.currentCodeRequired"));
     }
     const valid = await verifySecret(input.currentCode, settings.maintenanceCodeHash);
     if (!valid) {
-      throw new Error("Code de maintenance actuel incorrect.");
+      throw new Error(t("coreErrors.maintenance.wrongCurrentCode"));
     }
   }
 
@@ -64,7 +65,7 @@ export async function verifyMaintenanceCode(db: Database, code: string): Promise
 
   const lockedSeconds = remainingLockSeconds(settings.maintenanceCodeLockedUntil);
   if (lockedSeconds > 0) {
-    throw new Error(`Trop de tentatives. Réessaie dans ${lockedSeconds} seconde(s).`);
+    throw new Error(t("coreErrors.common.tooManyAttempts", { seconds: lockedSeconds }));
   }
 
   const valid = await verifySecret(code, settings.maintenanceCodeHash);

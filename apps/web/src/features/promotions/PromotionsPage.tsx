@@ -10,6 +10,7 @@ import {
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import {
   badgeStyle,
@@ -42,6 +43,7 @@ const secondaryButtonStyle = {
 export function PromotionsPage() {
   const db = useDatabase();
   const { user } = useAuth();
+  const { t } = useTranslation();
 
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -94,19 +96,19 @@ export function PromotionsPage() {
     setError(null);
     const percent = Number(discountPercent);
     if (!name.trim()) {
-      setError("Le nom de la promotion est requis.");
+      setError(t("promotions.errors.nameRequired"));
       return;
     }
     if (!(percent > 0 && percent <= 100)) {
-      setError("Le taux de remise doit être compris entre 0 et 100%.");
+      setError(t("promotions.errors.percentRange"));
       return;
     }
     if (startDate > endDate) {
-      setError("La date de début doit précéder ou égaler la date de fin.");
+      setError(t("promotions.errors.dateOrder"));
       return;
     }
     if (scope === "product" && selectedProductIds.length === 0) {
-      setError("Sélectionne au moins un produit pour une remise de type \"produit\".");
+      setError(t("promotions.errors.productsRequired"));
       return;
     }
 
@@ -127,7 +129,7 @@ export function PromotionsPage() {
       resetForm();
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible de créer la promotion.");
+      setError(err instanceof Error ? err.message : t("promotions.errors.createFailed"));
     } finally {
       setSaving(false);
     }
@@ -151,28 +153,24 @@ export function PromotionsPage() {
 
   return (
     <main style={pageStyle}>
-      <h1>Promotions</h1>
-      <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-        Remises appliquées automatiquement aux ventes pendant leur période — sur des produits précis, ou
-        sur le total de la facture. Aucune saisie manuelle n&apos;est nécessaire au comptoir : la remise
-        active s&apos;applique toute seule.
-      </p>
+      <h1>{t("promotions.title")}</h1>
+      <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("promotions.hint")}</p>
 
       <div style={cardStyle}>
-        <strong>Nouvelle promotion</strong>
+        <strong>{t("promotions.newHeading")}</strong>
         <label>
-          Nom
-          <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="ex: Promo weekend épicerie" />
+          {t("promotions.name")}
+          <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder={t("promotions.namePlaceholder")} />
         </label>
         <label>
-          Portée de la remise
+          {t("promotions.scope")}
           <select style={inputStyle} value={scope} onChange={(e) => setScope(e.target.value as PromotionScope)}>
-            <option value="product">Sur des produits spécifiques</option>
-            <option value="invoice">Sur le total de la facture</option>
+            <option value="product">{t("promotions.scopeProduct")}</option>
+            <option value="invoice">{t("promotions.scopeInvoice")}</option>
           </select>
         </label>
         <label>
-          Taux de remise (%)
+          {t("promotions.discountPercent")}
           <input
             style={inputStyle}
             type="number"
@@ -184,11 +182,11 @@ export function PromotionsPage() {
         </label>
         <div style={{ display: "flex", gap: 16 }}>
           <label style={{ flex: 1 }}>
-            Du
+            {t("promotions.from")}
             <input style={inputStyle} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           </label>
           <label style={{ flex: 1 }}>
-            Au
+            {t("promotions.to")}
             <input style={inputStyle} type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           </label>
         </div>
@@ -196,12 +194,12 @@ export function PromotionsPage() {
         {scope === "product" && (
           <div>
             <label>
-              Produits concernés
+              {t("promotions.concernedProducts")}
               <input
                 style={inputStyle}
                 value={productSearch}
                 onChange={(e) => setProductSearch(e.target.value)}
-                placeholder="Rechercher un produit..."
+                placeholder={t("promotions.searchProductPlaceholder")}
               />
             </label>
             <div
@@ -225,12 +223,12 @@ export function PromotionsPage() {
                 </label>
               ))}
               {filteredProducts.length === 0 && (
-                <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>Aucun produit.</p>
+                <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("promotions.noProducts")}</p>
               )}
             </div>
             {selectedProductIds.length > 0 && (
               <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-                {selectedProductIds.length} produit(s) sélectionné(s).
+                {t("promotions.selectedCount", { count: selectedProductIds.length })}
               </p>
             )}
           </div>
@@ -239,18 +237,18 @@ export function PromotionsPage() {
         {error && <p style={{ color: "#f87171" }}>{error}</p>}
 
         <button style={primaryButtonStyle} onClick={handleCreate} disabled={saving}>
-          {saving ? "Création..." : "Créer la promotion"}
+          {saving ? t("promotions.creating") : t("promotions.create")}
         </button>
       </div>
 
       <table style={tableStyle}>
         <thead>
           <tr>
-            <th style={thStyle}>Nom</th>
-            <th style={thStyle}>Portée</th>
-            <th style={thStyle}>Remise</th>
-            <th style={thStyle}>Période</th>
-            <th style={thStyle}>Statut</th>
+            <th style={thStyle}>{t("promotions.name")}</th>
+            <th style={thStyle}>{t("promotions.scopeColumn")}</th>
+            <th style={thStyle}>{t("promotions.discount")}</th>
+            <th style={thStyle}>{t("promotions.period")}</th>
+            <th style={thStyle}>{t("promotions.status")}</th>
             <th style={thStyle}></th>
           </tr>
         </thead>
@@ -263,27 +261,27 @@ export function PromotionsPage() {
                   {promo.name}
                   {promo.scope === "product" && (
                     <div style={{ color: "var(--color-text-muted)", fontSize: 12 }}>
-                      {(productsByPromotion[promo.id] ?? []).map(productName).join(", ") || "Aucun produit"}
+                      {(productsByPromotion[promo.id] ?? []).map(productName).join(", ") || t("promotions.noProductsLinked")}
                     </div>
                   )}
                 </td>
-                <td style={tdStyle}>{promo.scope === "product" ? "Produit(s)" : "Facture"}</td>
+                <td style={tdStyle}>{promo.scope === "product" ? t("promotions.scopeProductShort") : t("promotions.scopeInvoiceShort")}</td>
                 <td style={tdStyle}>-{promo.discountPercent}%</td>
                 <td style={tdStyle}>
                   {promo.startDate} → {promo.endDate}
                 </td>
                 <td style={tdStyle}>
                   <span style={badgeStyle(!promo.isActive ? "info" : running ? "ok" : "warning")}>
-                    {!promo.isActive ? "Désactivée" : running ? "En cours" : "Programmée/expirée"}
+                    {!promo.isActive ? t("promotions.disabled") : running ? t("promotions.running") : t("promotions.scheduledOrExpired")}
                   </span>
                 </td>
                 <td style={tdStyle}>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button style={secondaryButtonStyle} onClick={() => handleToggleActive(promo)}>
-                      {promo.isActive ? "Désactiver" : "Activer"}
+                      {promo.isActive ? t("promotions.disable") : t("promotions.enable")}
                     </button>
                     <button style={secondaryButtonStyle} onClick={() => handleDelete(promo)}>
-                      Supprimer
+                      {t("promotions.delete")}
                     </button>
                   </div>
                 </td>
@@ -293,7 +291,7 @@ export function PromotionsPage() {
           {promotions.length === 0 && (
             <tr>
               <td style={tdStyle} colSpan={6}>
-                Aucune promotion.
+                {t("promotions.none")}
               </td>
             </tr>
           )}

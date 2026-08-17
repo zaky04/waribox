@@ -1,9 +1,11 @@
 import { createDatabase, type Database } from "@gestion-boutique/database";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 const DatabaseContext = createContext<Database | null>(null);
 
 export function DatabaseProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   const [db, setDb] = useState<Database | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,13 +27,13 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   if (error) {
     return (
       <div style={{ padding: 24, color: "#f87171" }}>
-        Impossible d'initialiser la base de données locale : {error}
+        {t("database.initError", { error })}
       </div>
     );
   }
 
   if (!db) {
-    return <div style={{ padding: 24 }}>Initialisation de la base locale...</div>;
+    return <div style={{ padding: 24 }}>{t("database.initializing")}</div>;
   }
 
   return <DatabaseContext.Provider value={db}>{children}</DatabaseContext.Provider>;

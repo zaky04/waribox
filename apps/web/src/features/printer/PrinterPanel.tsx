@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { cardStyle, primaryButtonStyle } from "../../components/sharedStyles";
 import { usePrinter } from "./usePrinter";
 
@@ -11,14 +12,15 @@ const secondaryButtonStyle = {
 };
 
 export function PrinterPanel() {
+  const { t } = useTranslation();
   const { connected, connecting, error, bluetoothSupported, usbSupported, connect, disconnect, openDrawer } =
     usePrinter();
 
   return (
     <div style={cardStyle}>
-      <strong>Imprimante ticket</strong>
+      <strong>{t("printer.title")}</strong>
       <p style={{ color: "var(--color-text-muted)", margin: 0 }}>
-        Statut : {connected ? "Connectée" : "Non connectée"}
+        {t("printer.status")} {connected ? t("printer.connected") : t("printer.notConnected")}
       </p>
 
       {!connected && (
@@ -27,17 +29,17 @@ export function PrinterPanel() {
             style={primaryButtonStyle}
             onClick={() => connect("bluetooth")}
             disabled={connecting || !bluetoothSupported}
-            title={!bluetoothSupported ? "Web Bluetooth non disponible sur ce navigateur" : undefined}
+            title={!bluetoothSupported ? t("printer.bluetoothUnavailableTitle") : undefined}
           >
-            {connecting ? "Connexion..." : "Connecter en Bluetooth"}
+            {connecting ? t("printer.connecting") : t("printer.connectBluetooth")}
           </button>
           <button
             style={primaryButtonStyle}
             onClick={() => connect("usb")}
             disabled={connecting || !usbSupported}
-            title={!usbSupported ? "WebUSB non disponible sur ce navigateur" : undefined}
+            title={!usbSupported ? t("printer.usbUnavailableTitle") : undefined}
           >
-            {connecting ? "Connexion..." : "Connecter en USB"}
+            {connecting ? t("printer.connecting") : t("printer.connectUsb")}
           </button>
         </div>
       )}
@@ -45,19 +47,16 @@ export function PrinterPanel() {
       {connected && (
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <button style={secondaryButtonStyle} onClick={() => openDrawer()}>
-            Ouvrir le tiroir-caisse
+            {t("printer.openDrawer")}
           </button>
           <button style={secondaryButtonStyle} onClick={() => disconnect()}>
-            Déconnecter
+            {t("printer.disconnect")}
           </button>
         </div>
       )}
 
       {!bluetoothSupported && !usbSupported && (
-        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-          Ni Web Bluetooth ni WebUSB ne sont disponibles ici (nécessite Chrome/Edge sur PC ou Android,
-          en HTTPS ou localhost).
-        </p>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("printer.noneAvailable")}</p>
       )}
 
       {error && <p style={{ color: "#f87171" }}>{error}</p>}
