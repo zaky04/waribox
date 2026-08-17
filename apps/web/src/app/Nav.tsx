@@ -1,4 +1,5 @@
 import { hasPermission, type Permission } from "@gestion-boutique/core";
+import { useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../features/auth/useAuth";
 
@@ -81,6 +82,7 @@ interface NavProps {
 export function Nav({ active, onChange, enabledModules }: NavProps) {
   const { user } = useAuth();
   const { t } = useTranslation();
+  const [menuOpen, setMenuOpen] = useState(false);
   if (!user) return null;
 
   const visibleTabs = TABS.filter((tab) => {
@@ -93,38 +95,103 @@ export function Nav({ active, onChange, enabledModules }: NavProps) {
   });
   if (visibleTabs.length === 0) return null;
 
+  const tabButtonStyle = (tab: (typeof visibleTabs)[number]): CSSProperties => ({
+    flex: "none",
+    padding: "8px 16px",
+    borderRadius: 8,
+    border: "none",
+    background: active === tab.key ? "var(--gradient-accent)" : "transparent",
+    color: active === tab.key ? "#0f172a" : "var(--color-text)",
+    fontWeight: 600,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    textAlign: "left",
+  });
+
+  const activeTab = visibleTabs.find((tab) => tab.key === active) ?? visibleTabs[0]!;
+
   return (
-    <nav
-      style={{
-        display: "flex",
-        flexWrap: "nowrap",
-        overflowX: "auto",
-        WebkitOverflowScrolling: "touch",
-        gap: 8,
-        padding: "8px 16px",
-        background: "var(--color-bg)",
-        borderBottom: "1px solid var(--color-bg-elevated)",
-      }}
-    >
-      {visibleTabs.map((tab) => (
+    <>
+      {/* Bureau/tablette : ligne défilable horizontalement, voir index.css
+          pour l'ombre de bord qui indique qu'il reste des onglets à droite. */}
+      <nav
+        className="nav-full table-scroll"
+        style={{
+          flexWrap: "nowrap",
+          WebkitOverflowScrolling: "touch",
+          gap: 8,
+          padding: "8px 16px",
+          borderBottom: "1px solid var(--color-bg-elevated)",
+        }}
+      >
+        {visibleTabs.map((tab) => (
+          <button key={tab.key} onClick={() => onChange(tab.key)} style={tabButtonStyle(tab)}>
+            {t(`nav.${tab.key}`)}
+          </button>
+        ))}
+      </nav>
+
+      {/* Mobile : un défilement horizontal de 18-19 onglets n'est pas
+          exploitable au comptoir (pas d'indice de "il en reste"), et un
+          retour à la ligne automatique prend 5-6 lignes de haut — un bouton
+          menu ouvrant la liste complète en dessous couvre les deux cas. */}
+      <div className="nav-compact" style={{ position: "relative", padding: "8px 16px", borderBottom: "1px solid var(--color-bg-elevated)" }}>
         <button
-          key={tab.key}
-          onClick={() => onChange(tab.key)}
+          onClick={() => setMenuOpen((v) => !v)}
+          onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
           style={{
-            flex: "none",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            width: "100%",
             padding: "8px 16px",
             borderRadius: 8,
-            border: "none",
-            background: active === tab.key ? "var(--gradient-accent)" : "transparent",
-            color: active === tab.key ? "#0f172a" : "var(--color-text)",
+            border: "1px solid var(--color-border)",
+            background: "var(--color-bg-elevated)",
+            color: "var(--color-text)",
             fontWeight: 600,
             cursor: "pointer",
-            whiteSpace: "nowrap",
           }}
         >
-          {t(`nav.${tab.key}`)}
+          <span>☰</span>
+          <span>{t(`nav.${activeTab.key}`)}</span>
         </button>
-      ))}
-    </nav>
+        {menuOpen && (
+          <div
+            style={{
+              position: "absolute",
+              top: "100%",
+              left: 16,
+              right: 16,
+              marginTop: 4,
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+              maxHeight: "70vh",
+              overflowY: "auto",
+              background: "var(--color-bg-elevated)",
+              border: "1px solid var(--color-border)",
+              borderRadius: 8,
+              boxShadow: "var(--shadow-card-strong)",
+              padding: 6,
+              zIndex: 20,
+            }}
+          >
+            {visibleTabs.map((tab) => (
+              <button
+                key={tab.key}
+                onMouseDown={() => {
+                  onChange(tab.key);
+                  setMenuOpen(false);
+                }}
+                style={tabButtonStyle(tab)}
+              >
+                {t(`nav.${tab.key}`)}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
   );
 }

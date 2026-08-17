@@ -2284,6 +2284,75 @@ sans rapport avec le responsive) — le correctif de code est identique à un
 motif déjà vérifié des dizaines de fois ailleurs dans l'app
 (`flexWrap: "wrap"` sur une ligne input+boutons), risque jugé nul.
 
+### 2026-08-17 — Nav mobile : bouton menu au lieu du défilement horizontal
+
+**Contexte** : la barre d'onglets (19 entrées) défile horizontalement
+depuis le tout premier correctif responsive (2026-08-17, choix déjà motivé
+à l'époque par le fait qu'un retour à la ligne prenait 5-6 lignes de haut) —
+une ombre de bord y avait été ajoutée entre-temps pour signaler qu'il reste
+du contenu à droite (voir plus haut, "re-vérification avec captures
+réelles"). Retour explicite du porteur du projet : au comptoir sur mobile,
+il ne veut **aucun défilement de ce menu**, quelle que soit sa visibilité —
+soit un bouton menu, soit un retour à la ligne automatique.
+
+**Décision** : bouton menu plutôt que retour à la ligne, puisque le retour
+à la ligne avait déjà été écarté une fois pour la même raison (hauteur
+perdue) — les deux options réglaient le problème signalé, mais une seule
+n'entrait pas en contradiction avec une décision déjà prise.
+
+**Fait** — [Nav.tsx](apps/web/src/app/Nav.tsx) rend maintenant deux
+présentations du même menu, basculées par media query (`max-width: 720px`,
+même seuil que `.cart-layout-grid`) plutôt que par un état React/écouteur de
+redimensionnement — plus simple et sans re-render au resize :
+- `.nav-full` (bureau/tablette, inchangé) : la ligne défilante existante.
+- `.nav-compact` (mobile) : un bouton pleine largeur (`☰` + libellé de
+  l'onglet actif, pour savoir où on est sans ouvrir le menu) qui déplie une
+  liste verticale de tous les onglets visibles juste en dessous
+  (`position: absolute`, `maxHeight: 70vh` + `overflowY: auto` au cas où —
+  19 entrées tiennent déjà sans avoir besoin de scroller sur un écran de
+  taille normale). Fermeture au clic sur un onglet ou en perdant le focus,
+  même mécanique `onBlur` + délai de 150 ms + `onMouseDown` sur les options
+  que [SearchableSelect.tsx](apps/web/src/components/SearchableSelect.tsx)
+  (le délai laisse le `mousedown` de l'option s'exécuter avant que le
+  `blur` du bouton ne referme le menu).
+- Nouvelles classes `.nav-full`/`.nav-compact` dans
+  [index.css](apps/web/src/app/index.css), même doc-comment étendu que
+  `.table-scroll` (réutilisée telle quelle pour l'ombre de bord de `.nav-full`,
+  son fond `var(--color-bg)` correspond déjà à celui de la nav — pas besoin
+  d'une classe dédiée).
+
+**Bug trouvé et corrigé pendant la vérification navigateur** : premier
+passage, les deux présentations s'affichaient **simultanément** sur mobile
+au lieu que `.nav-full` se cache — cause : `<nav className="nav-full" style={{ display: "flex", ... }}>`
+gardait `display: "flex"` en style inline, qui l'emporte toujours sur une
+règle de classe CSS (même sous media query) à spécificité égale ou
+inférieure. Un style inline ne peut pas être conditionné par une media
+query, donc il faut laisser la classe CSS être seule responsable de
+`display` dès qu'un composant doit basculer entre plusieurs présentations
+selon la largeur d'écran — `display: "flex"` retiré du style inline de
+`<nav>`, laissé uniquement dans la règle `.nav-full` de index.css.
+
+**Vérifié dans le navigateur** : à 375px, `.nav-full` a `display: none` et
+`.nav-compact` a `display: block` (confirmé après le correctif ci-dessus) ;
+menu ouvert, les 18 onglets visibles pour ce compte listés correctement,
+clic sur "Produits" → menu se ferme, page change, libellé du bouton devient
+"☰ Produits", aucun débordement (`scrollWidth` toujours égal à la largeur
+de viewport). À 768px et 730px : `.nav-full` repasse à `display: flex`,
+`.nav-compact` à `display: none` — comportement bureau/tablette inchangé.
+`pnpm run build` et les 20 tests unitaires passent.
+
+**Suivi immédiat — seuil remonté à 1024px** : retour du porteur du projet
+après ce premier correctif — sur tablette aussi, le menu défilait encore
+(720px ne couvrait que les téléphones). Périmètre voulu : bouton menu sur
+téléphone **et** tablette, ligne complète réservée à un vrai écran
+d'ordinateur. Seuil de `.nav-full`/`.nav-compact` remonté de 720px à
+1024px (bascule tablette/ordinateur standard — un iPad classique en
+paysage, 1024px, reste donc en mode tablette/menu compact), sans toucher
+au seuil de `.cart-layout-grid` (720px, problème différent : largeur de la
+colonne panier). Vérifié dans le navigateur à 1024px (`.nav-compact`
+affiché) et 1200px (`.nav-full` affiché, comportement bureau inchangé).
+`pnpm run build` et les 20 tests unitaires passent.
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du
