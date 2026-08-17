@@ -222,7 +222,7 @@ export function CustomersPage() {
         </div>
       )}
 
-      <div style={{ overflowX: "auto" }}>
+      <div className="table-scroll">
         <table style={tableStyle}>
           <thead>
             <tr>
@@ -276,7 +276,7 @@ export function CustomersPage() {
                     </button>
                   </div>
                   {adjustingId === c.id && (
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
                       <input
                         type="number"
                         placeholder={t("customers.pointsDeltaPlaceholder")}

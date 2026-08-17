@@ -951,7 +951,7 @@ export function SettingsPage() {
 
         {backupError && <p style={{ color: "#f87171" }}>{backupError}</p>}
 
-        <div style={{ overflowX: "auto" }}>
+        <div className="table-scroll">
           <table style={tableStyle}>
             <thead>
               <tr>

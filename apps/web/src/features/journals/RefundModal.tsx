@@ -195,7 +195,7 @@ export function RefundModal({
 
             {error && <p style={{ color: "#f87171" }}>{error}</p>}
 
-            <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+            <div style={{ display: "flex", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
               <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
                 {saving ? t("journals.refundModal.saving") : t("journals.refundModal.submit")}
               </button>

@@ -297,7 +297,7 @@ export function QuotesPage() {
             {cart.length === 0 ? (
               <p style={{ color: "var(--color-text-muted)" }}>{t("quotes.emptyCart")}</p>
             ) : (
-              <div style={{ overflowX: "auto" }}>
+              <div className="table-scroll">
                 <table style={tableStyle}>
                   <thead>
                     <tr>
@@ -388,7 +388,7 @@ export function QuotesPage() {
 
       <div style={cardStyle}>
         <strong>{t("quotes.savedQuotes")}</strong>
-        <div style={{ overflowX: "auto" }}>
+        <div className="table-scroll">
           <table style={tableStyle}>
             <thead>
               <tr>

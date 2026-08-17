@@ -103,7 +103,7 @@ export function RefundHistoryModal({
           ))
         )}
 
-        <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+        <div style={{ display: "flex", gap: 12, marginTop: 16, flexWrap: "wrap" }}>
           <button
             onClick={onClose}
             style={{

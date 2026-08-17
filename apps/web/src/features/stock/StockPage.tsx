@@ -414,7 +414,7 @@ export function StockPage() {
         </label>
       </FilterBar>
 
-      <div style={{ overflowX: "auto" }}>
+      <div className="table-scroll">
         <table style={tableStyle}>
           <thead>
             <tr>

@@ -307,7 +307,7 @@ export function PurchasesPage() {
           <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
             {t("purchases.reorderHint", { days: REORDER_WINDOW_DAYS })}
           </p>
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-scroll">
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -379,7 +379,7 @@ export function PurchasesPage() {
           {cart.length === 0 ? (
             <p style={{ color: "var(--color-text-muted)" }}>{t("purchases.emptyCart")}</p>
           ) : (
-            <div style={{ overflowX: "auto" }}>
+            <div className="table-scroll">
               <table style={tableStyle}>
                 <thead>
                   <tr>
@@ -476,7 +476,7 @@ export function PurchasesPage() {
         </div>
       </div>
 
-      <div style={{ overflowX: "auto" }}>
+      <div className="table-scroll">
         <table style={tableStyle}>
           <thead>
             <tr>

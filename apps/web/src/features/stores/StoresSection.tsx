@@ -62,7 +62,7 @@ export function StoresSection() {
       <strong style={{ fontSize: 14 }}>{t("storesSection.heading")}</strong>
       <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("storesSection.description")}</p>
 
-      <div style={{ overflowX: "auto" }}>
+      <div className="table-scroll">
         <table style={tableStyle}>
           <thead>
             <tr>

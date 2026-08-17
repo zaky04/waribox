@@ -135,7 +135,7 @@ export function DebtsPage() {
         </button>
       </div>
 
-      <div style={{ overflowX: "auto" }}>
+      <div className="table-scroll">
         <table style={tableStyle}>
           <thead>
             <tr>
@@ -166,7 +166,7 @@ export function DebtsPage() {
                 <td style={tdStyle}>
                   {debt.status !== "settled" &&
                     (payingId === debt.id ? (
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                         <input
                           type="number"
                           style={{ ...inputStyle, width: 90, marginTop: 0 }}

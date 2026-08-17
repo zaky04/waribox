@@ -241,7 +241,7 @@ export function PromotionsPage() {
         </button>
       </div>
 
-      <div style={{ overflowX: "auto" }}>
+      <div className="table-scroll">
         <table style={tableStyle}>
           <thead>
             <tr>

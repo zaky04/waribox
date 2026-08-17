@@ -642,7 +642,7 @@ export function SalesPage() {
           {cart.length === 0 ? (
             <p style={{ color: "var(--color-text-muted)" }}>{t("sales.emptyCart")}</p>
           ) : (
-            <div style={{ overflowX: "auto" }}>
+            <div className="table-scroll">
               <table style={tableStyle}>
                 <thead>
                   <tr>

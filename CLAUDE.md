@@ -2141,6 +2141,149 @@ passent. Aucune erreur console (hors WebSocket HMR habituel).
 - `BarcodeCameraScanner` (plein écran, déjà à `maxWidth: 480, width:
   "100%"`) non retouché — déjà responsive avant cette session.
 
+### 2026-08-17 — Responsive : re-vérification avec captures réelles, 3 bugs supplémentaires trouvés et corrigés
+
+**Contexte** : le porteur du projet a testé lui-même sur un vrai téléphone
+après le correctif responsive précédent et fourni 3 captures d'écran réelles
+(Accueil, Produits, Clients) — retour : "j'ai l'impression que tu n'as pas
+analysé toutes les fenêtres [...] je n'ai même pas testé toute l'appli".
+Deux défauts visibles sur les captures : les colonnes de droite des tableaux
+(ÉTIQUETTES, boutons Modifier/Ajuster points) restaient coupées sans aucun
+indice qu'il fallait défiler horizontalement, et un grand espace vide sous
+le tableau sur Produits/Clients.
+
+**Diagnostic de l'espace vide** : **pas un bug** — vérifié par inspection
+directe (`main` mesurait 427px de haut sur un viewport de 812px) : avec un
+seul produit/client en base de test, le tableau est simplement court sur un
+écran de téléphone haut. Avec un vrai catalogue de 20-50 produits, cet
+espace se remplit naturellement. Rien à corriger ici.
+
+**Correctif réel — indice de scroll horizontal invisible** : le
+`overflow-x: auto` posé sur chaque tableau (session précédente) fonctionnait
+mais n'était signalé que par la scrollbar `::-webkit-scrollbar` globale
+(10px, couleur `var(--color-border)`) — visible mais discrète, facilement
+manquée sur un vrai écran tactile où rien n'indique qu'il reste du contenu
+caché tant qu'on n'a pas déjà commencé à toucher l'écran. Nouvelle classe
+`.table-scroll` dans [index.css](apps/web/src/app/index.css) : technique CSS
+pure "scroll shadows" (dégradés `background-attachment: local`/`scroll`
+superposés, sans JS) — une ombre de bord apparaît uniquement du côté où il
+reste du contenu caché, disparaît automatiquement une fois arrivé au bout.
+Les **30 wrappers `<div style={{ overflowX: "auto" }}>`** posés la session
+précédente (19 fichiers) remplacés par `className="table-scroll"`.
+
+**3 vrais bugs de débordement trouvés pendant le balayage** — la méthode de
+vérification précédente (`scrollWidth > window.innerWidth`) s'est révélée
+elle-même défaillante : l'émulation mobile élargit le viewport layout pour
+englober le contenu qui déborde, donc `scrollWidth` ET `innerWidth`
+grandissent ensemble après coup, rendant la comparaison aveugle. Corrigé en
+comparant contre une référence fixe (375px, la largeur réellement demandée)
+plutôt que contre `window.innerWidth`. Avec cette méthode plus fiable,
+balayage de **tous les onglets + sous-onglets + modales** (pas seulement
+quelques pages comme la session précédente) :
+1. **Rapports → onglet "Tickets de service"** : son tableau n'avait jamais
+   eu de wrapper `overflow-x` du tout (contrairement aux tables voisines du
+   même fichier) — raté par le "sweep" de la session précédente car ce
+   n'était pas un simple oubli de wrapper mais une table jamais wrappée dès
+   l'origine. Corrigé.
+2. **Rapports → 3 rangées de cartes KPI** (onglets Ventes/Marges/TVA) :
+   `display: "flex", gap: 16` sans `flexWrap` — TVA a 4 cartes, déborde le
+   premier à 375px (les rangées à 3 cartes de Ventes/Marges passaient de
+   justesse, mais couraient le même risque). Les 3 corrigées avec
+   `flexWrap: "wrap"`, même motif que le reste de l'app.
+3. **Comptabilité → onglet SYSCOHADA (Journal ventes/achats/trésorerie ET
+   Balance générale)** : les 2 tableaux n'avaient eux non plus jamais eu de
+   wrapper — chacun un tableau à 5-7 colonnes, le pire cas possible sur
+   mobile. Corrigés (`className="table-scroll"`).
+4. Repéré en passant, même motif manquant : le tableau de mapping de charges
+   SYSCOHADA dans
+   [SyscohadaAccountsSection.tsx](apps/web/src/features/settings/SyscohadaAccountsSection.tsx)
+   (jamais wrappé), et les rangées de boutons de 3 modales
+   (`ChangePasswordModal`, `RefundModal`, `RefundHistoryModal`) sans
+   `flexWrap` — corrigés par précaution (risque faible vu la largeur des
+   modales déjà contrainte, mais coût nul).
+
+**Vérifié dans le navigateur, à 375px, avec des données réelles créées pour
+l'occasion** (pas des pages vides) : compte Admin, produit "Samsung Galaxy
+A14 128Go Noir" (nom volontairement long, pour reproduire le cas de la
+capture fournie), client réel — balayage systématique des 18 onglets
+principaux + tous les sous-onglets accessibles (Journaux ×3, Rapports ×6 y
+compris TVA et Tickets de service, Comptabilité ×3 y compris les 4 vues
+SYSCOHADA, Tickets de service ×3) + module Promotions + panier Ventes avec
+un article ajouté + PrinterPanel + ouverture de caisse + tentative
+d'encaissement, chaque fois avec le script `scrollWidth vs 375px fixe` :
+**zéro débordement restant** après les 3 correctifs ci-dessus (contre 3
+trouvés avant correction). `pnpm run build` et les 20 tests unitaires
+passent. Modules de test (TVA/Promotions/multi-boutique/SYSCOHADA) réactivés
+temporairement pour atteindre ces pages, puis désactivés à nouveau après
+vérification pour laisser l'état de test comme trouvé.
+
+**Leçon retenue pour toute future vérification responsive** : ne jamais
+comparer `scrollWidth` à `window.innerWidth` sur mobile (les deux peuvent
+dériver ensemble) — comparer à la largeur de viewport réellement demandée en
+constante fixe. Et un "sweep" par simple recherche de motif texte
+(`style={{ overflowX: "auto" }}`, `flexWrap`) ne trouve que ce qui a déjà été
+*commencé* à corriger — une table qui n'a jamais eu de wrapper à l'origine
+(comme les 2 cas SYSCOHADA et le cas Tickets de service ci-dessus) est
+invisible à ce genre de recherche ; seul un parcours réel de chaque page/
+sous-page dans le navigateur les révèle.
+
+### 2026-08-17 — Responsive : fermeture des derniers trous (surfaces non rouvertes + tablette)
+
+**Contexte** : à la question explicite "est-ce que le responsive est vraiment
+effectif partout ?", plutôt que de réaffirmer une confiance non regagnée
+après le correctif précédent, liste honnête de ce qui restait non revérifié
+(3 modales éditées sans être rouvertes, StoresSection, Devis/Créances/Dettes
+avec données réelles, formulaires Stock/Produits/Utilisateurs/Dépenses/
+Promotions, écran PIN, et le point de rupture tablette 768px jamais testé du
+tout) — puis fermeture effective de chacun.
+
+**4 vrais bugs supplémentaires trouvés**, tous variantes du même motif déjà
+documenté (ligne `display:"flex"` avec plusieurs enfants interactifs, sans
+`flexWrap`) mais qui avaient échappé aux recherches précédentes car soit
+imbriqués dans un conteneur qui, lui, avait bien `flexWrap` (le `flexWrap`
+du parent ne protège pas ses propres enfants directs), soit sur un objet de
+style étalé sur plusieurs lignes (invisible à une recherche mono-ligne) :
+1. [DebtsPage.tsx](apps/web/src/features/debts/DebtsPage.tsx) — ligne
+   montant + boutons Confirmer/Annuler du paiement de dette (avait
+   `flexWrap` côté Créances mais pas côté Dettes, incohérence entre les deux
+   pages jumelles).
+2. [CreditsPage.tsx](apps/web/src/features/credits/CreditsPage.tsx) — même
+   ligne montant + boutons, mais imbriquée dans un conteneur externe qui
+   avait déjà `flexWrap` alors que la ligne elle-même (le vrai contenu à
+   largeur variable) ne l'avait pas.
+3. [ServiceOrdersPage.tsx](apps/web/src/features/serviceOrders/ServiceOrdersPage.tsx) —
+   ligne "Solde restant : X" + champ + bouton du remboursement de créance
+   liée à un ticket de service (style étalé sur plusieurs lignes).
+4. [CustomersPage.tsx](apps/web/src/features/customers/CustomersPage.tsx) —
+   ligne d'ajustement de points fidélité (2 champs + 2 boutons).
+
+Trouvés par une recherche `Grep` élargie (avec `multiline: true` pour
+couvrir les styles étalés sur plusieurs lignes) plutôt que par balayage
+navigateur cette fois — plus rapide et plus exhaustif pour ce motif précis
+une fois qu'on sait exactement quoi chercher.
+
+**Vérifié dans le navigateur**, à 375px ET 768px cette fois (le point de
+rupture tablette n'avait jamais été testé avant cette session) : les 19
+onglets principaux + tous les sous-onglets (Journaux, Rapports y compris
+TVA/Tickets de service, Comptabilité y compris les 4 vues SYSCOHADA, Tickets
+de service) balayés aux deux largeurs, écran de connexion, écran PIN
+verrouillé, StoresSection + mapping SYSCOHADA (modules réactivés
+temporairement), formulaires d'édition Produits/Utilisateurs, formulaire
+Dépenses, formulaire Promotions, Devis avec un article réellement ajouté au
+panier, page Stock avec les 3 formulaires (Entrée/Transfert/Retrait) et une
+vraie tentative de saisie, ligne "Ajuster points" de Clients réellement
+ouverte (confirmée sans débordement après le correctif #4 ci-dessus). Grille
+Ventes/panier confirmée en mode 2 colonnes correct à 768px
+(`306.4px 380px`, juste au-dessus du seuil de 720px). `pnpm run build` et
+les 20 tests unitaires passent (deux fois, après chaque lot de correctifs).
+Modules de test désactivés à nouveau après vérification.
+
+**Pas vérifié** : le flux complet de remboursement de créance/dette avec de
+vraies données (bloqué par un souci de stock à 0 sur le produit de test,
+sans rapport avec le responsive) — le correctif de code est identique à un
+motif déjà vérifié des dizaines de fois ailleurs dans l'app
+(`flexWrap: "wrap"` sur une ligne input+boutons), risque jugé nul.
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du

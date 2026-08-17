@@ -378,7 +378,7 @@ export function JournalsPage() {
             )}
           </FilterBar>
 
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-scroll">
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -532,7 +532,7 @@ export function JournalsPage() {
             </label>
           </FilterBar>
 
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-scroll">
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -621,7 +621,7 @@ export function JournalsPage() {
             </label>
           </FilterBar>
 
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-scroll">
             <table style={tableStyle}>
               <thead>
                 <tr>

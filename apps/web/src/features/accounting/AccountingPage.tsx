@@ -247,7 +247,7 @@ export function AccountingPage() {
                   </button>
                 </div>
               </div>
-              <div style={{ overflowX: "auto" }}>
+              <div className="table-scroll">
                 <table style={tableStyle}>
                   <thead>
                     <tr>
@@ -393,100 +393,104 @@ export function AccountingPage() {
           </div>
 
           {syscohadaView !== "balance" ? (
-            <table style={{ ...tableStyle, marginTop: 16 }}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>{t("accounting.date")}</th>
-                  <th style={thStyle}>{t("accounting.piece")}</th>
-                  <th style={thStyle}>{t("accounting.account")}</th>
-                  <th style={thStyle}>{t("accounting.label")}</th>
-                  <th style={thStyle}>{t("accounting.narration")}</th>
-                  <th style={thStyle}>{t("accounting.debit")}</th>
-                  <th style={thStyle}>{t("accounting.credit")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {syscohadaLines.map((l, i) => (
-                  <tr key={i}>
-                    <td style={tdStyle}>{l.date}</td>
-                    <td style={tdStyle}>{l.piece}</td>
-                    <td style={tdStyle}>{l.compte}</td>
-                    <td style={tdStyle}>{l.intitule}</td>
-                    <td style={tdStyle}>{l.libelle}</td>
-                    <td style={tdStyle}>{l.debit > 0 ? l.debit.toFixed(0) : ""}</td>
-                    <td style={tdStyle}>{l.credit > 0 ? l.credit.toFixed(0) : ""}</td>
-                  </tr>
-                ))}
-                {syscohadaLines.length === 0 && (
+            <div className="table-scroll" style={{ marginTop: 16 }}>
+              <table style={tableStyle}>
+                <thead>
                   <tr>
-                    <td style={tdStyle} colSpan={7}>
-                      {t("accounting.noMovements")}
-                    </td>
+                    <th style={thStyle}>{t("accounting.date")}</th>
+                    <th style={thStyle}>{t("accounting.piece")}</th>
+                    <th style={thStyle}>{t("accounting.account")}</th>
+                    <th style={thStyle}>{t("accounting.label")}</th>
+                    <th style={thStyle}>{t("accounting.narration")}</th>
+                    <th style={thStyle}>{t("accounting.debit")}</th>
+                    <th style={thStyle}>{t("accounting.credit")}</th>
                   </tr>
+                </thead>
+                <tbody>
+                  {syscohadaLines.map((l, i) => (
+                    <tr key={i}>
+                      <td style={tdStyle}>{l.date}</td>
+                      <td style={tdStyle}>{l.piece}</td>
+                      <td style={tdStyle}>{l.compte}</td>
+                      <td style={tdStyle}>{l.intitule}</td>
+                      <td style={tdStyle}>{l.libelle}</td>
+                      <td style={tdStyle}>{l.debit > 0 ? l.debit.toFixed(0) : ""}</td>
+                      <td style={tdStyle}>{l.credit > 0 ? l.credit.toFixed(0) : ""}</td>
+                    </tr>
+                  ))}
+                  {syscohadaLines.length === 0 && (
+                    <tr>
+                      <td style={tdStyle} colSpan={7}>
+                        {t("accounting.noMovements")}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                {syscohadaLines.length > 0 && (
+                  <tfoot>
+                    <tr>
+                      <td style={tdStyle} colSpan={5}>
+                        <strong>{t("accounting.total")}</strong>
+                      </td>
+                      <td style={tdStyle}>
+                        <strong>{syscohadaLines.reduce((sum, l) => sum + l.debit, 0).toFixed(0)}</strong>
+                      </td>
+                      <td style={tdStyle}>
+                        <strong>{syscohadaLines.reduce((sum, l) => sum + l.credit, 0).toFixed(0)}</strong>
+                      </td>
+                    </tr>
+                  </tfoot>
                 )}
-              </tbody>
-              {syscohadaLines.length > 0 && (
-                <tfoot>
-                  <tr>
-                    <td style={tdStyle} colSpan={5}>
-                      <strong>{t("accounting.total")}</strong>
-                    </td>
-                    <td style={tdStyle}>
-                      <strong>{syscohadaLines.reduce((sum, l) => sum + l.debit, 0).toFixed(0)}</strong>
-                    </td>
-                    <td style={tdStyle}>
-                      <strong>{syscohadaLines.reduce((sum, l) => sum + l.credit, 0).toFixed(0)}</strong>
-                    </td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
+              </table>
+            </div>
           ) : (
-            <table style={{ ...tableStyle, marginTop: 16 }}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>{t("accounting.account")}</th>
-                  <th style={thStyle}>{t("accounting.label")}</th>
-                  <th style={thStyle}>{t("accounting.debit")}</th>
-                  <th style={thStyle}>{t("accounting.credit")}</th>
-                  <th style={thStyle}>{t("accounting.balanceColumn")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {syscohadaBalance.map((r) => (
-                  <tr key={r.compte}>
-                    <td style={tdStyle}>{r.compte}</td>
-                    <td style={tdStyle}>{r.intitule}</td>
-                    <td style={tdStyle}>{r.debit.toFixed(0)}</td>
-                    <td style={tdStyle}>{r.credit.toFixed(0)}</td>
-                    <td style={tdStyle}>{r.solde.toFixed(0)}</td>
-                  </tr>
-                ))}
-                {syscohadaBalance.length === 0 && (
+            <div className="table-scroll" style={{ marginTop: 16 }}>
+              <table style={tableStyle}>
+                <thead>
                   <tr>
-                    <td style={tdStyle} colSpan={5}>
-                      {t("accounting.noMovements")}
-                    </td>
+                    <th style={thStyle}>{t("accounting.account")}</th>
+                    <th style={thStyle}>{t("accounting.label")}</th>
+                    <th style={thStyle}>{t("accounting.debit")}</th>
+                    <th style={thStyle}>{t("accounting.credit")}</th>
+                    <th style={thStyle}>{t("accounting.balanceColumn")}</th>
                   </tr>
+                </thead>
+                <tbody>
+                  {syscohadaBalance.map((r) => (
+                    <tr key={r.compte}>
+                      <td style={tdStyle}>{r.compte}</td>
+                      <td style={tdStyle}>{r.intitule}</td>
+                      <td style={tdStyle}>{r.debit.toFixed(0)}</td>
+                      <td style={tdStyle}>{r.credit.toFixed(0)}</td>
+                      <td style={tdStyle}>{r.solde.toFixed(0)}</td>
+                    </tr>
+                  ))}
+                  {syscohadaBalance.length === 0 && (
+                    <tr>
+                      <td style={tdStyle} colSpan={5}>
+                        {t("accounting.noMovements")}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                {syscohadaBalance.length > 0 && (
+                  <tfoot>
+                    <tr>
+                      <td style={tdStyle} colSpan={2}>
+                        <strong>{t("accounting.total")}</strong>
+                      </td>
+                      <td style={tdStyle}>
+                        <strong>{syscohadaBalance.reduce((sum, r) => sum + r.debit, 0).toFixed(0)}</strong>
+                      </td>
+                      <td style={tdStyle}>
+                        <strong>{syscohadaBalance.reduce((sum, r) => sum + r.credit, 0).toFixed(0)}</strong>
+                      </td>
+                      <td style={tdStyle} />
+                    </tr>
+                  </tfoot>
                 )}
-              </tbody>
-              {syscohadaBalance.length > 0 && (
-                <tfoot>
-                  <tr>
-                    <td style={tdStyle} colSpan={2}>
-                      <strong>{t("accounting.total")}</strong>
-                    </td>
-                    <td style={tdStyle}>
-                      <strong>{syscohadaBalance.reduce((sum, r) => sum + r.debit, 0).toFixed(0)}</strong>
-                    </td>
-                    <td style={tdStyle}>
-                      <strong>{syscohadaBalance.reduce((sum, r) => sum + r.credit, 0).toFixed(0)}</strong>
-                    </td>
-                    <td style={tdStyle} />
-                  </tr>
-                </tfoot>
-              )}
-            </table>
+              </table>
+            </div>
           )}
         </>
       )}

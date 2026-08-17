@@ -543,7 +543,7 @@ export function ServiceOrdersPage() {
               {lines.length === 0 ? (
                 <p style={{ color: "var(--color-text-muted)" }}>{t("serviceOrders.emptyItems")}</p>
               ) : (
-                <div style={{ overflowX: "auto" }}>
+                <div className="table-scroll">
                   <table style={tableStyle}>
                     <thead>
                       <tr>
@@ -707,7 +707,7 @@ export function ServiceOrdersPage() {
 
       {view === "track" && (
         <div style={cardStyle}>
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-scroll">
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -815,6 +815,7 @@ export function ServiceOrdersPage() {
                                     display: "flex",
                                     alignItems: "center",
                                     gap: 8,
+                                    flexWrap: "wrap",
                                   }}
                                 >
                                   <span>{t("serviceOrders.remainingBalance")} {credit.remainingBalance.toFixed(0)}</span>
@@ -860,7 +861,7 @@ export function ServiceOrdersPage() {
           <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
             {t("serviceOrders.historyHint")}
           </p>
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-scroll">
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -927,7 +928,7 @@ export function ServiceOrdersPage() {
                                 />
                               </label>
 
-                              <div style={{ overflowX: "auto" }}>
+                              <div className="table-scroll">
                                 <table style={tableStyle}>
                                   <thead>
                                     <tr>

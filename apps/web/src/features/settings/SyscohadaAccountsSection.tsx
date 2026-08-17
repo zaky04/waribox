@@ -191,7 +191,8 @@ export function SyscohadaAccountsSection() {
       <strong style={{ fontSize: 14, marginTop: 24, display: "block" }}>
         {t("syscohadaSection.mappingsHeading")}
       </strong>
-      <table style={{ ...tableStyle, marginTop: 8 }}>
+      <div className="table-scroll" style={{ marginTop: 8 }}>
+      <table style={tableStyle}>
         <thead>
           <tr>
             <th style={thStyle}>{t("syscohadaSection.category")}</th>
@@ -267,6 +268,7 @@ export function SyscohadaAccountsSection() {
           </tr>
         </tbody>
       </table>
+      </div>
       {mappingError && <p style={{ color: "#f87171", fontSize: 13 }}>{mappingError}</p>}
       <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("syscohadaSection.footerHint")}</p>
     </div>

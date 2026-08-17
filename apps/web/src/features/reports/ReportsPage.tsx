@@ -391,7 +391,7 @@ export function ReportsPage() {
 
       {subTab === "sales" && salesSummary && (
         <>
-          <div style={{ display: "flex", gap: 16, marginTop: 24 }}>
+          <div style={{ display: "flex", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("reports.revenue")}</span>
               <strong style={{ fontSize: 22 }}>{salesSummary.totalRevenue.toFixed(0)}</strong>
@@ -422,7 +422,7 @@ export function ReportsPage() {
               </button>
             </div>
           </div>
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-scroll">
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -454,7 +454,7 @@ export function ReportsPage() {
 
       {subTab === "margins" && canViewMargins && marginsSummary && (
         <>
-          <div style={{ display: "flex", gap: 16, marginTop: 24 }}>
+          <div style={{ display: "flex", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("reports.marginRevenue")}</span>
               <strong style={{ fontSize: 22 }}>{marginsSummary.revenue.toFixed(0)}</strong>
@@ -491,7 +491,7 @@ export function ReportsPage() {
           <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: "4px 0 12px" }}>
             {t("reports.abcHint")}
           </p>
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-scroll">
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -578,7 +578,7 @@ export function ReportsPage() {
                 </button>
               </div>
 
-              <div style={{ overflowX: "auto" }}>
+              <div className="table-scroll">
                 <table style={tableStyle}>
                   <thead>
                     <tr>
@@ -611,7 +611,7 @@ export function ReportsPage() {
 
       {subTab === "tax" && taxEnabled && taxSummary && (
         <>
-          <div style={{ display: "flex", gap: 16, marginTop: 24 }}>
+          <div style={{ display: "flex", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("reports.netTaxCollected")}</span>
               <strong style={{ fontSize: 22 }}>{taxSummary.totalTaxCollected.toFixed(0)}</strong>
@@ -656,7 +656,7 @@ export function ReportsPage() {
               {t("reports.exportExcel")}
             </button>
           </div>
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-scroll">
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -704,45 +704,47 @@ export function ReportsPage() {
       {subTab === "service_orders" && serviceOrdersEnabled && (
         <>
           {serviceOrderReportError && <div style={{ color: "#f87171", marginTop: 16 }}>{serviceOrderReportError}</div>}
-          <table style={{ ...tableStyle, marginTop: 24 }}>
-            <thead>
-              <tr>
-                <th style={thStyle}>{t("reports.ticket")}</th>
-                <th style={thStyle}>{t("reports.date")}</th>
-                <th style={thStyle}>{t("reports.customer")}</th>
-                <th style={thStyle}>{t("reports.total")}</th>
-                <th style={thStyle}>{t("reports.status")}</th>
-                <th style={thStyle}>{t("reports.reportColumn")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {serviceOrders.map((order) => (
-                <tr key={order.id}>
-                  <td style={tdStyle}>{order.number}</td>
-                  <td style={tdStyle}>{order.createdAt}</td>
-                  <td style={tdStyle}>{customerName(order.customerId) ?? "—"}</td>
-                  <td style={tdStyle}>{order.total.toFixed(0)}</td>
-                  <td style={tdStyle}>{PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus}</td>
-                  <td style={tdStyle}>
-                    <button
-                      style={{ ...secondaryButtonStyle, padding: "6px 12px" }}
-                      disabled={generatingOrderId === order.id}
-                      onClick={() => handleGenerateServiceOrderReport(order)}
-                    >
-                      {generatingOrderId === order.id ? t("reports.generating") : t("reports.report")}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {serviceOrders.length === 0 && (
+          <div className="table-scroll" style={{ marginTop: 24 }}>
+            <table style={tableStyle}>
+              <thead>
                 <tr>
-                  <td style={tdStyle} colSpan={6}>
-                    {t("reports.noServiceOrders")}
-                  </td>
+                  <th style={thStyle}>{t("reports.ticket")}</th>
+                  <th style={thStyle}>{t("reports.date")}</th>
+                  <th style={thStyle}>{t("reports.customer")}</th>
+                  <th style={thStyle}>{t("reports.total")}</th>
+                  <th style={thStyle}>{t("reports.status")}</th>
+                  <th style={thStyle}>{t("reports.reportColumn")}</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {serviceOrders.map((order) => (
+                  <tr key={order.id}>
+                    <td style={tdStyle}>{order.number}</td>
+                    <td style={tdStyle}>{order.createdAt}</td>
+                    <td style={tdStyle}>{customerName(order.customerId) ?? "—"}</td>
+                    <td style={tdStyle}>{order.total.toFixed(0)}</td>
+                    <td style={tdStyle}>{PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus}</td>
+                    <td style={tdStyle}>
+                      <button
+                        style={{ ...secondaryButtonStyle, padding: "6px 12px" }}
+                        disabled={generatingOrderId === order.id}
+                        onClick={() => handleGenerateServiceOrderReport(order)}
+                      >
+                        {generatingOrderId === order.id ? t("reports.generating") : t("reports.report")}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {serviceOrders.length === 0 && (
+                  <tr>
+                    <td style={tdStyle} colSpan={6}>
+                      {t("reports.noServiceOrders")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </main>

@@ -127,3 +127,27 @@ table tbody tr:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* Wrapper des tableaux défilables horizontalement (mobile) : le simple
+   `overflow-x: auto` posé sur chaque page (voir journal 2026-08-17,
+   "Audit et correctifs responsive") est fonctionnel mais peu visible sur un
+   vrai téléphone — rien n'indique qu'il reste du contenu à droite (colonnes
+   d'action notamment) tant qu'on n'a pas déjà commencé à toucher l'écran.
+   Ombres de bord en CSS pur (technique "scroll shadows", sans JS) : un
+   dégradé "couvercle" qui défile AVEC le contenu (background-attachment:
+   local) cache l'ombre correspondante tant qu'on est au bord ; l'ombre
+   elle-même reste fixe par rapport à la fenêtre (background-attachment:
+   scroll) et n'apparaît donc que quand il reste effectivement du contenu
+   caché de ce côté. */
+.table-scroll {
+  overflow-x: auto;
+  background:
+    linear-gradient(to right, var(--color-bg) 30%, rgba(0, 0, 0, 0)) left,
+    linear-gradient(to left, var(--color-bg) 30%, rgba(0, 0, 0, 0)) right,
+    linear-gradient(to right, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0)) left,
+    linear-gradient(to left, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0)) right;
+  background-repeat: no-repeat;
+  background-color: var(--color-bg);
+  background-size: 28px 100%, 28px 100%, 12px 100%, 12px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
