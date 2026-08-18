@@ -4,8 +4,19 @@ const DB_NAME = "gestion-boutique-sync";
 const STORE_NAME = "handles";
 const HANDLE_KEY = "backupFolder";
 
+// Chrome pour Android (et le WebView Android utilisé par Tauri, qui partage
+// le même moteur) expose `showDirectoryPicker` dans `window` — la simple
+// détection de fonctionnalité répond donc "oui" — mais n'a jamais livré
+// l'interface native de sélection de dossier : l'appel rejette
+// immédiatement avec un AbortError générique ("The user aborted a
+// request"), pas un vrai refus utilisateur. Exclu explicitement par
+// user-agent, même détection que isDesktopTauriRuntime() dans
+// apps/web/src/features/settings/tauriRuntime.ts et pour la même raison
+// (pas de @tauri-apps/plugin-os installé dans ce projet).
 export function isFileSystemAccessSupported(): boolean {
-  return typeof window !== "undefined" && "showDirectoryPicker" in window;
+  if (typeof window === "undefined" || !("showDirectoryPicker" in window)) return false;
+  if (typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent)) return false;
+  return true;
 }
 
 function openHandleDb(): Promise<IDBDatabase> {

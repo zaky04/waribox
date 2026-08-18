@@ -2353,6 +2353,58 @@ colonne panier). Vérifié dans le navigateur à 1024px (`.nav-compact`
 affiché) et 1200px (`.nav-full` affiché, comportement bureau inchangé).
 `pnpm run build` et les 20 tests unitaires passent.
 
+### 2026-08-18 — Bug : sauvegarde locale "Choisir un dossier" cassée sur Android
+
+**Contexte** : signalement d'un échec concret sur Android — clic sur
+"Choisir un dossier" (Paramètres → Sauvegardes → Sauvegarde locale) rejette
+avec `Failed to execute 'showDirectoryPicker' on 'Window': The user aborted
+a request.` alors qu'aucune annulation n'a eu lieu côté utilisateur. Demande
+explicite de vérifier en même temps le flux de restauration.
+
+**Cause racine** : [isFileSystemAccessSupported()](packages/sync/src/folderHandle.ts)
+ne faisait qu'une détection de fonctionnalité (`"showDirectoryPicker" in
+window`) pour choisir entre le flux "dossier" (File System Access API) et
+le flux de repli "téléchargement manuel". Or Chrome pour Android — et donc
+le WebView Android utilisé par le build Tauri, qui partage le même moteur —
+expose bien la propriété JS `showDirectoryPicker` sur `window`, mais n'a
+**jamais livré l'interface native de sélection de dossier** derrière (API
+desktop-only à ce jour). L'appel rejette donc immédiatement avec un
+`AbortError` générique, indiscernable en apparence d'une vraie annulation
+utilisateur — d'où le message trompeur.
+
+**Fait** : `isFileSystemAccessSupported()` exclut maintenant explicitement
+Android par user-agent, même détection et même raison que
+[isDesktopTauriRuntime()](apps/web/src/features/settings/tauriRuntime.ts)
+(pas de `@tauri-apps/plugin-os` installé dans ce projet). Sur Android, la
+page affiche donc maintenant directement le flux de repli déjà existant et
+fonctionnel ("Ce navigateur ne prend pas en charge la sauvegarde
+automatique dans un dossier, télécharge une sauvegarde manuellement") —
+même chemin que Firefox/Safari desktop empruntaient déjà avant ce
+correctif, pas un nouveau flux.
+
+**Vérifié dans le navigateur**, avec un vrai cycle complet plutôt qu'une
+simple lecture de code : user-agent Android simulé →confirmé bascule vers
+le flux de repli (plus de bouton "Choisir un dossier" cassé) → sauvegarde
+téléchargée (blob de 392 Ko intercepté, entrée "Réussie" dans l'historique)
+→ nom d'entreprise modifié après la sauvegarde → **restauration** du
+fichier téléchargé (simulée via `DataTransfer` sur l'input file réel, pas
+un mock) → rechargement automatique de l'app (comportement voulu, voir
+`handleImportBackup`) → reconnexion → nom d'entreprise confirmé revenu à sa
+valeur d'avant-sauvegarde (la modification post-sauvegarde n'a pas
+survécu) → table des sauvegardes revenue à "Aucune sauvegarde" (cohérent :
+l'export capture les octets *avant* l'insertion de la ligne d'historique de
+cette sauvegarde elle-même). **Le flux de restauration fonctionne
+correctement**, aucune régression trouvée. Revérifié aussi que le flux
+desktop ("Choisir un dossier" visible) n'est pas affecté par ce correctif
+(user-agent desktop normal). Aucune erreur console applicative (hors
+WebSocket HMR habituel). `pnpm run build` et les 20 tests unitaires
+passent.
+
+**Pas fait** : le flux "Sauvegarder maintenant" du dossier choisi (partie
+haute du même bloc, utilisée quand `isFileSystemAccessSupported()` est
+vrai) n'a pas été testé en conditions réelles sur desktop cette session —
+inchangé par ce correctif, hors périmètre du bug signalé.
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du
