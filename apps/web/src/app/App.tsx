@@ -92,7 +92,11 @@ function MainContent() {
 
   return (
     <>
-      <div style={{ position: "sticky", top: 0, zIndex: 10, background: "var(--color-bg)" }}>
+      {/* top en env(safe-area-inset-top) et pas 0 : un élément sticky se
+          bloque à sa propre valeur `top`, indépendamment du padding-top déjà
+          posé sur body (voir index.css) — avec top:0 il repasserait sous la
+          barre de statut Android dès le premier défilement. */}
+      <div style={{ position: "sticky", top: "env(safe-area-inset-top)", zIndex: 10, background: "var(--color-bg)" }}>
         <TopBar multiStoreEnabled={multiStoreEnabled} stores={stores} />
         <BusinessHeader businessName={businessName} logoDataUrl={logoDataUrl} />
         <Nav active={tab} onChange={setTab} enabledModules={enabledModules} />

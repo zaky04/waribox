@@ -2405,6 +2405,77 @@ haute du même bloc, utilisée quand `isFileSystemAccessSupported()` est
 vrai) n'a pas été testé en conditions réelles sur desktop cette session —
 inchangé par ce correctif, hors périmètre du bug signalé.
 
+**Suivi — même cause racine, deuxième symptôme repéré par le porteur du
+projet sur l'ancien APK (pas encore mis à jour avec le correctif
+ci-dessus)** : "Sauvegarder maintenant" (le bouton du flux dossier,
+utilisable une fois un dossier "choisi" via l'appel cassé) rapportait
+`status: "success"` dans l'historique alors qu'aucun fichier n'était
+réellement écrit nulle part. Cause exacte dans
+[backupRunner.ts](apps/web/src/features/settings/backupRunner.ts) :
+`writeBackupFile()` (`handle.getFileHandle` → `createWritable` → `write` →
+`close`) résout sa promesse sans lever d'erreur sur Android même sur un
+`handle` non fonctionnel — la primitive elle-même ment sur son succès, pas
+seulement le premier appel (`showDirectoryPicker`) qui, lui, rejette
+franchement. Le correctif ci-dessus (masquer tout le flux dossier sur
+Android) couvre aussi ce deuxième symptôme : `writeBackupFile` ne devient
+plus jamais atteignable sur Android, plus de faux "succès" possible.
+Vérifié qu'aucun mécanisme d'écriture native Android n'existe par ailleurs
+dans le projet (pas de `@tauri-apps/plugin-fs` installé, aucune permission
+`fs:*` dans `capabilities/default.json` — seul `plugin-dialog` est présent,
+utilisé uniquement pour le sélecteur de fichier `.exe`/`.msi` sur desktop) —
+confirmé avec le porteur du projet que le flux de téléchargement manuel
+(dépôt dans le dossier Téléchargements de l'appareil, sans choix de
+dossier) est le comportement attendu et suffisant, pas une régression à
+combler par un mécanisme natif supplémentaire.
+
+### 2026-08-18 — Zones système Android (barre de statut/navigation) qui recouvrent le contenu
+
+**Contexte** : capture d'écran réelle sur Samsung A14 — le texte du nom
+d'utilisateur en haut est partiellement caché sous la barre de statut
+(heure/réseau/batterie), et le bouton "Enregistrer" en bas de Paramètres
+est caché sous la barre de navigation système Android.
+
+**Cause racine** : [MainActivity.kt](apps/desktop/src-tauri/gen/android/app/src/main/java/com/waribox/app/MainActivity.kt)
+(généré par `tauri android init`, non versionné — voir *Environnement de
+dev*) appelle `enableEdgeToEdge()`, qui fait dessiner le contenu web sous
+les barres système plutôt qu'à côté. Rien côté web ne réservait cet
+espace : ni `viewport-fit=cover` dans `index.html`, ni aucun usage de
+`env(safe-area-inset-*)` nulle part dans le CSS. Désactiver
+`enableEdgeToEdge()` n'aurait pas été une solution durable : `targetSdk`
+est à 36 (`gen/android/app/build.gradle.kts`), et Android impose de plus en
+plus ce mode indépendamment de la demande de l'app sur les versions
+récentes — la vraie solution est que l'app gère elle-même ces marges,
+pas qu'elle essaie de désactiver un comportement qui deviendra obligatoire.
+
+**Fait** :
+- [index.html](apps/web/index.html) : `viewport-fit=cover` ajouté au
+  meta viewport — condition nécessaire pour que `env(safe-area-inset-*)`
+  se résolve à autre chose que 0.
+- [index.css](apps/web/src/app/index.css) : `body` reçoit
+  `padding-top`/`padding-bottom: env(safe-area-inset-*)` — vaut 0 sans
+  zone système à éviter (desktop, PWA non edge-to-edge), donc sans effet
+  ailleurs qu'Android edge-to-edge.
+- [App.tsx](apps/web/src/app/App.tsx) : l'en-tête sticky (TopBar +
+  BusinessHeader + Nav) passe de `top: 0` à `top: "env(safe-area-inset-top)"`
+  — un élément `position: sticky` se bloque à sa propre valeur `top`,
+  indépendamment du padding déjà posé sur `body` ; avec `top: 0` il
+  repasserait sous la barre de statut dès le premier défilement, rendant
+  le padding de `body` inutile après le tout premier rendu.
+
+**Pas vérifié** : impossible de reproduire une vraie valeur non-nulle de
+`env(safe-area-inset-*)` dans cet environnement de développement (aucun
+appareil avec encoche/barres système réelles disponible — Chrome desktop
+résout toujours ces variables à 0, donc le test ne peut que confirmer
+l'absence de régression visuelle en `0px`, pas que le correctif fonctionne
+réellement). `pnpm run build` et les 20 tests unitaires passent, aucune
+régression visuelle observée en desktop. **Nécessite un test sur l'appareil
+Android réel du porteur du projet pour confirmation** — si les zones
+restent coupées après ce correctif, cela indiquerait que le WebView
+Android de Tauri (`enableEdgeToEdge()` + WebView) ne transmet pas
+correctement les insets système au moteur CSS de la page (relais natif
+Kotlin manquant plutôt qu'un problème résolvable en CSS seul), auquel cas
+il faudrait ajouter la relève côté Kotlin (`ViewCompat.setOnApplyWindowInsetsListener`).
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du

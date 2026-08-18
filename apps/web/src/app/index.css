@@ -53,6 +53,16 @@ body {
   background-repeat: no-repeat;
   background-attachment: fixed;
   color: var(--color-text);
+  /* L'app Android (Tauri, gen/android/app/.../MainActivity.kt appelle
+     enableEdgeToEdge() — voir CLAUDE.md) dessine sous la barre de statut et
+     la barre de navigation système ; targetSdk 36 rend ce mode de plus en
+     plus imposé par Android lui-même, indépendamment de ce que l'app
+     demande — désactiver enableEdgeToEdge() ne serait donc pas durable.
+     `env(safe-area-inset-*)` (actif grâce à `viewport-fit=cover` dans
+     index.html) redonne cet espace ; vaut 0 sans zone système à éviter
+     (desktop, PWA non edge-to-edge), donc sans effet ailleurs. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Polish global — pas de className à ajouter par page : ces règles
