@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "android-storage",
+  "description": "Accès au stockage public Android (MediaStore) pour les sauvegardes et documents générés — voir CLAUDE.md, journal sur l'écriture native Android",
+  "windows": ["main"],
+  "platforms": ["android"],
+  "permissions": ["android-fs:default"]
+}

@@ -2746,6 +2746,161 @@ sélecteur de dialogue dont le support mobile n'était pas garanti et s'est
 avéré absent) — risque résiduel jugé plus faible, mais toujours à confirmer
 sur l'appareil réel avant de considérer le sujet clos.
 
+### 2026-08-27 — `BaseDirectory.Download` n'écrit PAS dans le dossier Téléchargements public : cause racine trouvée dans le code source de Tauri, vraie correction via MediaStore
+
+**Contexte** : test réel du correctif précédent, cette fois sur BlueStacks
+(émulateur Android sur PC, capture d'écran à l'appui) — la sauvegarde
+locale est enregistrée en base avec le statut "Réussie" (donc
+`writeToAndroidDownloads` ne lève aucune erreur), mais le fichier reste
+introuvable nulle part sur l'appareil. Demande explicite du porteur du
+projet de ne pas se contenter d'un nouveau pari : "inspecte bien ce bug et
+resous une bonne fois pour toute avec la bonne méthodologie."
+
+**Méthodologie cette fois** : au lieu de supposer le comportement de
+`BaseDirectory.Download` par analogie avec desktop, lecture directe du
+code source Rust/Kotlin des crates concernées, trouvées dans le cache
+local de compilation Cargo (`~/.cargo/registry/src/.../tauri-2.11.5/`) —
+donc la version exacte réellement utilisée par ce projet, pas une
+supposition depuis la documentation publique.
+
+**Cause racine, confirmée dans le code source** :
+[`tauri-2.11.5/mobile/android/src/main/java/app/tauri/PathPlugin.kt:78-80`](https://docs.rs/tauri/2.11.5/) —
+la commande native `getDownloadDir` (invoquée par
+`BaseDirectory.Download` de `@tauri-apps/plugin-fs` sur Android) est
+implémentée ainsi :
+```kotlin
+fun getDownloadDir(invoke: Invoke) {
+    resolvePath(invoke, activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.absolutePath)
+}
+```
+`getExternalFilesDir()` renvoie un dossier **privé à l'application**
+(`/storage/emulated/0/Android/data/com.waribox.app/files/Download`), pas
+le dossier Téléchargements public partagé
+(`/storage/emulated/0/Download`) que l'utilisateur voit dans l'app
+Fichiers. Sur Android 11+ (API 30+), `/Android/data/` est même masqué par
+défaut du gestionnaire de fichiers système pour les autres apps ET pour
+l'utilisateur — le fichier n'est donc trouvable par personne, alors que
+l'écriture elle-même réussit sans la moindre erreur (d'où le statut
+"Réussie" trompeur observé). C'est une limitation du résolveur de chemins
+de Tauri lui-même sur Android — `BaseDirectory.Download` n'y a jamais
+signifié "dossier Téléchargements public" comme sur desktop, contrairement
+à l'hypothèse du correctif précédent.
+
+**Vraie solution — MediaStore, le mécanisme officiellement recommandé par
+Google pour ce cas depuis Android 10 (stockage cloisonné/scoped
+storage)** : après recherche du paysage des plugins Tauri tiers pour
+Android (`tauri-plugin-android-fs` par aiueo13, crate + package npm
+`tauri-plugin-android-fs-api`, tous deux en version 29.0.0, compatible
+avec `tauri ^2.8.2` déjà utilisé ici) et lecture de sa documentation Rust
+réelle (docs.rs) et de ses déclarations TypeScript (`.d.ts` téléchargé et
+lu directement, pas résumé par un outil de résumé automatique qui s'est
+montré peu fiable sur cette tâche — plusieurs réponses tronquées/à côté
+de la plaque pendant cette investigation) :
+- Ce plugin écrit via `PublicStorage::create_new_file` (Rust) /
+  `createNewPublicFile` (JS), qui insère réellement dans la collection
+  MediaStore `Downloads` d'Android — visible par l'app Fichiers, les
+  autres apps, et signalé par une notification système, exactement comme
+  un vrai téléchargement de navigateur.
+- **Aucune permission requise sur Android 10 et supérieur** (confirmé par
+  le README : "this plugin does not add permissions to the application"
+  par défaut) — MediaStore n'exige pas `WRITE_EXTERNAL_STORAGE` pour
+  qu'une app insère ses propres fichiers.
+- **Android 9 (API 28) et inférieur** (avant le stockage cloisonné —
+  concerne notamment BlueStacks, dont l'image "P64" testée par le porteur
+  du projet est une image Android 9 "Pie") : nécessite les permissions
+  `WRITE_EXTERNAL_STORAGE`/`READ_EXTERNAL_STORAGE`, demandées
+  automatiquement à l'exécution (`requestPermission`, activé par défaut
+  dans `createNewPublicFile`) — mais leur déclaration dans
+  `AndroidManifest.xml` doit être explicitement activée via le feature
+  Cargo `legacy_storage_permission`, qui la génère automatiquement au
+  build **uniquement** pour ces versions (aucun effet sur Android 10+).
+  Confirmé dans la documentation Rust du crate (`PublicStorage::request_permission`,
+  section "Version behavior").
+
+**Fait** :
+- [Cargo.toml](apps/desktop/src-tauri/Cargo.toml) : nouvelle dépendance
+  `tauri-plugin-android-fs = { version = "29", features =
+  ["legacy_storage_permission"] }`, ajoutée sous
+  `[target.'cfg(target_os = "android")'.dependencies]` — ce crate ne
+  supporte que Android (ses propres métadonnées Cargo l'indiquent
+  explicitement : `windows/linux/macos/ios = none`), donc pas question de
+  la mettre en dépendance normale au risque de casser le build desktop.
+- [lib.rs](apps/desktop/src-tauri/src/lib.rs) : `.plugin(tauri_plugin_android_fs::init())`
+  ajouté, mais seulement sous `#[cfg(target_os = "android")]` — la variable
+  `builder` est construite en deux temps (commun, puis enrichi
+  conditionnellement) plutôt qu'en un seul chaînage, pour permettre cette
+  branche conditionnelle proprement.
+- **Nouveau fichier** [capabilities/android.json](apps/desktop/src-tauri/capabilities/android.json) :
+  capacité séparée avec `"platforms": ["android"]` (champ du schéma ACL
+  Tauri v2 qui restreint une capacité à une liste de plateformes — vérifié
+  dans la doc officielle avant de l'utiliser), portant la permission
+  `android-fs:default` (préfixe déduit du nom `"android-fs"` passé à
+  `tauri::plugin::Builder::new(...)` dans le code source du plugin, pas
+  deviné). Fichier séparé plutôt qu'ajout dans `default.json` : ce dernier
+  s'applique à toutes les plateformes (desktop compris), et une permission
+  inconnue du crate `tauri-plugin-android-fs` (absent du build desktop)
+  y ferait échouer la validation du schéma ACL au build Windows. Tauri
+  charge automatiquement tous les fichiers du dossier `capabilities/` sans
+  liste explicite dans `tauri.conf.json` ici, donc aucun câblage
+  supplémentaire nécessaire.
+- [capabilities/default.json](apps/desktop/src-tauri/capabilities/default.json) :
+  les ajouts `$DOWNLOAD/**`/`fs:scope-download`/`fs:scope-download-recursive`
+  du correctif précédent (pour l'hypothèse `BaseDirectory.Download`,
+  maintenant caduque) retirés — plus aucun code n'utilise
+  `@tauri-apps/plugin-fs` pour cet usage, les garder aurait été un vestige
+  trompeur.
+- [packages/sync/package.json](packages/sync/package.json) : nouvelle
+  dépendance `tauri-plugin-android-fs-api` (même version `29.0.0` que le
+  crate Rust, pour rester synchronisé).
+- [packages/sync/src/nativeFolder.ts](packages/sync/src/nativeFolder.ts) :
+  `writeToAndroidDownloads(filename, bytes)` réécrit pour appeler
+  `createNewPublicFile(PublicGeneralPurposeDir.Download, filename, null)`
+  puis `writeFile(uri, bytes)` (import dynamique, même style que le reste
+  du fichier) — `mimeType: null` laisse le plugin l'inférer de l'extension
+  du nom de fichier plutôt que de faire remonter ce paramètre à travers
+  tous les appelants. Signature de la fonction inchangée, donc **aucun
+  appelant** (`backupRunner.ts`, `saveFile.ts`) n'a eu besoin d'être
+  retouché — seul le corps de la fonction change.
+- Historique complet des deux tentatives précédentes conservé dans le
+  commentaire en tête de `nativeFolder.ts`, pour que la prochaine session
+  qui retouche ce fichier comprenne pourquoi une approche aussi
+  raisonnable que `BaseDirectory.Download` ne fonctionnait pas — sans
+  cette trace, la tentation de revenir dessus (ça semble être la bonne
+  API standard) serait grande.
+
+**Vérifié** : `pnpm run build` (typecheck complet du monorepo, y compris
+la résolution du nouveau package `tauri-plugin-android-fs-api`) et les 20
+tests unitaires passent. **Build Windows complet** (`pnpm run
+build:desktop`) : succès, MSI + NSIS produits — confirme que la nouvelle
+dépendance Android-only n'est ni compilée ni ne casse quoi que ce soit
+sur ce target (le journal de build ne montre aucune étape "Compiling
+tauri-plugin-android-fs" pour le binaire desktop, seulement pour les 4
+cibles Android). **Build Android complet** (`tauri android build`) :
+succès, APK + AAB produits — c'est la vérification la plus importante de
+cette session, car elle valide que `android-fs:default` est un
+identifiant de permission réel reconnu par le schéma ACL Tauri v2 et que
+le champ `"platforms": ["android"]` de `capabilities/android.json` est
+accepté (une erreur sur l'un ou l'autre aurait fait échouer ce build avec
+une erreur de validation de schéma, pas une erreur silencieuse). Le crate
+`tauri-plugin-android-fs` et sa dépendance transitive `sync_async` se
+compilent sans erreur pour les 4 architectures (aarch64, armv7, i686,
+x86_64), la partie Kotlin du plugin compile aussi (un seul avertissement
+de dépréciation Java sur `WEBP`, sans rapport avec ce correctif).
+
+**Pas vérifiable dans cet environnement** : comme pour les deux tentatives
+précédentes, l'écriture réelle dans MediaStore sur un vrai appareil/
+émulateur Android ne peut être exercée que là-bas. **Cette fois la
+confiance repose sur une lecture directe du code source de la solution
+(Tauri lui-même pour comprendre la cause, le plugin tiers pour la
+correction) plutôt que sur une supposition non vérifiée** — mais reste,
+par nature, à confirmer par un test réel avant de considérer le sujet
+clos. Point de vigilance signalé au porteur du projet : demande de
+tester spécifiquement sur BlueStacks (Android 9 probable, "P64") pour
+exercer le chemin `legacy_storage_permission` (demande de permission à
+l'exécution), pas seulement sur le Samsung A14 (Android 13, chemin
+MediaStore direct sans permission) — les deux chemins de code sont
+différents et doivent être validés séparément.
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du

@@ -9,7 +9,8 @@
     "@gestion-boutique/i18n": "workspace:*",
     "@tauri-apps/api": "^2.1.1",
     "@tauri-apps/plugin-dialog": "^2.2.0",
-    "@tauri-apps/plugin-fs": "^2.2.0"
+    "@tauri-apps/plugin-fs": "^2.2.0",
+    "tauri-plugin-android-fs-api": "^29.0.0"
   },
   "devDependencies": {
     "@gestion-boutique/config": "workspace:*",
