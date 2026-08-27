@@ -2557,6 +2557,109 @@ paysage 812×375). Un seul point encore en attente de confirmation
 appareil réel : les zones système Android (voir entrée précédente,
 2026-08-18).
 
+### 2026-08-18 — Aucun fichier généré ne se sauvegardait sur Android (pas que les sauvegardes) — nouveau mécanisme natif
+
+**Contexte** : suite du correctif "Choisir un dossier" cassé sur Android
+(voir entrée du 2026-08-18 précédente sur le sujet) — le porteur du projet
+signale que même le repli "Télécharger une sauvegarde maintenant" ne
+fonctionne pas non plus sur son appareil réel.
+
+**Cause racine, plus large que prévu** : `downloadBlob()` (blob URL +
+`<a download>` + `.click()`, dupliqué dans **9 fichiers** de l'app pour
+tous les documents générés — reçus, tickets, étiquettes, et les exports
+PDF/Excel des rapports/comptabilité/devis) repose sur le mécanisme de
+téléchargement du navigateur. Contrairement à un vrai Chrome, **le
+composant WebView brut d'Android n'a aucun gestionnaire de téléchargement
+intégré** — un clic sur un lien `<a download>` n'y produit simplement
+aucun effet sans câblage natif dédié (`WebView.setDownloadListener` côté
+Kotlin), absent de [MainActivity.kt](apps/desktop/src-tauri/gen/android/app/src/main/java/com/waribox/app/MainActivity.kt)
+(scaffold minimal généré par `tauri android init`, voir entrée précédente).
+**Donc le bug ne touchait pas que les sauvegardes : aucun document généré
+(reçu, ticket, étiquette, rapport) n'était réellement récupérable sur
+Android** avant ce correctif — la vérification précédente (qui concluait
+"le téléchargement fonctionne") avait été faite dans un vrai Chrome
+desktop avec un user-agent Android simulé, pas dans le vrai WebView
+embarqué de Tauri, ce qui ne pouvait pas révéler ce problème spécifique au
+moteur.
+
+**Décision** : le porteur du projet a demandé la "vraie" solution (choix
+de dossier natif) plutôt qu'un simple repli, à condition de ne rien casser
+sur les autres plateformes — et d'étendre ça aux reçus/rapports, pas
+seulement aux sauvegardes.
+
+**Fait** — nouveau mécanisme natif via Tauri, strictement limité à Android
+(desktop garde son flux existant, PWA/navigateur garde son flux existant —
+aucun des deux n'est cassé, donc aucune raison d'y toucher) :
+- Nouveau plugin [tauri-plugin-fs](https://v2.tauri.app) ajouté (`Cargo.toml`,
+  enregistré dans [lib.rs](apps/desktop/src-tauri/src/lib.rs)) — absent du
+  projet jusqu'ici (seul `tauri-plugin-dialog` était présent, utilisé
+  uniquement pour le sélecteur de fichier `.exe`/`.msi` sur desktop).
+  Permissions ajoutées dans
+  [capabilities/default.json](apps/desktop/src-tauri/capabilities/default.json)
+  (`fs:allow-write-file`/`allow-mkdir`/`allow-exists`, scope large `**` —
+  même raisonnement et même précédent que `opener:allow-open-path` déjà
+  présent : l'utilisateur choisit lui-même l'emplacement, pas de chemin
+  prévisible à restreindre à l'avance) + `dialog:allow-save`.
+- [packages/sync/src/nativeFolder.ts](packages/sync/src/nativeFolder.ts)
+  (nouveau fichier) : `isAndroidTauriRuntime()` (même détection user-agent
+  qu'`isDesktopTauriRuntime()` côté web, inversée), `pickNativeFolder(kind)`
+  (sélecteur de dossier natif Android via Storage Access Framework, à
+  travers `plugin-dialog` — une vraie fonctionnalité du système
+  d'exploitation, contrairement à `showDirectoryPicker`), `writeNativeFile`
+  (écrit dans le dossier déjà choisi, via `plugin-fs` + `@tauri-apps/api/path`
+  pour joindre le chemin), `saveNativeDocument` (pour les documents
+  ponctuels : écrit directement si un dossier "documents" est déjà
+  configuré, sinon ouvre la boîte "Enregistrer sous" native de
+  `plugin-dialog` — pas besoin d'avoir tout configuré à l'avance pour un
+  premier export). Chemins mémorisés en `localStorage` (deux clés
+  séparées, `backup` et `documents`) — plus simple que la persistance
+  `IndexedDB` de `FileSystemDirectoryHandle` côté web (ici ce n'est qu'une
+  chaîne de caractères, pas un objet complexe à sérialiser).
+- [backupRunner.ts](apps/web/src/features/settings/backupRunner.ts) :
+  `runLocalBackup` bascule sur ce nouveau chemin natif quand
+  `isAndroidTauriRuntime()`, garde le chemin web existant sinon.
+- [SettingsPage.tsx](apps/web/src/features/settings/SettingsPage.tsx) :
+  le bloc "Sauvegarde locale" devient à 3 branches (web `showDirectoryPicker`
+  sur desktop, natif sur Android, téléchargement de repli sur les autres
+  navigateurs) au lieu de 2 — même apparence/textes que le flux desktop
+  existant, juste un chemin natif au lieu d'un handle web. Nouveau bloc
+  "Documents générés" (choix d'un dossier séparé pour reçus/tickets/
+  étiquettes/rapports), visible uniquement sur Android.
+- [apps/web/src/lib/saveFile.ts](apps/web/src/lib/saveFile.ts) (nouveau) :
+  point d'entrée unique `saveGeneratedFile(blob, filename)` remplaçant les
+  9 copies locales de `downloadBlob()` — bascule sur `saveNativeDocument`
+  sur Android, garde le mécanisme blob-URL existant partout ailleurs.
+  **32 points d'appel mis à jour** dans
+  AccountingPage/ProductsPage/SalesHistoryPage/SalesPage/PurchasesPage/
+  QuotesPage/ServiceOrdersPage/ReportsPage/SettingsPage (y compris le
+  filet de sécurité "avant-import" de la restauration de sauvegarde, qui
+  tournait sur toutes les plateformes sans distinction) — plusieurs
+  fonctions d'export, jusqu'ici synchrones, sont passées `async` pour
+  pouvoir `await` le nouvel appel.
+
+**Vérifié** : `pnpm run build` (typecheck complet du monorepo) et les 20
+tests unitaires passent. Vérifié dans le navigateur (desktop, seule
+plateforme testable ici) : export PDF d'un rapport toujours fonctionnel
+(blob de 3579 octets intercepté, mécanisme de téléchargement inchangé),
+section "Documents générés" bien absente sur desktop (ne s'affiche que sur
+Android), flux "Choisir un dossier" desktop inchangé — **aucune
+régression détectée sur ce qui fonctionnait déjà**.
+
+**Pas vérifiable dans cet environnement** : le chemin natif Android
+lui-même (`plugin-dialog`/`plugin-fs` en conditions réelles — sélection
+d'un dossier via Storage Access Framework, écriture dans un chemin
+`content://`) ne peut être exercé que dans un vrai WebView Android, absent
+de cet environnement de développement. Écrit au meilleur de la
+documentation officielle Tauri v2 disponible, mais **nécessite un test sur
+l'appareil réel du porteur du projet avant de considérer le sujet clos** —
+même limite déjà rencontrée pour le correctif des zones système Android.
+Si l'écriture via un chemin natif issu du sélecteur de dossier s'avère ne
+pas fonctionner telle quelle (le mapping `content://` → écriture
+`plugin-fs` est le point le plus incertain de ce correctif), la boîte
+"Enregistrer sous" ponctuelle (`saveNativeDocument` sans dossier
+préconfiguré) reste un filet de repli qui a de meilleures chances de
+fonctionner nativement, SAF gérant lui-même l'écriture dans ce cas.
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du

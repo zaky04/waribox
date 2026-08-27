@@ -50,21 +50,13 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { saveGeneratedFile } from "../../lib/saveFile";
 import { useAuth } from "../auth/useAuth";
 
 type SubTab = "sales" | "margins" | "cashflow" | "tax" | "cash" | "service_orders";
 
 function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 function timestampForFilename(): string {
@@ -201,19 +193,19 @@ export function ReportsPage() {
     refresh();
   }, [refresh]);
 
-  const exportSalesPdf = () => {
+  const exportSalesPdf = async () => {
     if (!salesSummary) return;
     const blob = buildSalesReportPdf({ from: fromDate, to: toDate, ...salesSummary, topProducts });
-    downloadBlob(blob, `rapport-ventes-${fromDate}-${toDate}.pdf`);
+    await saveGeneratedFile(blob, `rapport-ventes-${fromDate}-${toDate}.pdf`);
   };
 
-  const exportSalesExcel = () => {
+  const exportSalesExcel = async () => {
     if (!salesSummary) return;
     const blob = buildSalesReportExcel({ from: fromDate, to: toDate, ...salesSummary, topProducts });
-    downloadBlob(blob, `rapport-ventes-${fromDate}-${toDate}.xlsx`);
+    await saveGeneratedFile(blob, `rapport-ventes-${fromDate}-${toDate}.xlsx`);
   };
 
-  const exportMarginsPdf = () => {
+  const exportMarginsPdf = async () => {
     if (!marginsSummary) return;
     const blob = buildMarginsReportPdf({
       from: fromDate,
@@ -221,10 +213,10 @@ export function ReportsPage() {
       ...marginsSummary,
       productBreakdown: productMargins,
     });
-    downloadBlob(blob, `rapport-marges-${fromDate}-${toDate}.pdf`);
+    await saveGeneratedFile(blob, `rapport-marges-${fromDate}-${toDate}.pdf`);
   };
 
-  const exportMarginsExcel = () => {
+  const exportMarginsExcel = async () => {
     if (!marginsSummary) return;
     const blob = buildMarginsReportExcel({
       from: fromDate,
@@ -232,31 +224,31 @@ export function ReportsPage() {
       ...marginsSummary,
       productBreakdown: productMargins,
     });
-    downloadBlob(blob, `rapport-marges-${fromDate}-${toDate}.xlsx`);
+    await saveGeneratedFile(blob, `rapport-marges-${fromDate}-${toDate}.xlsx`);
   };
 
-  const exportCashFlowPdf = () => {
+  const exportCashFlowPdf = async () => {
     if (!cashFlow) return;
     const blob = buildCashFlowReportPdf({ ...cashFlow, projection: projection ?? undefined });
-    downloadBlob(blob, `rapport-tresorerie-${fromDate}-${toDate}.pdf`);
+    await saveGeneratedFile(blob, `rapport-tresorerie-${fromDate}-${toDate}.pdf`);
   };
 
-  const exportCashFlowExcel = () => {
+  const exportCashFlowExcel = async () => {
     if (!cashFlow) return;
     const blob = buildCashFlowReportExcel({ ...cashFlow, projection: projection ?? undefined });
-    downloadBlob(blob, `rapport-tresorerie-${fromDate}-${toDate}.xlsx`);
+    await saveGeneratedFile(blob, `rapport-tresorerie-${fromDate}-${toDate}.xlsx`);
   };
 
-  const exportTaxPdf = () => {
+  const exportTaxPdf = async () => {
     if (!taxSummary) return;
     const blob = buildTaxReportPdf({ from: fromDate, to: toDate, ...taxSummary });
-    downloadBlob(blob, `rapport-tva-${fromDate}-${toDate}.pdf`);
+    await saveGeneratedFile(blob, `rapport-tva-${fromDate}-${toDate}.pdf`);
   };
 
-  const exportTaxExcel = () => {
+  const exportTaxExcel = async () => {
     if (!taxSummary) return;
     const blob = buildTaxReportExcel({ from: fromDate, to: toDate, ...taxSummary });
-    downloadBlob(blob, `rapport-tva-${fromDate}-${toDate}.xlsx`);
+    await saveGeneratedFile(blob, `rapport-tva-${fromDate}-${toDate}.xlsx`);
   };
 
   const userName = (userId: number) => users.find((u) => u.id === userId)?.fullName ?? "—";
@@ -271,14 +263,14 @@ export function ReportsPage() {
     difference: s.closingAmount != null && s.expectedAmount != null ? s.closingAmount - s.expectedAmount : null,
   }));
 
-  const exportCashSessionsPdf = () => {
+  const exportCashSessionsPdf = async () => {
     const blob = buildCashSessionsReportPdf({ from: fromDate, to: toDate, rows: cashSessionRows });
-    downloadBlob(blob, `rapport-caisse-${fromDate}-${toDate}.pdf`);
+    await saveGeneratedFile(blob, `rapport-caisse-${fromDate}-${toDate}.pdf`);
   };
 
-  const exportCashSessionsExcel = () => {
+  const exportCashSessionsExcel = async () => {
     const blob = buildCashSessionsReportExcel({ from: fromDate, to: toDate, rows: cashSessionRows });
-    downloadBlob(blob, `rapport-caisse-${fromDate}-${toDate}.xlsx`);
+    await saveGeneratedFile(blob, `rapport-caisse-${fromDate}-${toDate}.xlsx`);
   };
 
   const customerName = (customerId: number | null) => customers.find((c) => c.id === customerId)?.fullName ?? null;
@@ -317,7 +309,7 @@ export function ReportsPage() {
         showPromisedDate: businessSettings?.printPromisedDateOnTicket ?? true,
       };
       const blob = buildServiceOrderTicketPdf(ticketData);
-      downloadBlob(blob, `rapport-ticket-${order.number}-${timestampForFilename()}.pdf`);
+      await saveGeneratedFile(blob, `rapport-ticket-${order.number}-${timestampForFilename()}.pdf`);
     } catch (err) {
       setServiceOrderReportError(err instanceof Error ? err.message : t("reports.errors.reportFailed"));
     } finally {

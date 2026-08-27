@@ -283,6 +283,11 @@
         "writePermissionDenied": "Permission d'écriture refusée pour le dossier de sauvegarde."
       }
     },
+    "documents": {
+      "heading": "Documents générés",
+      "hint": "Dossier où seront enregistrés les reçus, tickets, étiquettes et rapports exportés (PDF/Excel) depuis l'application — sans dossier choisi, chaque export demandera où l'enregistrer.",
+      "clearFolder": "Ne plus utiliser ce dossier"
+    },
     "maintenance": {
       "heading": "Maintenance",
       "hint": "Code séparé des comptes utilisateurs, utilisé pour autoriser les actions de maintenance (installation d'une mise à jour) — utile si l'installateur n'a pas le mot de passe Admin du client.",

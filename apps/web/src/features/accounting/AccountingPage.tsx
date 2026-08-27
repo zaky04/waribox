@@ -25,21 +25,13 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { cardStyle, inputStyle, pageStyle, primaryButtonStyle, tableStyle, tdStyle, thStyle } from "../../components/sharedStyles";
+import { saveGeneratedFile } from "../../lib/saveFile";
 
 type SubTab = "income" | "balance" | "syscohada";
 type SyscohadaView = "ventes" | "achats" | "tresorerie" | "balance";
 
 function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 const secondaryButtonStyle = {
@@ -103,28 +95,28 @@ export function AccountingPage() {
     if (subTab === "syscohada" && syscohadaEnabled) refreshSyscohada();
   }, [subTab, syscohadaEnabled, refreshSyscohada]);
 
-  const exportIncomePdf = () => {
+  const exportIncomePdf = async () => {
     if (!incomeStatement) return;
     const blob = buildIncomeStatementReportPdf(incomeStatement);
-    downloadBlob(blob, `compte-de-resultat-${fromDate}-${toDate}.pdf`);
+    await saveGeneratedFile(blob, `compte-de-resultat-${fromDate}-${toDate}.pdf`);
   };
 
-  const exportIncomeExcel = () => {
+  const exportIncomeExcel = async () => {
     if (!incomeStatement) return;
     const blob = buildIncomeStatementReportExcel(incomeStatement);
-    downloadBlob(blob, `compte-de-resultat-${fromDate}-${toDate}.xlsx`);
+    await saveGeneratedFile(blob, `compte-de-resultat-${fromDate}-${toDate}.xlsx`);
   };
 
-  const exportBalancePdf = () => {
+  const exportBalancePdf = async () => {
     if (!balanceSheet) return;
     const blob = buildBalanceSheetReportPdf(balanceSheet);
-    downloadBlob(blob, `bilan-${balanceSheet.asOfDate}.pdf`);
+    await saveGeneratedFile(blob, `bilan-${balanceSheet.asOfDate}.pdf`);
   };
 
-  const exportBalanceExcel = () => {
+  const exportBalanceExcel = async () => {
     if (!balanceSheet) return;
     const blob = buildBalanceSheetReportExcel(balanceSheet);
-    downloadBlob(blob, `bilan-${balanceSheet.asOfDate}.xlsx`);
+    await saveGeneratedFile(blob, `bilan-${balanceSheet.asOfDate}.xlsx`);
   };
 
   const SYSCOHADA_TITLES: Record<Exclude<SyscohadaView, "balance">, string> = {
@@ -133,10 +125,10 @@ export function AccountingPage() {
     tresorerie: t("accounting.titles.tresorerie"),
   };
 
-  const exportSyscohadaPdf = () => {
+  const exportSyscohadaPdf = async () => {
     if (syscohadaView === "balance") {
       const blob = buildSyscohadaBalancePdf({ from: fromDate, to: toDate, rows: syscohadaBalance });
-      downloadBlob(blob, `balance-generale-${fromDate}-${toDate}.pdf`);
+      await saveGeneratedFile(blob, `balance-generale-${fromDate}-${toDate}.pdf`);
       return;
     }
     const blob = buildSyscohadaJournalPdf({
@@ -145,13 +137,13 @@ export function AccountingPage() {
       to: toDate,
       lines: syscohadaLines,
     });
-    downloadBlob(blob, `journal-${syscohadaView}-${fromDate}-${toDate}.pdf`);
+    await saveGeneratedFile(blob, `journal-${syscohadaView}-${fromDate}-${toDate}.pdf`);
   };
 
-  const exportSyscohadaExcel = () => {
+  const exportSyscohadaExcel = async () => {
     if (syscohadaView === "balance") {
       const blob = buildSyscohadaBalanceExcel({ from: fromDate, to: toDate, rows: syscohadaBalance });
-      downloadBlob(blob, `balance-generale-${fromDate}-${toDate}.xlsx`);
+      await saveGeneratedFile(blob, `balance-generale-${fromDate}-${toDate}.xlsx`);
       return;
     }
     const blob = buildSyscohadaJournalExcel({
@@ -160,7 +152,7 @@ export function AccountingPage() {
       to: toDate,
       lines: syscohadaLines,
     });
-    downloadBlob(blob, `journal-${syscohadaView}-${fromDate}-${toDate}.xlsx`);
+    await saveGeneratedFile(blob, `journal-${syscohadaView}-${fromDate}-${toDate}.xlsx`);
   };
 
   const subTabs: { key: SubTab; label: string }[] = [

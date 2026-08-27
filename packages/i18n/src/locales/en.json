@@ -283,6 +283,11 @@
         "writePermissionDenied": "Write permission denied for the backup folder."
       }
     },
+    "documents": {
+      "heading": "Generated documents",
+      "hint": "Folder where receipts, tickets, labels, and exported reports (PDF/Excel) from the app will be saved — with no folder chosen, each export will ask where to save it.",
+      "clearFolder": "Stop using this folder"
+    },
     "maintenance": {
       "heading": "Maintenance",
       "hint": "Code separate from user accounts, used to authorize maintenance actions (installing an update) — useful if the installer doesn't have the client's Admin password.",

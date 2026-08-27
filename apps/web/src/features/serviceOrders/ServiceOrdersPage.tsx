@@ -26,6 +26,7 @@ import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { buildWhatsAppLink } from "../../lib/whatsapp";
 import { openExternalUrl } from "../../lib/openExternalUrl";
+import { saveGeneratedFile } from "../../lib/saveFile";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
   badgeStyle,
@@ -68,15 +69,6 @@ function timestampForFilename(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 const ITEM_STATUSES: ServiceOrderItemStatus[] = ["received", "in_progress", "ready", "picked_up"];
@@ -511,10 +503,10 @@ export function ServiceOrdersPage() {
                     color: "var(--color-text)",
                   }}
                   disabled={!lastTicket}
-                  onClick={() => {
+                  onClick={async () => {
                     if (!lastTicket) return;
                     const blob = buildServiceOrderTicketPdf(lastTicket);
-                    downloadBlob(blob, `ticket-${lastOrderNumber}-${timestampForFilename()}.pdf`);
+                    await saveGeneratedFile(blob, `ticket-${lastOrderNumber}-${timestampForFilename()}.pdf`);
                   }}
                 >
                   {t("serviceOrders.saveAsPdf")}

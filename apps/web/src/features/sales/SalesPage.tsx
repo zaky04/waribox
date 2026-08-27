@@ -27,6 +27,7 @@ import {
   thStyle,
 } from "../../components/sharedStyles";
 import { openExternalUrl } from "../../lib/openExternalUrl";
+import { saveGeneratedFile } from "../../lib/saveFile";
 import { buildReceiptWhatsAppMessage, buildWhatsAppLink } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
 import { PrinterPanel } from "../printer/PrinterPanel";
@@ -56,15 +57,6 @@ function timestampForFilename(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 export function SalesPage() {
@@ -488,10 +480,10 @@ export function SalesPage() {
                 color: "var(--color-text)",
               }}
               disabled={!lastReceipt}
-              onClick={() => {
+              onClick={async () => {
                 if (!lastReceipt) return;
                 const blob = buildReceiptPdf(lastReceipt);
-                downloadBlob(blob, `recu-${lastSaleNumber}-${timestampForFilename()}.pdf`);
+                await saveGeneratedFile(blob, `recu-${lastSaleNumber}-${timestampForFilename()}.pdf`);
               }}
             >
               {t("sales.saveAsPdf")}

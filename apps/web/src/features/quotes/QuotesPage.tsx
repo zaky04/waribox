@@ -28,6 +28,7 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { saveGeneratedFile } from "../../lib/saveFile";
 import { useAuth } from "../auth/useAuth";
 
 type Product = typeof schema.products.$inferSelect;
@@ -47,15 +48,6 @@ function timestampForFilename(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 export function QuotesPage() {
@@ -234,7 +226,7 @@ export function QuotesPage() {
       }, 0),
       total: quote.total,
     });
-    downloadBlob(blob, `devis-${quote.number}-${timestampForFilename()}.pdf`);
+    await saveGeneratedFile(blob, `devis-${quote.number}-${timestampForFilename()}.pdf`);
   };
 
   const toggleConvert = (quote: Quote) => {

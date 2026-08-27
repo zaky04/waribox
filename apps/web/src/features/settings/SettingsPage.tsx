@@ -11,9 +11,13 @@ import {
 } from "@gestion-boutique/core";
 import { exportDatabaseFile, schema } from "@gestion-boutique/database";
 import {
+  clearNativeFolderPath,
+  isAndroidTauriRuntime,
   isFileSystemAccessSupported,
   loadFolderHandle,
+  loadNativeFolderPath,
   pickBackupFolder,
+  pickNativeFolder,
 } from "@gestion-boutique/sync";
 import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
@@ -28,6 +32,7 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { saveGeneratedFile } from "../../lib/saveFile";
 import { useAuth } from "../auth/useAuth";
 import { StoresSection } from "../stores/StoresSection";
 import { runGoogleDriveBackup, runLocalBackup } from "./backupRunner";
@@ -41,15 +46,6 @@ function timestampForFilename(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 // Les commandes Tauri (openPath, etc.) rejettent souvent avec une simple
@@ -126,6 +122,8 @@ export function SettingsPage() {
   const [customDays, setCustomDays] = useState("7");
   const [googleDriveClientId, setGoogleDriveClientId] = useState("");
   const [folderName, setFolderName] = useState<string | null>(null);
+  const [nativeBackupFolderPath, setNativeBackupFolderPath] = useState<string | null>(null);
+  const [nativeDocumentsFolderPath, setNativeDocumentsFolderPath] = useState<string | null>(null);
   const [backups, setBackups] = useState<Backup[]>([]);
 
   const [backupError, setBackupError] = useState<string | null>(null);
@@ -167,6 +165,8 @@ export function SettingsPage() {
     setGoogleDriveClientId(settings.googleDriveClientId ?? "");
     setBackups(backupRows);
     setFolderName(handle?.name ?? null);
+    setNativeBackupFolderPath(loadNativeFolderPath("backup"));
+    setNativeDocumentsFolderPath(loadNativeFolderPath("documents"));
 
     setBusinessName(settings.businessName ?? "");
     setAddress(settings.address ?? "");
@@ -328,6 +328,31 @@ export function SettingsPage() {
     }
   };
 
+  const handlePickNativeBackupFolder = async () => {
+    setBackupError(null);
+    try {
+      const path = await pickNativeFolder("backup");
+      setNativeBackupFolderPath(path);
+    } catch (err) {
+      setBackupError(describeError(err, t("settings.errors.folder")));
+    }
+  };
+
+  const handlePickNativeDocumentsFolder = async () => {
+    setBackupError(null);
+    try {
+      const path = await pickNativeFolder("documents");
+      setNativeDocumentsFolderPath(path);
+    } catch (err) {
+      setBackupError(describeError(err, t("settings.errors.folder")));
+    }
+  };
+
+  const handleClearNativeDocumentsFolder = () => {
+    clearNativeFolderPath("documents");
+    setNativeDocumentsFolderPath(null);
+  };
+
   const handleLocalBackupNow = async () => {
     setBackupError(null);
     setRunningLocal(true);
@@ -346,7 +371,7 @@ export function SettingsPage() {
     setDownloadingBackup(true);
     try {
       const { bytes, filename } = await exportDatabaseFile();
-      downloadBlob(new Blob([new Uint8Array(bytes)]), filename);
+      await saveGeneratedFile(new Blob([new Uint8Array(bytes)]), filename);
       await recordBackup(db, { destination: "local", fileRef: filename, status: "success" });
       await refresh();
     } catch (err) {
@@ -389,7 +414,7 @@ export function SettingsPage() {
       // Filet de sécurité : l'état d'avant l'import reste téléchargeable
       // immédiatement si la sauvegarde importée s'avère finalement inadaptée
       // une fois la page rechargée.
-      downloadBlob(new Blob([new Uint8Array(previousBytes)]), `avant-import-${timestampForFilename()}.sqlite3`);
+      await saveGeneratedFile(new Blob([new Uint8Array(previousBytes)]), `avant-import-${timestampForFilename()}.sqlite3`);
       setImportInfo(t("settings.backups.importSuccess"));
       await new Promise((resolve) => setTimeout(resolve, 1200));
       window.location.reload();
@@ -869,6 +894,34 @@ export function SettingsPage() {
                 </button>
               </div>
             </>
+          ) : isAndroidTauriRuntime() ? (
+            <>
+              <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
+                {t("settings.backups.currentFolder")} {nativeBackupFolderPath ?? t("settings.backups.noFolder")}
+              </p>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14 }}
+                  onClick={handlePickNativeBackupFolder}
+                >
+                  {t("settings.backups.chooseFolder")}
+                </button>
+                <button
+                  style={{
+                    ...primaryButtonStyle,
+                    padding: "8px 14px",
+                    fontSize: 14,
+                    background: "transparent",
+                    border: "1px solid var(--color-border)",
+                    color: "var(--color-text)",
+                  }}
+                  onClick={handleLocalBackupNow}
+                  disabled={runningLocal || !nativeBackupFolderPath}
+                >
+                  {runningLocal ? t("settings.backups.backingUp") : t("settings.backups.backupNow")}
+                </button>
+              </div>
+            </>
           ) : (
             <>
               <p style={{ color: "var(--color-warning)", fontSize: 13 }}>{t("settings.backups.noFsSupport")}</p>
@@ -985,6 +1038,39 @@ export function SettingsPage() {
           </table>
         </div>
       </div>
+
+      {isAndroidTauriRuntime() && (
+        <div style={cardStyle}>
+          <strong>{t("settings.documents.heading")}</strong>
+          <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.documents.hint")}</p>
+          <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
+            {t("settings.backups.currentFolder")} {nativeDocumentsFolderPath ?? t("settings.backups.noFolder")}
+          </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14 }}
+              onClick={handlePickNativeDocumentsFolder}
+            >
+              {t("settings.backups.chooseFolder")}
+            </button>
+            {nativeDocumentsFolderPath && (
+              <button
+                style={{
+                  ...primaryButtonStyle,
+                  padding: "8px 14px",
+                  fontSize: 14,
+                  background: "transparent",
+                  border: "1px solid var(--color-border)",
+                  color: "var(--color-text)",
+                }}
+                onClick={handleClearNativeDocumentsFolder}
+              >
+                {t("settings.documents.clearFolder")}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div style={cardStyle}>
         <strong>{t("settings.maintenance.heading")}</strong>

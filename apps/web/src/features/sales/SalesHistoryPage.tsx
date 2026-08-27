@@ -18,6 +18,7 @@ import { useDatabase } from "../../app/DatabaseProvider";
 import { FilterBar } from "../../components/FilterBar";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import { inputStyle, pageStyle, primaryButtonStyle, tableStyle, tdStyle, thStyle } from "../../components/sharedStyles";
+import { saveGeneratedFile } from "../../lib/saveFile";
 
 type Sale = typeof schema.sales.$inferSelect;
 type Payment = typeof schema.payments.$inferSelect;
@@ -30,15 +31,6 @@ function timestampForFilename(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 interface FilterState {
@@ -175,7 +167,7 @@ export function SalesHistoryPage() {
         amountPaid: payment?.amount ?? sale.total,
       };
       const blob = buildReceiptPdf(receiptData);
-      downloadBlob(blob, `rapport-vente-${sale.number}-${timestampForFilename()}.pdf`);
+      await saveGeneratedFile(blob, `rapport-vente-${sale.number}-${timestampForFilename()}.pdf`);
     } catch (err) {
       setReportError(err instanceof Error ? err.message : t("salesHistory.reportError"));
     } finally {
