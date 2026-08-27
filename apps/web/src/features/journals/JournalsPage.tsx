@@ -406,9 +406,9 @@ export function JournalsPage() {
                     <td style={tdStyle}>{userName(sale.userId)}</td>
                     {canManageRefunds && (
                       <td style={{ ...tdStyle, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                        {sale.status === "refunded" && <span style={{ color: "#f87171" }}>{t("journals.sales.refunded")}</span>}
+                        {sale.status === "refunded" && <span style={{ color: "var(--color-danger)" }}>{t("journals.sales.refunded")}</span>}
                         {sale.status !== "refunded" && (refundTotals[sale.id] ?? 0) > 0 && (
-                          <span style={{ color: "#fdba74" }}>{t("journals.sales.partiallyRefunded")}</span>
+                          <span style={{ color: "var(--color-warning)" }}>{t("journals.sales.partiallyRefunded")}</span>
                         )}
                         {(refundTotals[sale.id] ?? 0) > 0 && (
                           <button
@@ -557,7 +557,7 @@ export function JournalsPage() {
                       {m.movementType === "loss" ? (LOSS_REASON_LABELS[m.referenceType ?? ""] ?? "—") : "—"}
                     </td>
                     <td style={tdStyle}>{lotLabel(m.batchId)}</td>
-                    <td style={{ ...tdStyle, color: m.quantityDelta < 0 ? "#f87171" : "#86efac" }}>
+                    <td style={{ ...tdStyle, color: m.quantityDelta < 0 ? "var(--color-danger)" : "var(--color-success)" }}>
                       {m.quantityDelta > 0 ? "+" : ""}
                       {m.quantityDelta}
                     </td>

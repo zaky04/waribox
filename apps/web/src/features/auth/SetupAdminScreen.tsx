@@ -120,7 +120,7 @@ export function SetupAdminScreen() {
           />
         </label>
 
-        {error && <p style={{ color: "#f87171" }}>{error}</p>}
+        {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
         <button type="submit" style={authPrimaryButtonStyle} disabled={loading}>
           {loading ? t("auth.setupAdmin.creating") : t("auth.setupAdmin.submit")}

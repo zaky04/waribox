@@ -193,7 +193,7 @@ export function RefundModal({
               {t("journals.refundModal.totalToRefund")} {previewTotal.toFixed(2)}
             </p>
 
-            {error && <p style={{ color: "#f87171" }}>{error}</p>}
+            {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
             <div style={{ display: "flex", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
               <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>

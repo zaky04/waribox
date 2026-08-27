@@ -212,7 +212,7 @@ export function UsersPage() {
         </button>
       </div>
 
-      {impersonateError && <p style={{ color: "#f87171" }}>{impersonateError}</p>}
+      {impersonateError && <p style={{ color: "var(--color-danger)" }}>{impersonateError}</p>}
 
       {showForm && (
         <div style={cardStyle}>
@@ -288,7 +288,7 @@ export function UsersPage() {
             </label>
           )}
 
-          {error && <p style={{ color: "#f87171" }}>{error}</p>}
+          {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
             {saving

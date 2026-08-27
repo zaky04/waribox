@@ -216,7 +216,7 @@ export function ExpensesPage() {
             <input style={inputStyle} value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
 
-          {error && <p style={{ color: "#f87171" }}>{error}</p>}
+          {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
             {saving ? t("expenses.saving") : editingId ? t("expenses.saveChanges") : t("expenses.create")}
@@ -284,8 +284,8 @@ export function ExpensesPage() {
                       <button
                         style={{
                           background: "transparent",
-                          border: "1px solid #f87171",
-                          color: "#f87171",
+                          border: "1px solid var(--color-danger)",
+                          color: "var(--color-danger)",
                           borderRadius: 8,
                           padding: "6px 12px",
                           fontSize: 14,

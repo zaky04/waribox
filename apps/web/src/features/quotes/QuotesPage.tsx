@@ -323,7 +323,7 @@ export function QuotesPage() {
                         <td style={tdStyle}>
                           <button
                             onClick={() => removeLine(line.variantId)}
-                            style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
+                            style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
                           >
                             ✕
                           </button>
@@ -377,7 +377,7 @@ export function QuotesPage() {
               />
             </label>
 
-            {error && <p style={{ color: "#f87171" }}>{error}</p>}
+            {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
             <button style={primaryButtonStyle} onClick={handleCreateQuote} disabled={saving}>
               {saving ? t("quotes.saving") : t("quotes.submit")}
@@ -483,7 +483,7 @@ export function QuotesPage() {
                                 placeholder={quote.total.toFixed(0)}
                               />
                             </label>
-                            {convertError && <p style={{ color: "#f87171" }}>{convertError}</p>}
+                            {convertError && <p style={{ color: "var(--color-danger)" }}>{convertError}</p>}
                             <button
                               style={{ ...primaryButtonStyle, alignSelf: "flex-start" }}
                               onClick={() => handleConvert(quote)}

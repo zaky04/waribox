@@ -274,7 +274,7 @@ export function PurchasesPage() {
         <div
           style={{
             ...cardStyle,
-            borderLeft: "4px solid #86efac",
+            borderLeft: "4px solid var(--color-success)",
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
@@ -299,7 +299,7 @@ export function PurchasesPage() {
           </button>
         </div>
       )}
-      {labelsError && <p style={{ color: "#f87171" }}>{labelsError}</p>}
+      {labelsError && <p style={{ color: "var(--color-danger)" }}>{labelsError}</p>}
 
       {lowStockEntries.length > 0 && (
         <div style={{ ...cardStyle, borderLeft: "4px solid #fbbf24", marginTop: 24 }}>
@@ -414,7 +414,7 @@ export function PurchasesPage() {
                       <td style={tdStyle}>
                         <button
                           onClick={() => removeLine(line.variantId)}
-                          style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
+                          style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
                         >
                           ✕
                         </button>
@@ -468,7 +468,7 @@ export function PurchasesPage() {
             </label>
           )}
 
-          {error && <p style={{ color: "#f87171" }}>{error}</p>}
+          {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
             {saving ? t("purchases.saving") : t("purchases.submit")}

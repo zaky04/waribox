@@ -604,7 +604,7 @@ export function SettingsPage() {
             )}
           </div>
           {logoError && (
-            <p style={{ color: "#f87171", fontSize: 13 }}>{logoError}</p>
+            <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{logoError}</p>
           )}
         </div>
 
@@ -871,7 +871,7 @@ export function SettingsPage() {
             </>
           ) : (
             <>
-              <p style={{ color: "#fdba74", fontSize: 13 }}>{t("settings.backups.noFsSupport")}</p>
+              <p style={{ color: "var(--color-warning)", fontSize: 13 }}>{t("settings.backups.noFsSupport")}</p>
               <button
                 style={{
                   ...primaryButtonStyle,
@@ -887,7 +887,7 @@ export function SettingsPage() {
                 {downloadingBackup ? t("settings.backups.downloading") : t("settings.backups.downloadNow")}
               </button>
               {downloadBackupError && (
-                <p style={{ color: "#f87171", fontSize: 13 }}>{downloadBackupError}</p>
+                <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{downloadBackupError}</p>
               )}
             </>
           )}
@@ -917,8 +917,8 @@ export function SettingsPage() {
               style={{ display: "none" }}
             />
           </label>
-          {importError && <p style={{ color: "#f87171", fontSize: 13 }}>{importError}</p>}
-          {importInfo && <p style={{ color: "#86efac", fontSize: 13 }}>{importInfo}</p>}
+          {importError && <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{importError}</p>}
+          {importInfo && <p style={{ color: "var(--color-success)", fontSize: 13 }}>{importInfo}</p>}
         </div>
 
         <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
@@ -949,7 +949,7 @@ export function SettingsPage() {
           </button>
         </div>
 
-        {backupError && <p style={{ color: "#f87171" }}>{backupError}</p>}
+        {backupError && <p style={{ color: "var(--color-danger)" }}>{backupError}</p>}
 
         <div className="table-scroll">
           <table style={tableStyle}>
@@ -1010,8 +1010,8 @@ export function SettingsPage() {
             placeholder={t("settings.maintenance.codePlaceholder")}
           />
         </label>
-        {maintenanceCodeError && <p style={{ color: "#f87171", fontSize: 13 }}>{maintenanceCodeError}</p>}
-        {maintenanceCodeSaved && <p style={{ color: "#86efac", fontSize: 13 }}>{t("settings.maintenance.codeSaved")}</p>}
+        {maintenanceCodeError && <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{maintenanceCodeError}</p>}
+        {maintenanceCodeSaved && <p style={{ color: "var(--color-success)", fontSize: 13 }}>{t("settings.maintenance.codeSaved")}</p>}
         <button
           style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14, alignSelf: "flex-start" }}
           onClick={handleSaveMaintenanceCode}
@@ -1024,7 +1024,7 @@ export function SettingsPage() {
           <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
             <strong style={{ fontSize: 14 }}>{t("settings.maintenance.updateHeading")}</strong>
             <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("settings.maintenance.updateHint")}</p>
-            <p style={{ color: "#facc15", fontSize: 13 }}>{t("settings.maintenance.updateWarning")}</p>
+            <p style={{ color: "var(--color-caution)", fontSize: 13 }}>{t("settings.maintenance.updateWarning")}</p>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <button
                 style={{
@@ -1052,7 +1052,7 @@ export function SettingsPage() {
               />
             </label>
             {updateStep && <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{updateStep}</p>}
-            {updateError && <p style={{ color: "#f87171", fontSize: 13 }}>{updateError}</p>}
+            {updateError && <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{updateError}</p>}
             {updateReadyToClose ? (
               <button
                 style={{
@@ -1080,8 +1080,8 @@ export function SettingsPage() {
         )}
       </div>
 
-      {error && <p style={{ color: "#f87171" }}>{error}</p>}
-      {saved && <p style={{ color: "#86efac" }}>{t("settings.saved")}</p>}
+      {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
+      {saved && <p style={{ color: "var(--color-success)" }}>{t("settings.saved")}</p>}
 
       <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
         {saving ? t("settings.saving") : t("settings.save")}

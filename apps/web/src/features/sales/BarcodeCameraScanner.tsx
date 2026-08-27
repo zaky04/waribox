@@ -134,7 +134,7 @@ export function BarcodeCameraScanner({ onDetected, onClose }: BarcodeCameraScann
         />
       </div>
       {error && (
-        <p style={{ color: "#f87171", marginTop: 16, textAlign: "center", maxWidth: 400 }}>{error}</p>
+        <p style={{ color: "var(--color-danger)", marginTop: 16, textAlign: "center", maxWidth: 400 }}>{error}</p>
       )}
       {!error && (
         <p style={{ color: "#e2e8f0", marginTop: 16, textAlign: "center" }}>{t("sales.scanner.instructions")}</p>

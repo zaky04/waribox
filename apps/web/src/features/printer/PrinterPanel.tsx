@@ -59,7 +59,7 @@ export function PrinterPanel() {
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("printer.noneAvailable")}</p>
       )}
 
-      {error && <p style={{ color: "#f87171" }}>{error}</p>}
+      {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
     </div>
   );
 }

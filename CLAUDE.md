@@ -2476,6 +2476,87 @@ correctement les insets système au moteur CSS de la page (relais natif
 Kotlin manquant plutôt qu'un problème résolvable en CSS seul), auquel cas
 il faudrait ajouter la relève côté Kotlin (`ViewCompat.setOnApplyWindowInsetsListener`).
 
+### 2026-08-18 — Audit complet (sécurité, bugs, écrans, fonctionnalités) : 2 correctifs
+
+**Contexte** : demande explicite d'un audit complet — fonctionnalités,
+adaptation à tous les écrans, bugs, failles de sécurité. Méthode : lecture
+systématique de toutes les fonctions de mutation de `packages/core`
+(recensées via `grep`, 65 fonctions), recherche d'injection SQL/XSS/secrets
+exposés, calcul réel (formule WCAG, pas à l'œil) du contraste des couleurs
+de statut, et re-balayage des largeurs déjà couvertes par les sessions
+précédentes. Rapport complet publié en Artifact ("WariBox Audit").
+
+**Faille de sécurité confirmée et corrigée** :
+[LoyaltyService.adjustPoints](packages/core/src/services/LoyaltyService.ts)
+— seule fonction de mutation du projet sans aucune vérification de
+permission (les 40 autres l'ont toutes déjà, voir audit du 2026-08-13).
+N'importe quel compte connecté pouvait l'appeler directement (ex. console
+du navigateur) pour créditer/débiter les points de fidélité de n'importe
+quel client, sans limite — points convertibles en vraie remise sur une
+vente (`pointsToDiscount`), donc un vecteur de fraude réel, pas cosmétique.
+Le bouton "Ajuster points" (`CustomersPage.tsx`) n'était lui-même gardé que
+par la permission de l'onglet Clients (`manage_customers`), que Vendeur
+possède par défaut. **Corrigé** : `requirePermission(actingPermissions,
+"manage_customers")` ajouté, `actingPermissions: PermissionSet` en 3e
+paramètre (même patron que les 40 autres), appelant (`CustomersPage.tsx`)
+mis à jour pour passer `user.permissions`. Vérifié dans le navigateur :
+fonctionne toujours normalement pour Admin (50 points crédités sur un
+client de test), aucune autre régression (`adjustPoints` n'a qu'un seul
+appelant dans tout le projet).
+
+**Bug de lisibilité confirmé et corrigé — contraste des couleurs de statut** :
+4 couleurs fixes (`#f87171` rouge, `#86efac` vert, `#fdba74` orange,
+`#facc15` jaune), utilisées comme couleur de texte brut directement sur le
+fond de page dans **84 endroits sur 28 fichiers** (erreurs de formulaire,
+confirmations, soldes en retard, bordures d'accent de carte). Ces valeurs
+sont bien choisies pour le thème **sombre** (6.5:1 à 12.7:1 de contraste
+contre `--color-bg` sombre, largement au-dessus du minimum WCAG AA de
+4.5:1) mais s'effondrent en thème **clair** (1.3:1 à 2.6:1 — quasi
+invisibles). *Note méthodologique* : un premier calcul de contraste fait
+plus tôt dans cette session avait un bug de découpage du code hex
+(`slice(1,3)` au lieu de `slice(0,2)`) qui donnait des chiffres faux
+laissant croire à un problème dans les deux thèmes — recalculé et vérifié
+à la main avant de corriger quoi que ce soit, voir historique de la
+conversation.
+
+**Fait** : 4 nouvelles variables CSS dans
+[index.css](apps/web/src/app/index.css) (`--color-danger`,
+`--color-success`, `--color-warning`, `--color-caution`), avec des valeurs
+distinctes pour `:root` (sombre, valeurs existantes conservées telles
+quelles) et `:root[data-theme="light"]` (nouvelles valeurs plus foncées,
+chacune vérifiée ≥4.5:1 contre `--color-bg` clair : rouge `#b91c1c` 6.18:1,
+vert `#0e7a37` 5.20:1, orange `#a3410f` 6.04:1, jaune `#a16207` 4.71:1 — le
+jaune est le plus juste des quatre, intrinsèquement le plus difficile à
+foncer tout en restant reconnaissable comme jaune sur fond blanc plutôt que
+comme brun, pas un raccourci pris ici). Les 84 occurrences remplacées par
+les variables correspondantes via un script Node ponctuel (remplacement
+littéral exact par fichier, pas de regex approximative) — 83 sur 84
+automatiques, 1 corrigée manuellement (espacement différent de celui
+attendu). **Volontairement pas touché** : `SimpleChart.tsx` (couleurs de
+barres de graphique, pas du texte), `sharedStyles.ts` `BADGE_COLORS`
+(paires fond+texte auto-contenues, contraste interne à la pastille,
+indépendant du thème de la page — un système différent, pas concerné par
+ce bug), et le fond du bouton "Fermer maintenant" de Paramètres
+(`background:`, pas `color:` — texte déjà foncé dessus, non concerné).
+
+**Vérifié dans le navigateur** : déclenché une vraie erreur de validation
+et un vrai message "Enregistré." — couleur calculée confirmée
+`rgb(185, 28, 28)` (= `#b91c1c`) en thème clair, `rgb(248, 113, 113)`
+(= `#f87171`, valeur d'origine inchangée) en thème sombre après bascule en
+direct sans rechargement, `rgb(134, 239, 172)` (= `#86efac`) pour un
+message de succès en thème sombre. `pnpm run build` et les 20 tests
+unitaires passent.
+
+**Reste du rapport d'audit** (voir Artifact "WariBox Audit" pour le détail
+complet) : aucune injection SQL, aucun XSS, aucun secret exposé, session
+non persistée, hachage Argon2id partout, CSP Tauri correcte, OAuth Google
+Drive en PKCE sans client secret — tout confirmé sain, rien à corriger. 12
+largeurs d'écran vérifiées sans débordement (320px à 1200px, portrait et
+paysage, y compris un cas non testé avant cette session : téléphone en
+paysage 812×375). Un seul point encore en attente de confirmation
+appareil réel : les zones système Android (voir entrée précédente,
+2026-08-18).
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du

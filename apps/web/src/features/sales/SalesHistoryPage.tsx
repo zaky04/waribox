@@ -187,7 +187,7 @@ export function SalesHistoryPage() {
     <main style={pageStyle}>
       <h1>{t("salesHistory.title")}</h1>
 
-      {reportError && <div style={{ color: "#f87171" }}>{reportError}</div>}
+      {reportError && <div style={{ color: "var(--color-danger)" }}>{reportError}</div>}
 
       <FilterBar
         from={filters.from}

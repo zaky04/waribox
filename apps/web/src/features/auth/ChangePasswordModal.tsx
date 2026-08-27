@@ -91,8 +91,8 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
           />
         </label>
 
-        {error && <p style={{ color: "#f87171" }}>{error}</p>}
-        {saved && <p style={{ color: "#86efac" }}>{t("auth.changePassword.saved")}</p>}
+        {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
+        {saved && <p style={{ color: "var(--color-success)" }}>{t("auth.changePassword.saved")}</p>}
 
         <div style={{ display: "flex", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>

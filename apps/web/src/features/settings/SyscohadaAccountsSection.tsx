@@ -182,8 +182,8 @@ export function SyscohadaAccountsSection() {
         </label>
       </div>
 
-      {accountsError && <p style={{ color: "#f87171", fontSize: 13 }}>{accountsError}</p>}
-      {accountsSaved && <p style={{ color: "#86efac", fontSize: 13 }}>{t("syscohadaSection.saved")}</p>}
+      {accountsError && <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{accountsError}</p>}
+      {accountsSaved && <p style={{ color: "var(--color-success)", fontSize: 13 }}>{t("syscohadaSection.saved")}</p>}
       <button style={{ ...primaryButtonStyle, marginTop: 8 }} onClick={handleSaveAccounts} disabled={savingAccounts}>
         {savingAccounts ? t("syscohadaSection.saving") : t("syscohadaSection.saveAccounts")}
       </button>
@@ -269,7 +269,7 @@ export function SyscohadaAccountsSection() {
         </tbody>
       </table>
       </div>
-      {mappingError && <p style={{ color: "#f87171", fontSize: 13 }}>{mappingError}</p>}
+      {mappingError && <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{mappingError}</p>}
       <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("syscohadaSection.footerHint")}</p>
     </div>
   );

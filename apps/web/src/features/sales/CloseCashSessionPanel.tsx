@@ -35,7 +35,7 @@ export function CloseCashSessionPanel({ expectedAmount, onClose, onCancel }: Clo
         {t("sales.closeSession.countedAmount")}
         <input style={inputStyle} type="number" value={counted} onChange={(e) => setCounted(e.target.value)} />
       </label>
-      <p style={{ color: difference === 0 ? "#86efac" : "#fdba74" }}>
+      <p style={{ color: difference === 0 ? "var(--color-success)" : "var(--color-warning)" }}>
         {t("sales.closeSession.difference")} {difference > 0 ? "+" : ""}
         {difference}
       </p>

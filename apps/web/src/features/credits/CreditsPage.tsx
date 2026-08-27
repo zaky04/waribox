@@ -285,7 +285,7 @@ export function CreditsPage() {
         </table>
       </div>
 
-      {error && <p style={{ color: "#f87171" }}>{error}</p>}
+      {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
     </main>
   );
 }

@@ -475,7 +475,7 @@ export function ServiceOrdersPage() {
             <div
               style={{
                 ...cardStyle,
-                borderLeft: "4px solid #86efac",
+                borderLeft: "4px solid var(--color-success)",
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "space-between",
@@ -522,7 +522,7 @@ export function ServiceOrdersPage() {
               </div>
             </div>
           )}
-          {printError && <p style={{ color: "#f87171" }}>{printError}</p>}
+          {printError && <p style={{ color: "var(--color-danger)" }}>{printError}</p>}
 
           <div className="cart-layout-grid">
             <div style={cardStyle}>
@@ -586,7 +586,7 @@ export function ServiceOrdersPage() {
                           <td style={tdStyle}>
                             <button
                               onClick={() => removeLine(line.key)}
-                              style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
+                              style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
                             >
                               ✕
                             </button>
@@ -649,7 +649,7 @@ export function ServiceOrdersPage() {
                         ...inputStyle,
                         border:
                           needsCustomerIdentification && !newCustomerName.trim()
-                            ? "1px solid #f87171"
+                            ? "1px solid var(--color-danger)"
                             : inputStyle.border,
                       }}
                       value={newCustomerName}
@@ -695,7 +695,7 @@ export function ServiceOrdersPage() {
                 />
               </label>
 
-              {checkoutError && <p style={{ color: "#f87171" }}>{checkoutError}</p>}
+              {checkoutError && <p style={{ color: "var(--color-danger)" }}>{checkoutError}</p>}
 
               <button style={primaryButtonStyle} onClick={handleSubmit} disabled={checkingOut}>
                 {checkingOut ? t("serviceOrders.saving") : t("serviceOrders.submitAndPrint")}
@@ -835,7 +835,7 @@ export function ServiceOrdersPage() {
                                   </button>
                                 </div>
                               )}
-                              {repayError && <p style={{ color: "#f87171" }}>{repayError}</p>}
+                              {repayError && <p style={{ color: "var(--color-danger)" }}>{repayError}</p>}
                             </div>
                           </td>
                         </tr>
@@ -989,7 +989,7 @@ export function ServiceOrdersPage() {
                                 </table>
                               </div>
 
-                              {historyError && <p style={{ color: "#f87171" }}>{historyError}</p>}
+                              {historyError && <p style={{ color: "var(--color-danger)" }}>{historyError}</p>}
 
                               <button
                                 style={primaryButtonStyle}

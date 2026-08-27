@@ -130,7 +130,7 @@ export function StoresSection() {
           {saving ? t("storesSection.creating") : t("storesSection.add")}
         </button>
       </div>
-      {error && <p style={{ color: "#f87171", fontSize: 13 }}>{error}</p>}
+      {error && <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{error}</p>}
     </div>
   );
 }

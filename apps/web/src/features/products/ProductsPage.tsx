@@ -246,7 +246,7 @@ export function ProductsPage() {
           )}
         </div>
       </div>
-      {labelsError && <p style={{ color: "#f87171" }}>{labelsError}</p>}
+      {labelsError && <p style={{ color: "var(--color-danger)" }}>{labelsError}</p>}
 
       {showForm && (
         <div style={cardStyle}>
@@ -348,7 +348,7 @@ export function ProductsPage() {
             />
           </label>
 
-          {error && <p style={{ color: "#f87171" }}>{error}</p>}
+          {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
             {saving ? t("products.saving") : editingProductId ? t("products.saveChanges") : t("products.create")}

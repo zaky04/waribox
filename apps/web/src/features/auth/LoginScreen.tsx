@@ -52,7 +52,7 @@ export function LoginScreen() {
           />
         </label>
 
-        {error && <p style={{ color: "#f87171" }}>{error}</p>}
+        {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
         <button type="submit" style={authPrimaryButtonStyle} disabled={loading}>
           {loading ? t("auth.login.connecting") : t("auth.login.submit")}

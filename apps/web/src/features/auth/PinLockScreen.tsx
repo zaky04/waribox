@@ -60,7 +60,7 @@ export function PinLockScreen() {
         ))}
       </div>
 
-      {error && <p style={{ color: "#f87171" }}>{error}</p>}
+      {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
         {KEYPAD.map((key, i) => (

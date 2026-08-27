@@ -465,7 +465,7 @@ export function ReportsPage() {
             </div>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("reports.margin")}</span>
-              <strong style={{ fontSize: 22, color: marginsSummary.margin >= 0 ? "#86efac" : "#f87171" }}>
+              <strong style={{ fontSize: 22, color: marginsSummary.margin >= 0 ? "var(--color-success)" : "var(--color-danger)" }}>
                 {marginsSummary.margin.toFixed(0)} ({marginsSummary.marginRate.toFixed(1)}%)
               </strong>
             </div>
@@ -508,7 +508,7 @@ export function ReportsPage() {
                   <tr key={p.productId}>
                     <td style={tdStyle}>{p.name}</td>
                     <td style={tdStyle}>{p.quantity}</td>
-                    <td style={{ ...tdStyle, color: p.margin >= 0 ? "#86efac" : "#f87171" }}>
+                    <td style={{ ...tdStyle, color: p.margin >= 0 ? "var(--color-success)" : "var(--color-danger)" }}>
                       {p.margin.toFixed(0)}
                     </td>
                     <td style={tdStyle}>{p.marginRate.toFixed(1)}%</td>
@@ -595,7 +595,7 @@ export function ReportsPage() {
                         <td style={tdStyle}>{y.year}</td>
                         <td style={tdStyle}>{y.projectedIn.toFixed(0)}</td>
                         <td style={tdStyle}>{y.projectedOut.toFixed(0)}</td>
-                        <td style={{ ...tdStyle, color: y.projectedNet >= 0 ? "#86efac" : "#f87171" }}>
+                        <td style={{ ...tdStyle, color: y.projectedNet >= 0 ? "var(--color-success)" : "var(--color-danger)" }}>
                           {y.projectedNet.toFixed(0)}
                         </td>
                         <td style={tdStyle}>{y.cumulative.toFixed(0)}</td>
@@ -681,7 +681,7 @@ export function ReportsPage() {
                     <td
                       style={{
                         ...tdStyle,
-                        color: r.difference == null ? undefined : r.difference === 0 ? "#86efac" : "#f87171",
+                        color: r.difference == null ? undefined : r.difference === 0 ? "var(--color-success)" : "var(--color-danger)",
                       }}
                     >
                       {r.difference != null ? r.difference.toFixed(0) : "—"}
@@ -703,7 +703,7 @@ export function ReportsPage() {
 
       {subTab === "service_orders" && serviceOrdersEnabled && (
         <>
-          {serviceOrderReportError && <div style={{ color: "#f87171", marginTop: 16 }}>{serviceOrderReportError}</div>}
+          {serviceOrderReportError && <div style={{ color: "var(--color-danger)", marginTop: 16 }}>{serviceOrderReportError}</div>}
           <div className="table-scroll" style={{ marginTop: 24 }}>
             <table style={tableStyle}>
               <thead>

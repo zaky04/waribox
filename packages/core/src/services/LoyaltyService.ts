@@ -2,6 +2,7 @@ import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
 import { desc, eq } from "drizzle-orm";
+import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { logAction } from "./AuditService";
 import { getSettings } from "./SettingsService";
 
@@ -135,7 +136,16 @@ export interface AdjustPointsInput {
   reason?: string;
 }
 
-export async function adjustPoints(db: Database, input: AdjustPointsInput) {
+// Ajustement manuel (bonus/correction depuis Clients → Ajuster points) —
+// distinct de redeemPoints/earnPoints, qui sont des effets de bord internes
+// d'une vente et ne prennent pas de permission propre. Les points sont
+// convertibles en vraie remise sur une vente (voir pointsToDiscount) : sans
+// cette vérification, n'importe quel compte connecté pouvait appeler cette
+// fonction directement (ex. console du navigateur) pour créditer n'importe
+// quel client, en contournant la restriction purement visuelle de l'onglet
+// Clients (voir audit du 2026-08-18).
+export async function adjustPoints(db: Database, input: AdjustPointsInput, actingPermissions: PermissionSet) {
+  requirePermission(actingPermissions, "manage_customers");
   const customer = await db
     .select()
     .from(schema.customers)

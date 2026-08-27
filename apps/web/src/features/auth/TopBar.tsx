@@ -35,7 +35,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
             gap: 8,
             padding: "8px 16px",
             background: "#7c2d12",
-            color: "#fdba74",
+            color: "var(--color-warning)",
             fontSize: 14,
           }}
         >
@@ -47,8 +47,8 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
             onClick={returnToSelf}
             style={{
               background: "transparent",
-              border: "1px solid #fdba74",
-              color: "#fdba74",
+              border: "1px solid var(--color-warning)",
+              color: "var(--color-warning)",
               borderRadius: 8,
               padding: "4px 10px",
               cursor: "pointer",

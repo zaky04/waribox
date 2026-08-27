@@ -134,7 +134,7 @@ export function SuppliersPage() {
             />
           </label>
 
-          {error && <p style={{ color: "#f87171" }}>{error}</p>}
+          {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
             {saving ? t("suppliers.saving") : editingId ? t("suppliers.saveChanges") : t("suppliers.create")}
@@ -159,7 +159,7 @@ export function SuppliersPage() {
                 <td style={tdStyle}>{s.name}</td>
                 <td style={tdStyle}>{s.phone ?? "—"}</td>
                 <td style={tdStyle}>{s.contactPerson ?? "—"}</td>
-                <td style={{ ...tdStyle, color: debtBalance(s.id) > 0 ? "#fdba74" : undefined }}>
+                <td style={{ ...tdStyle, color: debtBalance(s.id) > 0 ? "var(--color-warning)" : undefined }}>
                   {debtBalance(s.id) > 0 ? debtBalance(s.id) : "—"}
                 </td>
                 <td style={tdStyle}>

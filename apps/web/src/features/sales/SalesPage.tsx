@@ -452,7 +452,7 @@ export function SalesPage() {
         <div
           style={{
             ...cardStyle,
-            borderLeft: "4px solid #86efac",
+            borderLeft: "4px solid var(--color-success)",
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
@@ -522,7 +522,7 @@ export function SalesPage() {
         </div>
       )}
 
-      {printError && <p style={{ color: "#f87171" }}>{printError}</p>}
+      {printError && <p style={{ color: "var(--color-danger)" }}>{printError}</p>}
 
       <div className="cart-layout-grid">
         <div>
@@ -662,7 +662,7 @@ export function SalesPage() {
                         <td style={tdStyle}>
                           {line.productName}
                           {promo.percent > 0 && (
-                            <div style={{ color: "#86efac", fontSize: 12 }}>
+                            <div style={{ color: "var(--color-success)", fontSize: 12 }}>
                               {t("sales.promo")}
                               {promo.name ? ` ${promo.name}` : ""} -{promo.percent}%
                             </div>
@@ -680,7 +680,7 @@ export function SalesPage() {
                         <td style={tdStyle}>
                           <button
                             onClick={() => removeLine(line.variantId)}
-                            style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
+                            style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
                           >
                             ✕
                           </button>
@@ -701,19 +701,19 @@ export function SalesPage() {
               {t("sales.tax")} {taxTotal.toFixed(0)}
             </div>
             {productPromoDiscount > 0 && (
-              <div style={{ color: "#86efac" }}>
+              <div style={{ color: "var(--color-success)" }}>
                 {t("sales.productPromoDiscount")} -{productPromoDiscount.toFixed(0)}
               </div>
             )}
             {invoicePromoDiscount > 0 && (
-              <div style={{ color: "#86efac" }}>
+              <div style={{ color: "var(--color-success)" }}>
                 {t("sales.invoicePromoDiscount")}
                 {checkedInvoicePromo ? ` ${checkedInvoicePromo.name}` : ""} : -
                 {invoicePromoDiscount.toFixed(0)}
               </div>
             )}
             {redemptionDiscount > 0 && (
-              <div style={{ color: "#86efac" }}>
+              <div style={{ color: "var(--color-success)" }}>
                 {t("sales.loyaltyDiscount")} -{redemptionDiscount.toFixed(0)}
               </div>
             )}
@@ -765,7 +765,7 @@ export function SalesPage() {
               <input
                 style={{
                   ...inputStyle,
-                  border: needsCustomerIdentification && !newCustomerName.trim() ? "1px solid #f87171" : inputStyle.border,
+                  border: needsCustomerIdentification && !newCustomerName.trim() ? "1px solid var(--color-danger)" : inputStyle.border,
                 }}
                 value={newCustomerName}
                 onChange={(e) => setNewCustomerName(e.target.value)}
@@ -818,7 +818,7 @@ export function SalesPage() {
             </label>
           )}
 
-          {checkoutError && <p style={{ color: "#f87171" }}>{checkoutError}</p>}
+          {checkoutError && <p style={{ color: "var(--color-danger)" }}>{checkoutError}</p>}
 
           <button style={primaryButtonStyle} onClick={handleCheckout} disabled={checkingOut}>
             {checkingOut ? t("sales.checkingOut") : t("sales.checkout")}

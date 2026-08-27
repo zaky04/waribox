@@ -20,6 +20,18 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
   --shadow-card-strong: 0 4px 12px rgba(0, 0, 0, 0.45), 0 16px 40px -16px rgba(56, 189, 248, 0.25);
 
+  /* Couleurs de statut (texte d'erreur/succès/avertissement, souvent posé
+     directement sur le fond de page) — valeurs pastel choisies pour le
+     thème sombre (contraste 6.5:1 à 12.7:1 contre --color-bg sombre,
+     largement au-dessus du minimum WCAG AA de 4.5:1). Ces mêmes valeurs
+     tombent à 1.3:1-2.6:1 en thème clair (quasi invisibles) — d'où la
+     redéfinition complète dans :root[data-theme="light"] ci-dessous,
+     plutôt qu'une seule teinte "à peu près correcte" pour les deux. */
+  --color-danger: #f87171;
+  --color-success: #86efac;
+  --color-warning: #fdba74;
+  --color-caution: #facc15;
+
   /* Halos décoratifs discrets en arrière-plan — profondeur sans gêner la
      lecture, fixés (pas de répétition ni de défilement). */
   --bg-glow: radial-gradient(circle at 12% -10%, rgba(56, 189, 248, 0.14), transparent 45%),
@@ -36,6 +48,16 @@
   --color-accent-soft: rgba(56, 189, 248, 0.12);
   --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 20px -10px rgba(15, 23, 42, 0.12);
   --shadow-card-strong: 0 4px 10px rgba(15, 23, 42, 0.06), 0 16px 32px -14px rgba(56, 189, 248, 0.2);
+
+  /* Contraste vérifié contre --color-bg clair (#f8fafc) : 6.18:1 / 5.20:1 /
+     6.04:1 / 4.71:1 — tous au-dessus du minimum WCAG AA (4.5:1). Le jaune
+     est le plus juste des quatre : c'est la teinte la plus difficile à
+     foncer tout en restant reconnaissable comme jaune plutôt que comme
+     brun sur un fond blanc, pas un raccourci pris ici. */
+  --color-danger: #b91c1c;
+  --color-success: #0e7a37;
+  --color-warning: #a3410f;
+  --color-caution: #a16207;
 
   --bg-glow: radial-gradient(circle at 12% -10%, rgba(56, 189, 248, 0.1), transparent 45%),
     radial-gradient(circle at 100% 0%, rgba(129, 140, 248, 0.08), transparent 40%);

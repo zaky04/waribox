@@ -163,12 +163,16 @@ export function CustomersPage() {
 
     setAdjusting(true);
     try {
-      await adjustPoints(db, {
-        customerId: customer.id,
-        pointsDelta: delta,
-        userId: user.id,
-        reason: pointsReason.trim() || undefined,
-      });
+      await adjustPoints(
+        db,
+        {
+          customerId: customer.id,
+          pointsDelta: delta,
+          userId: user.id,
+          reason: pointsReason.trim() || undefined,
+        },
+        user.permissions,
+      );
       setAdjustingId(null);
       await refresh();
     } catch (err) {
@@ -214,7 +218,7 @@ export function CustomersPage() {
             <input style={inputStyle} value={address} onChange={(e) => setAddress(e.target.value)} />
           </label>
 
-          {error && <p style={{ color: "#f87171" }}>{error}</p>}
+          {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
             {saving ? t("customers.saving") : editingId ? t("customers.saveChanges") : t("customers.create")}
@@ -241,7 +245,7 @@ export function CustomersPage() {
                 <td style={tdStyle}>{c.fullName}</td>
                 <td style={tdStyle}>{c.phone ?? "—"}</td>
                 <td style={tdStyle}>{c.email ?? "—"}</td>
-                <td style={{ ...tdStyle, color: creditBalance(c.id) > 0 ? "#fdba74" : undefined }}>
+                <td style={{ ...tdStyle, color: creditBalance(c.id) > 0 ? "var(--color-warning)" : undefined }}>
                   {creditBalance(c.id) > 0 ? creditBalance(c.id) : "—"}
                 </td>
                 <td style={tdStyle}>{c.loyaltyPoints}</td>
@@ -306,7 +310,7 @@ export function CustomersPage() {
                     </div>
                   )}
                   {adjustingId === c.id && pointsError && (
-                    <p style={{ color: "#f87171", fontSize: 13 }}>{pointsError}</p>
+                    <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{pointsError}</p>
                   )}
                 </td>
               </tr>

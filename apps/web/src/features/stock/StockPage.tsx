@@ -327,7 +327,7 @@ export function StockPage() {
       <h1>{t("stock.title")}</h1>
 
       {lowStock.length > 0 && (
-        <div style={{ ...cardStyle, borderLeft: "4px solid #f87171" }}>
+        <div style={{ ...cardStyle, borderLeft: "4px solid var(--color-danger)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
             <strong>{t("stock.lowStockAlerts")}</strong>
             {lowStockAlertPhone && (
@@ -357,7 +357,7 @@ export function StockPage() {
       )}
 
       {expiring.length > 0 && (
-        <div style={{ ...cardStyle, borderLeft: "4px solid #facc15" }}>
+        <div style={{ ...cardStyle, borderLeft: "4px solid var(--color-caution)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
             <strong>{t("stock.expiringSoon", { days: EXPIRY_WARNING_DAYS })}</strong>
             {lowStockAlertPhone && (
@@ -514,7 +514,7 @@ export function StockPage() {
               </>
             )}
 
-            {entryError && <p style={{ color: "#f87171" }}>{entryError}</p>}
+            {entryError && <p style={{ color: "var(--color-danger)" }}>{entryError}</p>}
 
             <button style={primaryButtonStyle} onClick={handleEntry} disabled={entrySaving}>
               {entrySaving ? t("stock.entry.saving") : t("stock.entry.submit")}
@@ -575,14 +575,14 @@ export function StockPage() {
               />
             </label>
 
-            {transferError && <p style={{ color: "#f87171" }}>{transferError}</p>}
+            {transferError && <p style={{ color: "var(--color-danger)" }}>{transferError}</p>}
 
             <button style={primaryButtonStyle} onClick={handleTransfer} disabled={transferSaving}>
               {transferSaving ? t("stock.transfer.transferring") : t("stock.transfer.submit")}
             </button>
           </div>
 
-          <div style={{ ...cardStyle, borderLeft: "4px solid #f87171" }}>
+          <div style={{ ...cardStyle, borderLeft: "4px solid var(--color-danger)" }}>
             <strong>{t("stock.loss.heading")}</strong>
             <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("stock.loss.hint")}</p>
             <label>
@@ -630,7 +630,7 @@ export function StockPage() {
               />
             </label>
 
-            {lossError && <p style={{ color: "#f87171" }}>{lossError}</p>}
+            {lossError && <p style={{ color: "var(--color-danger)" }}>{lossError}</p>}
 
             <button
               style={{ ...primaryButtonStyle, background: "#dc2626" }}

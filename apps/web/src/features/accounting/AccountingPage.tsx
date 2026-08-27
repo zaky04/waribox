@@ -229,7 +229,7 @@ export function AccountingPage() {
                 <div style={cardStyle}>
                   <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.netIncome")}</span>
                   <strong
-                    style={{ fontSize: 22, color: incomeStatement.netIncome >= 0 ? "#86efac" : "#f87171" }}
+                    style={{ fontSize: 22, color: incomeStatement.netIncome >= 0 ? "var(--color-success)" : "var(--color-danger)" }}
                   >
                     {incomeStatement.netIncome.toFixed(0)}
                   </strong>
@@ -309,7 +309,7 @@ export function AccountingPage() {
             </div>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.equity")}</span>
-              <strong style={{ fontSize: 22, color: balanceSheet.equity >= 0 ? "#86efac" : "#f87171" }}>
+              <strong style={{ fontSize: 22, color: balanceSheet.equity >= 0 ? "var(--color-success)" : "var(--color-danger)" }}>
                 {balanceSheet.equity.toFixed(0)}
               </strong>
             </div>

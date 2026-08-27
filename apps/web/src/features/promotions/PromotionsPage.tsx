@@ -234,7 +234,7 @@ export function PromotionsPage() {
           </div>
         )}
 
-        {error && <p style={{ color: "#f87171" }}>{error}</p>}
+        {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
         <button style={primaryButtonStyle} onClick={handleCreate} disabled={saving}>
           {saving ? t("promotions.creating") : t("promotions.create")}

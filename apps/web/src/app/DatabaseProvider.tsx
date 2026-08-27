@@ -26,7 +26,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
 
   if (error) {
     return (
-      <div style={{ padding: 24, color: "#f87171" }}>
+      <div style={{ padding: 24, color: "var(--color-danger)" }}>
         {t("database.initError", { error })}
       </div>
     );
