@@ -278,15 +278,11 @@
       "failure": "Failed",
       "none": "No backups yet.",
       "clientIdRequired": "Enter a Google Client ID before signing in.",
+      "androidAutoLocation": "Saved automatically to the device's Downloads folder.",
       "errors": {
         "noFolderChosen": "No backup folder chosen.",
         "writePermissionDenied": "Write permission denied for the backup folder."
       }
-    },
-    "documents": {
-      "heading": "Generated documents",
-      "hint": "Folder where receipts, tickets, labels, and exported reports (PDF/Excel) from the app will be saved — with no folder chosen, each export will ask where to save it.",
-      "clearFolder": "Stop using this folder"
     },
     "maintenance": {
       "heading": "Maintenance",

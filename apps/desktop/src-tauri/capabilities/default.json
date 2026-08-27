@@ -19,15 +19,17 @@
     "fs:default",
     {
       "identifier": "fs:allow-write-file",
-      "allow": [{ "path": "**" }]
+      "allow": [{ "path": "**" }, { "path": "$DOWNLOAD/**" }]
     },
     {
       "identifier": "fs:allow-mkdir",
-      "allow": [{ "path": "**" }]
+      "allow": [{ "path": "**" }, { "path": "$DOWNLOAD/**" }]
     },
     {
       "identifier": "fs:allow-exists",
-      "allow": [{ "path": "**" }]
-    }
+      "allow": [{ "path": "**" }, { "path": "$DOWNLOAD/**" }]
+    },
+    "fs:scope-download",
+    "fs:scope-download-recursive"
   ]
 }

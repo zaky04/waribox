@@ -2660,6 +2660,92 @@ pas fonctionner telle quelle (le mapping `content://` → écriture
 préconfiguré) reste un filet de repli qui a de meilleures chances de
 fonctionner nativement, SAF gérant lui-même l'écriture dans ce cas.
 
+### 2026-08-18 — Le sélecteur de dossier natif Android n'existe pas : pivot vers une écriture directe dans Téléchargements
+
+**Contexte** : le point signalé comme "pas vérifiable dans cet
+environnement" de l'entrée précédente vient de trancher tout seul —
+l'appareil réel du porteur du projet ("bluetasks") a rejeté l'appel
+`pickNativeFolder` avec l'erreur exacte **"Folder picker is not
+implemented on mobile"**, capture d'écran à l'appui.
+
+**Cause racine** : contrairement à l'hypothèse de l'entrée précédente (qui
+pariait sur Storage Access Framework via `plugin-dialog`), le sélecteur de
+dossier de `@tauri-apps/plugin-dialog` (`open({ directory: true })`)
+**n'est tout simplement pas implémenté sur mobile** — une limitation du
+plugin Tauri lui-même, documentée nulle part de façon évidente au moment
+d'écrire le correctif précédent, et qu'aucune configuration côté app
+n'aurait pu contourner. Le sélecteur de fichier (`.exe`/`.msi`, desktop
+uniquement, utilisé par "Installer une mise à jour") n'est pas concerné —
+seul le mode `directory: true` est en cause.
+
+**Décision** : abandon complet de l'idée "laisser choisir un dossier" sur
+Android — puisque même le sélecteur natif s'avère indisponible, aucune
+approche interactive ne peut être garantie sur cette plateforme. Écriture
+directe et **sans aucune boîte de dialogue** dans le dossier Téléchargements
+public de l'appareil, via `BaseDirectory.Download` de `@tauri-apps/plugin-fs`
+— une fonctionnalité documentée et non-interactive du plugin (contrairement
+au sélecteur de dossier, qui l'était mais cassé). Rejoint ce que le porteur
+du projet avait déjà dit accepter en repli plus tôt dans ce chantier
+("si il atterrit dans le dossier téléchargement je n'ai rien contre").
+
+**Fait** — [packages/sync/src/nativeFolder.ts](packages/sync/src/nativeFolder.ts)
+réécrit de zéro, **tout le concept de choix/mémorisation de dossier
+supprimé** (`NativeFolderKind`, `loadNativeFolderPath`, `pickNativeFolder`,
+`clearNativeFolderPath`, `writeNativeFile`, `saveNativeDocument` —
+disparus). Ne reste que `isAndroidTauriRuntime()` (inchangée) et une
+nouvelle fonction unique, `writeToAndroidDownloads(filename, bytes)` :
+`writeFile(filename, bytes, { baseDir: BaseDirectory.Download })`, sans
+dialogue, sans chemin à construire à la main.
+- [capabilities/default.json](apps/desktop/src-tauri/capabilities/default.json) :
+  portée `$DOWNLOAD/**` ajoutée aux permissions `fs:allow-write-file`/
+  `allow-mkdir`/`allow-exists` (en plus du `**` déjà large existant), et les
+  deux permissions de portée prédéfinies `fs:scope-download`/
+  `fs:scope-download-recursive` ajoutées par précaution — `BaseDirectory.Download`
+  résout un chemin interne à `plugin-fs`, pas nécessairement couvert par un
+  simple `**` littéral selon comment ce chemin est comparé au scope. Le
+  build Tauri (`tsc -b` + `vite build` du côté web, seule partie vérifiable
+  dans cet environnement) valide déjà que rien côté TypeScript ne casse ;
+  la validation du schéma de permissions Tauri lui-même (ces deux chaînes
+  sont-elles de vrais identifiants v2 ?) ne peut être confirmée qu'au
+  prochain `tauri android build` réel.
+- [backupRunner.ts](apps/web/src/features/settings/backupRunner.ts) :
+  `runLocalBackup` appelle directement `writeToAndroidDownloads` sur
+  Android, plus de vérification "dossier déjà choisi" (il n'y a plus de
+  dossier à choisir).
+- [saveFile.ts](apps/web/src/lib/saveFile.ts) : `saveGeneratedFile` appelle
+  `writeToAndroidDownloads` au lieu de l'ancien `saveNativeDocument` — les
+  32 points d'appel existants (voir entrée précédente) n'ont pas eu besoin
+  d'être retouchés, seul le point d'entrée a changé.
+- [SettingsPage.tsx](apps/web/src/features/settings/SettingsPage.tsx) : le
+  bloc "Sauvegarde locale" sur Android n'a plus qu'un texte d'information
+  (`settings.backups.androidAutoLocation`, nouvelle clé) + le bouton
+  "Sauvegarder maintenant", sans aucun état de dossier ni bouton "Choisir un
+  dossier"/"Ne plus utiliser ce dossier". Le bloc entier "Documents
+  générés" (choix d'un dossier séparé pour reçus/rapports) est supprimé —
+  il n'y a plus rien à choisir, `saveGeneratedFile` écrit toujours au même
+  endroit. Namespace i18n `settings.documents.*` (devenu mort, confirmé par
+  recherche de `settings\.documents\.` dans `apps/web/src` : aucune
+  correspondance) retiré des deux dictionnaires.
+- Les flux desktop (`showDirectoryPicker`) et navigateur/PWA
+  (téléchargement blob) ne sont pas touchés par ce pivot — seule la branche
+  Android change.
+
+**Vérifié** : `pnpm run build` (typecheck complet du monorepo, confirme
+qu'aucune référence aux exports supprimés de `nativeFolder.ts` ne
+subsiste nulle part ailleurs dans le code) et les 20 tests unitaires
+passent. Comparaison de code directe (pas de nouvelle session navigateur)
+confirmant que la branche desktop/PWA de `saveFile.ts`/`backupRunner.ts`
+est restée octet pour octet identique à avant ce pivot.
+
+**Pas vérifiable dans cet environnement** — comme pour le correctif
+précédent, l'écriture réelle via `BaseDirectory.Download` sur un vrai
+WebView Android ne peut être exercée que sur l'appareil du porteur du
+projet. **Cette fois cependant, le mécanisme utilisé est une fonctionnalité
+documentée et non-interactive de `plugin-fs`** (par opposition à un
+sélecteur de dialogue dont le support mobile n'était pas garanti et s'est
+avéré absent) — risque résiduel jugé plus faible, mais toujours à confirmer
+sur l'appareil réel avant de considérer le sujet clos.
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du

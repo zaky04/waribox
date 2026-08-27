@@ -11,13 +11,10 @@ import {
 } from "@gestion-boutique/core";
 import { exportDatabaseFile, schema } from "@gestion-boutique/database";
 import {
-  clearNativeFolderPath,
   isAndroidTauriRuntime,
   isFileSystemAccessSupported,
   loadFolderHandle,
-  loadNativeFolderPath,
   pickBackupFolder,
-  pickNativeFolder,
 } from "@gestion-boutique/sync";
 import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
@@ -122,8 +119,6 @@ export function SettingsPage() {
   const [customDays, setCustomDays] = useState("7");
   const [googleDriveClientId, setGoogleDriveClientId] = useState("");
   const [folderName, setFolderName] = useState<string | null>(null);
-  const [nativeBackupFolderPath, setNativeBackupFolderPath] = useState<string | null>(null);
-  const [nativeDocumentsFolderPath, setNativeDocumentsFolderPath] = useState<string | null>(null);
   const [backups, setBackups] = useState<Backup[]>([]);
 
   const [backupError, setBackupError] = useState<string | null>(null);
@@ -165,8 +160,6 @@ export function SettingsPage() {
     setGoogleDriveClientId(settings.googleDriveClientId ?? "");
     setBackups(backupRows);
     setFolderName(handle?.name ?? null);
-    setNativeBackupFolderPath(loadNativeFolderPath("backup"));
-    setNativeDocumentsFolderPath(loadNativeFolderPath("documents"));
 
     setBusinessName(settings.businessName ?? "");
     setAddress(settings.address ?? "");
@@ -326,31 +319,6 @@ export function SettingsPage() {
     } catch (err) {
       setBackupError(describeError(err, t("settings.errors.folder")));
     }
-  };
-
-  const handlePickNativeBackupFolder = async () => {
-    setBackupError(null);
-    try {
-      const path = await pickNativeFolder("backup");
-      setNativeBackupFolderPath(path);
-    } catch (err) {
-      setBackupError(describeError(err, t("settings.errors.folder")));
-    }
-  };
-
-  const handlePickNativeDocumentsFolder = async () => {
-    setBackupError(null);
-    try {
-      const path = await pickNativeFolder("documents");
-      setNativeDocumentsFolderPath(path);
-    } catch (err) {
-      setBackupError(describeError(err, t("settings.errors.folder")));
-    }
-  };
-
-  const handleClearNativeDocumentsFolder = () => {
-    clearNativeFolderPath("documents");
-    setNativeDocumentsFolderPath(null);
   };
 
   const handleLocalBackupNow = async () => {
@@ -896,31 +864,14 @@ export function SettingsPage() {
             </>
           ) : isAndroidTauriRuntime() ? (
             <>
-              <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-                {t("settings.backups.currentFolder")} {nativeBackupFolderPath ?? t("settings.backups.noFolder")}
-              </p>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button
-                  style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14 }}
-                  onClick={handlePickNativeBackupFolder}
-                >
-                  {t("settings.backups.chooseFolder")}
-                </button>
-                <button
-                  style={{
-                    ...primaryButtonStyle,
-                    padding: "8px 14px",
-                    fontSize: 14,
-                    background: "transparent",
-                    border: "1px solid var(--color-border)",
-                    color: "var(--color-text)",
-                  }}
-                  onClick={handleLocalBackupNow}
-                  disabled={runningLocal || !nativeBackupFolderPath}
-                >
-                  {runningLocal ? t("settings.backups.backingUp") : t("settings.backups.backupNow")}
-                </button>
-              </div>
+              <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("settings.backups.androidAutoLocation")}</p>
+              <button
+                style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14 }}
+                onClick={handleLocalBackupNow}
+                disabled={runningLocal}
+              >
+                {runningLocal ? t("settings.backups.backingUp") : t("settings.backups.backupNow")}
+              </button>
             </>
           ) : (
             <>
@@ -1038,39 +989,6 @@ export function SettingsPage() {
           </table>
         </div>
       </div>
-
-      {isAndroidTauriRuntime() && (
-        <div style={cardStyle}>
-          <strong>{t("settings.documents.heading")}</strong>
-          <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.documents.hint")}</p>
-          <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-            {t("settings.backups.currentFolder")} {nativeDocumentsFolderPath ?? t("settings.backups.noFolder")}
-          </p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button
-              style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14 }}
-              onClick={handlePickNativeDocumentsFolder}
-            >
-              {t("settings.backups.chooseFolder")}
-            </button>
-            {nativeDocumentsFolderPath && (
-              <button
-                style={{
-                  ...primaryButtonStyle,
-                  padding: "8px 14px",
-                  fontSize: 14,
-                  background: "transparent",
-                  border: "1px solid var(--color-border)",
-                  color: "var(--color-text)",
-                }}
-                onClick={handleClearNativeDocumentsFolder}
-              >
-                {t("settings.documents.clearFolder")}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
 
       <div style={cardStyle}>
         <strong>{t("settings.maintenance.heading")}</strong>

@@ -278,15 +278,11 @@
       "failure": "Échec",
       "none": "Aucune sauvegarde pour le moment.",
       "clientIdRequired": "Renseigne un Client ID Google avant de te connecter.",
+      "androidAutoLocation": "Enregistrée automatiquement dans le dossier Téléchargements de l'appareil.",
       "errors": {
         "noFolderChosen": "Aucun dossier de sauvegarde choisi.",
         "writePermissionDenied": "Permission d'écriture refusée pour le dossier de sauvegarde."
       }
-    },
-    "documents": {
-      "heading": "Documents générés",
-      "hint": "Dossier où seront enregistrés les reçus, tickets, étiquettes et rapports exportés (PDF/Excel) depuis l'application — sans dossier choisi, chaque export demandera où l'enregistrer.",
-      "clearFolder": "Ne plus utiliser ce dossier"
     },
     "maintenance": {
       "heading": "Maintenance",

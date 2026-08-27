@@ -5,23 +5,24 @@ import {
   ensureFolderPermission,
   isAndroidTauriRuntime,
   loadFolderHandle,
-  loadNativeFolderPath,
   requestGoogleDriveAccessToken,
   uploadToGoogleDrive,
   writeBackupFile,
-  writeNativeFile,
+  writeToAndroidDownloads,
 } from "@gestion-boutique/sync";
 
 export async function runLocalBackup(db: Database): Promise<void> {
   // Sur Android, showDirectoryPicker n'est pas implémenté nativement (voir
-  // isFileSystemAccessSupported) — on passe par un vrai dossier natif choisi
-  // via plugin-dialog/plugin-fs (voir SettingsPage.tsx, bloc "Sauvegarde
-  // locale") plutôt que par l'API web, cassée sur cette plateforme.
+  // isFileSystemAccessSupported) — et le sélecteur de dossier natif de
+  // plugin-dialog ne l'est pas non plus, confirmé par un test réel sur
+  // appareil ("Folder picker is not implemented on mobile", voir journal
+  // CLAUDE.md) : on écrit directement dans le dossier Téléchargements
+  // standard, sans aucune sélection, plutôt que par l'API web (cassée sur
+  // cette plateforme).
   const useNative = isAndroidTauriRuntime();
-  const nativeFolderPath = useNative ? loadNativeFolderPath("backup") : null;
   const handle = useNative ? null : await loadFolderHandle();
 
-  if (useNative ? !nativeFolderPath : !handle) {
+  if (!useNative && !handle) {
     throw new Error(t("settings.backups.errors.noFolderChosen"));
   }
   if (handle) {
@@ -33,8 +34,8 @@ export async function runLocalBackup(db: Database): Promise<void> {
 
   try {
     const { bytes, filename } = await exportDatabaseFile();
-    if (nativeFolderPath) {
-      await writeNativeFile(nativeFolderPath, filename, bytes);
+    if (useNative) {
+      await writeToAndroidDownloads(filename, bytes);
     } else if (handle) {
       await writeBackupFile(handle, filename, bytes);
     }
