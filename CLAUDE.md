@@ -2922,6 +2922,89 @@ additive, aucun risque à lister les deux). Rebuild Android confirmé :
 contient bien `android-fs:allow-write-file` après ce correctif — nouvel
 APK envoyé au porteur du projet pour un second test réel.
 
+### 2026-08-28 — Bug persistant de texte de pied de ticket coupé : le calibrage par nombre de caractères était une hypothèse fragile, remplacé par une mesure réelle jsPDF
+
+**Contexte** : après confirmation que la sauvegarde Android fonctionne
+(entrée précédente), le porteur du projet signale un texte encore coupé
+sur le bon de dépôt PDF généré ("Conservez ce ticket, il vous sera
+demandé au retrait.") — capture d'écran à l'appui, texte tronqué
+symétriquement des deux côtés (~5 caractères manquants au début, ~5 à la
+fin). Reproduit une seconde fois sur un ticket différent (contenu
+d'articles et montants différents), avec le **même point de coupure
+exact** — écarte l'hypothèse initiale d'un cache de service worker
+obsolète (suggérée en premier lieu, mais un cache aléatoirement périmé
+n'aurait pas dû produire un point de coupure aussi identique deux fois
+de suite sur du contenu différent).
+
+**Investigation** : le correctif du 2026-08-15 (voir plus haut) avait
+déjà ajouté `wrapText`/`pushWrapped` à
+[receiptPdf.ts](packages/printer/src/receiptPdf.ts), avec une décision
+de retour à la ligne basée sur `text.length <= columns` — une hypothèse
+implicite que la taille de police calculée (`usableWidthMm / columns /
+COURIER_MM_PER_PT`) fait *exactement* correspondre `columns` caractères
+à `usableWidthMm`, donc que n'importe quelle chaîne plus courte que
+`columns` caractères tient forcément dans la largeur utile. Vérifié
+mathématiquement avec `doc.getTextWidth()` (la vraie métrique jsPDF, pas
+une estimation) sur les 45 valeurs possibles de `columns` (20 à 64, la
+plage autorisée par la validation de Paramètres) : cette hypothèse est
+correcte à ±quelques dixièmes de mm pour la plupart des valeurs, mais
+tombe pile dans une zone limite risquée pour un réglage personnalisé de
+"Format du ticket" proche de 53 caractères (la longueur exacte de la
+phrase de pied de ticket) — une chaîne de test.length<=columns peut alors
+soit tenir de justesse, soit déborder légèrement selon des écarts
+d'arrondi, **sans aucune marge de sécurité**. Le porteur du projet utilise
+un réglage personnalisé sur son compte de test ("Krat Business") — la
+valeur exacte n'a pas été confirmée, mais le point de coupure identique
+et reproductible pointe vers un réglage fixe dans cette zone à risque
+plutôt qu'un problème aléatoire.
+
+**Fait — remplacement complet de l'heuristique par nombre de caractères
+par une mesure réelle** :
+- Nouvelle fonction `createMeasurer(widthMm, fontSize)` : crée un
+  document jsPDF jetable (jamais rendu, seulement utilisé pour
+  `getTextWidth`) configuré à la police/taille réellement utilisée pour
+  le rendu final.
+- `wrapText`/`pushWrapped` prennent maintenant une fonction `measure:
+  (text) => number` et une largeur maximale en mm (`maxWidthMm`) au lieu
+  de `columns` — la décision de couper une ligne se base désormais sur
+  la **même métrique que celle utilisée par jsPDF pour positionner le
+  texte**, éliminant l'hypothèse de correspondance caractères↔mm.
+- **Marge de sécurité de 10%** (`WRAP_SAFETY_MARGIN = 0.9`) appliquée à
+  la largeur utile pour la décision de retour à la ligne — filet de
+  sécurité supplémentaire, au cas où un écart de rendu existe entre
+  l'environnement de développement (où toutes les mesures ci-dessus ont
+  été vérifiées correctes) et le moteur WebView réel de l'appareil du
+  porteur du projet, qui n'a pas pu être testé directement dans cette
+  session. Coût : au pire une ligne de plus occasionnellement, largement
+  préférable à un texte coupé.
+- Les lignes à largeur fixe déjà garanties exactement `columns`
+  caractères par construction (séparateurs, lignes d'article combinées
+  via `padLine`) **ne sont pas concernées** — elles restent basées sur le
+  nombre de caractères, cette calibration précise étant confirmée exacte
+  par la mesure (`doc.getTextWidth('-'.repeat(columns))` correspond très
+  précisément à `usableWidthMm`, vérifié pour tout `columns` de 20 à 64).
+- Appliqué identiquement à `buildReceiptPdf` (reçu de vente) et
+  `buildServiceOrderTicketPdf` (bon de dépôt), les deux partageant cette
+  infrastructure.
+
+**Vérifié** : rebuild du module en direct dans le navigateur (import
+`/@fs/...` du fichier source, pas de bundle mis en cache) avec le
+contenu exact du ticket signalé par le porteur du projet — confirmé
+qu'avec l'ancienne logique, `columns=53` à `58` ne retournait à la ligne
+à aucun moment (reproductible), et qu'avec la nouvelle logique + la
+marge de 10%, ces mêmes valeurs déclenchent maintenant correctement le
+retour à la ligne. `pnpm run build` et les 20 tests unitaires passent.
+
+**Pas vérifiable dans cet environnement** : le point précis qui a causé
+le débordement réel sur l'appareil du porteur du projet (écart de mesure
+exact entre jsPDF ici et le moteur de rendu WebView réel, ou simplement
+un réglage `columns` proche de 53 combiné à l'absence totale de marge de
+sécurité dans l'ancien code) n'a pas pu être confirmé avec certitude —
+la nouvelle logique corrige le bug **par construction** dans les deux
+cas (mesure réelle au lieu d'une estimation, plus une marge de 10%), donc
+la correction devrait tenir indépendamment de la cause exacte, mais
+nécessite malgré tout une confirmation sur l'appareil réel.
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du
