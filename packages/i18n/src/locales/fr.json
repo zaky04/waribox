@@ -294,6 +294,7 @@
       "codeSaved": "Code enregistré.",
       "saving": "Enregistrement...",
       "saveCode": "Enregistrer le code",
+      "currentVersion": "Version actuelle : {{version}}",
       "updateHeading": "Installer une mise à jour",
       "updateHint": "Choisis le fichier d'installation (.exe/.msi) apporté, saisis le code de maintenance — l'app tente une sauvegarde locale automatique (si un dossier de sauvegarde est configuré ci-dessus), puis lance l'installeur. La sauvegarde n'est pas bloquante : si elle échoue, l'installation continue quand même avec un avertissement. WariBox ne se ferme plus automatiquement : tu contrôles toi-même le moment de la fermeture, une fois l'installeur visible à l'écran.",
       "updateWarning": "L'installeur n'est pas signé numériquement. Si Windows affiche un écran bleu \"Windows a protégé votre PC\" (SmartScreen), c'est normal — clique sur \"Informations complémentaires\" puis \"Exécuter quand même\". Si cet écran apparaît en arrière-plan sans que tu le remarques et que WariBox se ferme avant, la mise à jour semble ne rien faire : c'est exactement pour éviter ça que la fermeture est maintenant manuelle. Préfère aussi le fichier .exe au .msi quand les deux sont disponibles : il s'installe par utilisateur, sans invite d'autorisation Windows (UAC) supplémentaire.",

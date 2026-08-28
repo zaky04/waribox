@@ -294,6 +294,7 @@
       "codeSaved": "Code saved.",
       "saving": "Saving...",
       "saveCode": "Save code",
+      "currentVersion": "Current version: {{version}}",
       "updateHeading": "Install an update",
       "updateHint": "Choose the installer file (.exe/.msi) you brought, enter the maintenance code — the app attempts an automatic local backup (if a backup folder is configured above), then launches the installer. The backup is not blocking: if it fails, installation continues anyway with a warning. WariBox no longer closes automatically: you control when it closes, once the installer is visible on screen.",
       "updateWarning": "The installer is not digitally signed. If Windows shows a blue \"Windows protected your PC\" screen (SmartScreen), that's normal — click \"More info\" then \"Run anyway\". If this screen appears in the background without you noticing and WariBox closes first, the update may seem to do nothing: that's exactly why closing is now manual. Also prefer the .exe file over .msi when both are available: it installs per-user, without an extra Windows authorization (UAC) prompt.",

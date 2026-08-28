@@ -1026,6 +1026,9 @@ export function SettingsPage() {
 
         {isDesktopTauriRuntime() && (
           <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
+            <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: "0 0 8px" }}>
+              {t("settings.maintenance.currentVersion", { version: __APP_VERSION__ })}
+            </p>
             <strong style={{ fontSize: 14 }}>{t("settings.maintenance.updateHeading")}</strong>
             <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("settings.maintenance.updateHint")}</p>
             <p style={{ color: "var(--color-caution)", fontSize: 13 }}>{t("settings.maintenance.updateWarning")}</p>
