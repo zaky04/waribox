@@ -3005,6 +3005,134 @@ cas (mesure réelle au lieu d'une estimation, plus une marge de 10%), donc
 la correction devrait tenir indépendamment de la cause exacte, mais
 nécessite malgré tout une confirmation sur l'appareil réel.
 
+### 2026-08-28 — Menu qui ne s'enroule plus sur PC/tablette, numéro de version affiché, et cause racine du blocage sur du JS obsolète après mise à jour
+
+**Contexte** : suite du correctif ticket PDF (confirmé fonctionnel), trois
+demandes/suivis dans la même session.
+
+**Menu : retour à la ligne sur PC/tablette, hamburger réservé au
+téléphone** — le porteur du projet trouvait le défilement horizontal du
+menu (seuil précédent 1024px, voir journal 2026-08-17) tout aussi
+pénible que le problème initial sur mobile. Seuil abaissé à 768px
+(frontière téléphone/tablette classique) :
+[index.css](apps/web/src/app/index.css) bascule `.nav-full`/`.nav-compact`
+à ce seuil au lieu de 1024px, et [Nav.tsx](apps/web/src/app/Nav.tsx) passe
+`.nav-full` de `flexWrap: "nowrap"` (+ `table-scroll`) à `flexWrap: "wrap"`
+(classe `table-scroll` retirée, plus de défilement horizontal du tout sur
+PC/tablette). Vérifié via une page de test statique servie par le serveur
+de dev (contournement du blocage de connexion à la base, voir plus loin) :
+1280px → 2 lignes, 800px → 3 lignes, <768px → hamburger inchangé. Confirmé
+fonctionnel par le porteur du projet sur Windows ET BlueStacks.
+
+**Numéro de version affiché dans Paramètres → Maintenance** : nouvelle
+constante `__APP_VERSION__` injectée au build par
+[vite.config.ts](apps/web/vite.config.ts) (`define`), lue depuis
+`apps/desktop/package.json` — seule source déjà utilisée pour nommer les
+installeurs livrés (`WariBox_X.Y.Z...`), donc le numéro que l'utilisateur
+associe déjà à une version donnée. Affiché juste au-dessus du titre
+"Installer une mise à jour" dans
+[SettingsPage.tsx](apps/web/src/features/settings/SettingsPage.tsx),
+comme demandé — un simple `<p>`, aucune dépendance à un état chargé
+async.
+
+**Bug trouvé en vérifiant l'affichage de version — cause racine du
+blocage sur du JS obsolète après une mise à jour (Android ET desktop)** :
+après avoir installé le nouvel exécutable (0.1.4), le porteur du projet
+ne voyait toujours pas le numéro de version, alors que le nom du fichier
+d'installation portait bien "0.1.4" et que l'installation "passait bien".
+Écarté d'emblée : mauvais placement du code (relu, correct), build qui
+n'aurait pas inclus le changement (confirmé inclus par recherche du texte
+"0.1.4" dans le bundle JS généré). **Cause racine réelle** : le service
+worker (`vite-plugin-pwa`, `registerType: "prompt"` — choisi
+délibérément pour qu'une vente en cours ne soit jamais interrompue par un
+rechargement automatique, voir `vite.config.ts`) ne remplace l'ancien
+JavaScript en cache par le nouveau qu'après un **clic explicite** sur la
+bannière de mise à jour ([UpdateBanner.tsx](apps/web/src/components/UpdateBanner.tsx))
+— jamais automatiquement, même après un redémarrage complet de
+l'application (confirmé : le porteur du projet avait bien fermé et
+rouvert l'app, vérifié via le Gestionnaire des tâches). Cette bannière
+n'a par ailleurs jamais été vue par le porteur du projet : dans une appli
+Tauri plein écran (contrairement à un onglet de navigateur), rien n'attire
+l'attention dessus. **Exactement le même mécanisme qui expliquait déjà,
+sans qu'on l'ait identifié comme tel sur le moment, le premier échec du
+correctif "BaseDirectory.Download" sur Android** (journal du 27/08) — le
+binaire natif était à jour, mais le JavaScript exécuté dans la WebView
+restait bloqué sur une version antérieure du service worker.
+
+**Fait — deux correctifs complémentaires, l'un JS (n'aide que les futures
+mises à jour une fois actif) et l'un natif Rust (répare aussi
+l'installation bloquée actuelle)** :
+- [UpdateBanner.tsx](apps/web/src/components/UpdateBanner.tsx) : sur
+  Tauri (desktop et Android, `isTauriRuntime()`), le nouveau service
+  worker est désormais adopté automatiquement dès qu'il est détecté
+  (`updateServiceWorker(true)` dans un `useEffect`), sans attendre un
+  clic — un lancement de l'app après une mise à jour Tauri est déjà un
+  redémarrage à froid du processus natif (ancien exécutable/APK
+  remplacé), donc aucune "vente en cours" ne peut être interrompue par ce
+  changement, contrairement à un onglet PWA resté ouvert en continu (seul
+  cas où `registerType: "prompt"` garde son sens, conservé tel quel).
+  **Limite intrinsèque** : ce correctif vit dans le JS qui, précisément,
+  ne peut jamais s'exécuter tant que l'ancien service worker contrôle la
+  page — n'aide donc que les mises à jour futures, une fois cette version
+  elle-même devenue active une première fois.
+- [lib.rs](apps/desktop/src-tauri/src/lib.rs) (le vrai correctif pour
+  l'installation déjà bloquée) : la fenêtre principale est désormais
+  créée manuellement via `WebviewWindowBuilder` dans un hook `.setup()`
+  (au lieu d'être déclarée dans `tauri.conf.json` → `app.windows`, retiré)
+  spécifiquement pour pouvoir y attacher un `initialization_script` —
+  script injecté nativement par WebView2/WKWebView
+  (`AddScriptToExecuteOnDocumentCreated`) **avant tout script de la
+  page**, donc pas soumis à la CSP de la page et surtout **pas soumis au
+  service worker qui, lui, contrôle uniquement le réseau/cache, pas
+  l'injection native** — placé là, ce code s'exécute à coup sûr à chaque
+  lancement, quel que soit le JavaScript (à jour ou périmé) que le
+  service worker aurait servi. Il désenregistre tous les service workers
+  et vide le Cache Storage de l'origine (`navigator.serviceWorker.getRegistrations()`
+  + `.unregister()`, `caches.keys()` + `.delete()`) — **ne touche pas à
+  IndexedDB/OPFS** (les données de l'utilisateur, stock/ventes/clients),
+  uniquement le service worker et son cache, de toute façon inutiles sur
+  Tauri qui sert déjà tout localement sans jamais avoir besoin d'un cache
+  hors-ligne. S'exécute à **chaque** lancement (pas seulement le
+  premier) : un service worker fraîchement réenregistré par le JS de la
+  page juste après (puisque `UpdateBanner.tsx` continue d'appeler
+  `useRegisterSW()` sur toutes les plateformes) sera lui aussi purgé au
+  lancement suivant s'il finit par accumuler du JS périmé — coût nul
+  (quelques appels JS asynchrones à chaque démarrage), bénéfice : plus
+  aucune installation ne peut rester bloquée indéfiniment, y compris
+  l'installation actuelle du porteur du projet dès qu'elle installera ce
+  correctif.
+
+**Difficulté de vérification rencontrée** : le serveur de dev partagé
+avec les sessions précédentes avait un verrou OPFS périmé empêchant toute
+connexion (même symptôme que documenté au 2026-08-17) ; contourné en
+servant une page de test HTML statique isolée depuis `apps/web/public/`
+(nettoyée après usage) pour vérifier le comportement CSS du menu sans
+dépendre de la base de données. Le fond React/base de données a fini par
+se libérer spontanément en cours de session (nouvelle base vide détectée),
+permettant de créer un compte de test et vérifier l'injection de
+`__APP_VERSION__` via `i18next.t()` directement.
+
+**Vérifié** : `pnpm run build` (typecheck + injection `__APP_VERSION__`
+confirmée présente dans le bundle) et les 20 tests unitaires passent à
+chaque étape. Build Windows (MSI/NSIS) et Android (APK/AAB) tous deux
+réussis avec la fenêtre créée manuellement en Rust (aucune erreur de
+compilation, `WebviewWindowBuilder`/`initialization_script` acceptés tels
+quels) — `tauri.properties` généré confirme `versionCode` correctement
+incrémenté à chaque bump (1003→1004→1005).
+
+**Pas vérifiable dans cet environnement** : comme pour tous les
+correctifs natifs Android/desktop de cette session, l'exécution réelle du
+script d'initialisation sur un vrai WebView2/WKWebView (l'unregister
+efface-t-il vraiment le blocage constaté, sans effet de bord sur
+IndexedDB/OPFS) ne peut être confirmée que par un test réel du porteur du
+projet sur son installation actuellement bloquée.
+
+**Versions livrées cette session** : 0.1.3 (état de départ) → 0.1.4
+(affichage de version, jamais vu à cause du bug ci-dessus) → 0.1.5 (fix
+service worker + tout le reste). PR #4 fusionnée dans `main` après le
+0.1.4 (déploiement demandé explicitement par le porteur du projet) — le
+0.1.5 sera fusionné séparément une fois confirmé.
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du
