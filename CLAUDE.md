@@ -2901,6 +2901,27 @@ l'exécution), pas seulement sur le Samsung A14 (Android 13, chemin
 MediaStore direct sans permission) — les deux chemins de code sont
 différents et doivent être validés séparément.
 
+**Suivi immédiat — permission ACL manquante, trouvée dès le premier test
+réel** : test sur BlueStacks, erreur affichée directement dans l'UI (pas
+un échec silencieux cette fois) : `Command plugin:android-fs|write_file
+not allowed by ACL`. Cause : `android-fs:default` résout vers
+`android-fs:all-without-delete`, dont la description exacte dans le
+schéma généré par Tauri est *"This enables all commands except those that
+delete existing entries (**such as remove, truncate, copy or write**)"* —
+`write_file` y est explicitement classé à part de `create_new_file`
+(seule la création d'un nouveau fichier est couverte par le set
+`default`, pas l'écriture de son contenu). Trouvé en lisant directement
+[gen/schemas/mobile-schema.json](apps/desktop/src-tauri/gen/schemas/mobile-schema.json)
+(généré par le build précédent, donc la vérité exacte pour la version
+29.0.0 réellement utilisée) plutôt qu'en re-devinant depuis la doc
+publique. **Corrigé** : [capabilities/android.json](apps/desktop/src-tauri/capabilities/android.json)
+ajoute explicitement `android-fs:allow-create-new-public-file` et
+`android-fs:allow-write-file` en plus de `android-fs:default` (ACL
+additive, aucun risque à lister les deux). Rebuild Android confirmé :
+`gen/schemas/capabilities.json` (l'ACL réellement embarquée dans l'APK)
+contient bien `android-fs:allow-write-file` après ce correctif — nouvel
+APK envoyé au porteur du projet pour un second test réel.
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du

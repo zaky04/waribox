@@ -4,5 +4,9 @@
   "description": "Accès au stockage public Android (MediaStore) pour les sauvegardes et documents générés — voir CLAUDE.md, journal sur l'écriture native Android",
   "windows": ["main"],
   "platforms": ["android"],
-  "permissions": ["android-fs:default"]
+  "permissions": [
+    "android-fs:default",
+    "android-fs:allow-create-new-public-file",
+    "android-fs:allow-write-file"
+  ]
 }
