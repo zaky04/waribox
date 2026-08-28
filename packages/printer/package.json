@@ -6,6 +6,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "dependencies": {
+    "@gestion-boutique/i18n": "workspace:*",
     "jsbarcode": "^3.11.6",
     "jspdf": "^2.5.2"
   },

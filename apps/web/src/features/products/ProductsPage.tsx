@@ -14,6 +14,7 @@ import {
 import { schema } from "@gestion-boutique/database";
 import { buildLabelSheetPdf } from "@gestion-boutique/printer";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
@@ -26,6 +27,7 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { saveGeneratedFile } from "../../lib/saveFile";
 import { useAuth } from "../auth/useAuth";
 
 type Product = typeof schema.products.$inferSelect;
@@ -38,18 +40,10 @@ function timestampForFilename(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
 }
 
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 export function ProductsPage() {
   const db = useDatabase();
   const { user } = useAuth();
+  const { t } = useTranslation();
   const canManage = hasPermission(user?.permissions ?? {}, "manage_products");
   const canViewMargins = hasPermission(user?.permissions ?? {}, "view_margins");
 
@@ -145,15 +139,16 @@ export function ProductsPage() {
   const handleSubmit = async () => {
     setError(null);
     if (!name.trim()) {
-      setError("Le nom du produit est requis.");
+      setError(t("products.errors.nameRequired"));
       return;
     }
 
     setSaving(true);
     try {
+      const permissions = user?.permissions ?? {};
       let finalCategoryId = categoryId ? Number(categoryId) : null;
       if (!finalCategoryId && newCategoryName.trim()) {
-        const created = await createCategory(db, { name: newCategoryName.trim(), createdBy: user?.id });
+        const created = await createCategory(db, { name: newCategoryName.trim(), createdBy: user?.id }, permissions);
         finalCategoryId = created.id;
       }
 
@@ -168,10 +163,10 @@ export function ProductsPage() {
           trackExpiry,
           taxRate: taxRate.trim() === "" ? null : Number(taxRate),
           updatedBy: user?.id,
-        });
+        }, permissions);
         const variant = variants.find((v) => v.productId === editingProductId);
         if (variant) {
-          await updateVariantBarcode(db, variant.id, barcode.trim() || null);
+          await updateVariantBarcode(db, variant.id, barcode.trim() || null, permissions);
         }
       } else {
         await createProduct(db, {
@@ -185,13 +180,13 @@ export function ProductsPage() {
           taxRate: taxRate.trim() === "" ? null : Number(taxRate),
           barcode: barcode.trim() || null,
           createdBy: user?.id,
-        });
+        }, permissions);
       }
 
       resetForm();
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible d'enregistrer le produit.");
+      setError(err instanceof Error ? err.message : t("products.errors.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -203,7 +198,7 @@ export function ProductsPage() {
       .map(([productId, qty]) => ({ productId: Number(productId), copies: Number(qty) }))
       .filter((e) => e.copies > 0);
     if (entries.length === 0) {
-      setLabelsError("Indique une quantité d'étiquettes pour au moins un produit.");
+      setLabelsError(t("products.errors.labelsQuantityRequired"));
       return;
     }
 
@@ -218,11 +213,11 @@ export function ProductsPage() {
         labels.push({ name: product.name, price: product.salePrice, barcode, copies: entry.copies });
       }
       const blob = buildLabelSheetPdf(labels);
-      downloadBlob(blob, `etiquettes-${timestampForFilename()}.pdf`);
+      await saveGeneratedFile(blob, `etiquettes-${timestampForFilename()}.pdf`);
       setLabelQuantities({});
       await refresh();
     } catch (err) {
-      setLabelsError(err instanceof Error ? err.message : "Impossible de générer les étiquettes.");
+      setLabelsError(err instanceof Error ? err.message : t("products.errors.labelsFailed"));
     } finally {
       setPrintingLabels(false);
     }
@@ -230,59 +225,59 @@ export function ProductsPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Produits</h1>
-        <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <h1>{t("products.title")}</h1>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button style={primaryButtonStyle} onClick={handlePrintLabels} disabled={printingLabels}>
-            {printingLabels ? "Génération..." : "Imprimer les étiquettes sélectionnées"}
+            {printingLabels ? t("products.printingLabels") : t("products.printLabels")}
           </button>
           {canManage && (
             <button style={primaryButtonStyle} onClick={() => (showForm ? resetForm() : setShowForm(true))}>
-              {showForm ? "Annuler" : "+ Nouveau produit"}
+              {showForm ? t("products.cancel") : t("products.new")}
             </button>
           )}
         </div>
       </div>
-      {labelsError && <p style={{ color: "#f87171" }}>{labelsError}</p>}
+      {labelsError && <p style={{ color: "var(--color-danger)" }}>{labelsError}</p>}
 
       {showForm && (
         <div style={cardStyle}>
-          <h2 style={{ margin: 0 }}>{editingProductId ? "Modifier le produit" : "Nouveau produit"}</h2>
+          <h2 style={{ margin: 0 }}>{editingProductId ? t("products.editTitle") : t("products.newTitle")}</h2>
           <label>
-            Nom du produit
+            {t("products.name")}
             <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
           </label>
 
           <label>
-            Catégorie existante
+            {t("products.existingCategory")}
             <SearchableSelect
               value={categoryId}
               onChange={setCategoryId}
               options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
-              emptyLabel="— Aucune —"
-              placeholder="Rechercher une catégorie..."
+              emptyLabel={t("products.noCategoryOption")}
+              placeholder={t("products.searchCategoryPlaceholder")}
             />
           </label>
 
           <label>
-            Ou nouvelle catégorie
+            {t("products.orNewCategory")}
             <input
               style={inputStyle}
               value={newCategoryName}
               onChange={(e) => setNewCategoryName(e.target.value)}
-              placeholder="ex: Épicerie"
+              placeholder={t("products.newCategoryPlaceholder")}
               disabled={!!categoryId}
             />
           </label>
 
           <label>
-            Unité
+            {t("products.unit")}
             <input style={inputStyle} value={unit} onChange={(e) => setUnit(e.target.value)} />
           </label>
 
-          <div style={{ display: "flex", gap: 16 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
             <label style={{ flex: 1 }}>
-              Prix d'achat
+              {t("products.purchasePrice")}
               <input
                 style={inputStyle}
                 type="number"
@@ -291,7 +286,7 @@ export function ProductsPage() {
               />
             </label>
             <label style={{ flex: 1 }}>
-              Prix de vente
+              {t("products.salePrice")}
               <input
                 style={inputStyle}
                 type="number"
@@ -302,7 +297,7 @@ export function ProductsPage() {
           </div>
 
           <label>
-            Seuil d'alerte stock bas
+            {t("products.lowStockThreshold")}
             <input
               style={inputStyle}
               type="number"
@@ -317,12 +312,12 @@ export function ProductsPage() {
               checked={trackExpiry}
               onChange={(e) => setTrackExpiry(e.target.checked)}
             />
-            Produit périssable (suivi de péremption)
+            {t("products.trackExpiry")}
           </label>
 
           {businessSettings?.taxEnabled && (
             <label>
-              Taux de TVA (%) — laisser vide = taux par défaut ({businessSettings.defaultTaxRate}%)
+              {t("products.taxRate", { rate: businessSettings.defaultTaxRate })}
               <input
                 style={inputStyle}
                 type="number"
@@ -336,90 +331,92 @@ export function ProductsPage() {
           )}
 
           <label>
-            Code-barres (optionnel)
+            {t("products.barcode")}
             <input
               style={inputStyle}
               value={barcode}
               onChange={(e) => setBarcode(e.target.value)}
-              placeholder="Scanne avec la douchette ou saisis manuellement"
+              placeholder={t("products.barcodePlaceholder")}
             />
           </label>
 
-          {error && <p style={{ color: "#f87171" }}>{error}</p>}
+          {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
-            {saving ? "Enregistrement..." : editingProductId ? "Enregistrer les modifications" : "Créer le produit"}
+            {saving ? t("products.saving") : editingProductId ? t("products.saveChanges") : t("products.create")}
           </button>
         </div>
       )}
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>Nom</th>
-            <th style={thStyle}>Catégorie</th>
-            {canViewMargins && <th style={thStyle}>Achat</th>}
-            <th style={thStyle}>Vente</th>
-            <th style={thStyle}>Stock</th>
-            <th style={thStyle}>Étiquettes</th>
-            {canManage && <th style={thStyle}></th>}
-          </tr>
-        </thead>
-        <tbody>
-          {products.map((product) => {
-            const stock = productStock(product.id);
-            const isLow = stock <= product.lowStockThreshold;
-            const category = categories.find((c) => c.id === product.categoryId);
-            return (
-              <tr key={product.id}>
-                <td style={tdStyle}>{product.name}</td>
-                <td style={tdStyle}>{category?.name ?? "—"}</td>
-                {canViewMargins && <td style={tdStyle}>{product.purchasePrice}</td>}
-                <td style={tdStyle}>{product.salePrice}</td>
-                <td style={tdStyle}>
-                  <span style={badgeStyle(isLow ? "warning" : "ok")}>{stock}</span>
-                </td>
-                <td style={tdStyle}>
-                  <input
-                    type="number"
-                    min={0}
-                    value={labelQuantities[product.id] ?? ""}
-                    onChange={(e) =>
-                      setLabelQuantities((prev) => ({ ...prev, [product.id]: e.target.value }))
-                    }
-                    placeholder="0"
-                    style={{ ...inputStyle, width: 60, marginTop: 0 }}
-                  />
-                </td>
-                {canManage && (
-                  <td style={tdStyle}>
-                    <button
-                      style={{
-                        background: "transparent",
-                        border: "1px solid var(--color-border)",
-                        color: "var(--color-text)",
-                        borderRadius: 8,
-                        padding: "6px 12px",
-                        cursor: "pointer",
-                      }}
-                      onClick={() => startEdit(product)}
-                    >
-                      Modifier
-                    </button>
-                  </td>
-                )}
-              </tr>
-            );
-          })}
-          {products.length === 0 && (
+      <div className="table-scroll">
+        <table style={tableStyle}>
+          <thead>
             <tr>
-              <td style={tdStyle} colSpan={(canViewMargins ? 6 : 5) + (canManage ? 1 : 0)}>
-                Aucun produit pour le moment.
-              </td>
+              <th style={thStyle}>{t("products.name")}</th>
+              <th style={thStyle}>{t("products.category")}</th>
+              {canViewMargins && <th style={thStyle}>{t("products.purchase")}</th>}
+              <th style={thStyle}>{t("products.sale")}</th>
+              <th style={thStyle}>{t("products.stock")}</th>
+              <th style={thStyle}>{t("products.labels")}</th>
+              {canManage && <th style={thStyle}></th>}
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {products.map((product) => {
+              const stock = productStock(product.id);
+              const isLow = stock <= product.lowStockThreshold;
+              const category = categories.find((c) => c.id === product.categoryId);
+              return (
+                <tr key={product.id}>
+                  <td style={tdStyle}>{product.name}</td>
+                  <td style={tdStyle}>{category?.name ?? "—"}</td>
+                  {canViewMargins && <td style={tdStyle}>{product.purchasePrice}</td>}
+                  <td style={tdStyle}>{product.salePrice}</td>
+                  <td style={tdStyle}>
+                    <span style={badgeStyle(isLow ? "warning" : "ok")}>{stock}</span>
+                  </td>
+                  <td style={tdStyle}>
+                    <input
+                      type="number"
+                      min={0}
+                      value={labelQuantities[product.id] ?? ""}
+                      onChange={(e) =>
+                        setLabelQuantities((prev) => ({ ...prev, [product.id]: e.target.value }))
+                      }
+                      placeholder="0"
+                      style={{ ...inputStyle, width: 60, marginTop: 0 }}
+                    />
+                  </td>
+                  {canManage && (
+                    <td style={tdStyle}>
+                      <button
+                        style={{
+                          background: "transparent",
+                          border: "1px solid var(--color-border)",
+                          color: "var(--color-text)",
+                          borderRadius: 8,
+                          padding: "6px 12px",
+                          cursor: "pointer",
+                        }}
+                        onClick={() => startEdit(product)}
+                      >
+                        {t("products.edit")}
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+            {products.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={(canViewMargins ? 6 : 5) + (canManage ? 1 : 0)}>
+                  {t("products.none")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </main>
   );
 }

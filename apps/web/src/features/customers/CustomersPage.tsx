@@ -6,12 +6,13 @@ import {
   hasPermission,
   listCustomerCredits,
   listCustomers,
-  TIER_LABELS,
+  getTierLabel,
   updateCustomer,
   type LoyaltyTier,
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import {
   cardStyle,
@@ -30,6 +31,7 @@ type Credit = typeof schema.customerCredits.$inferSelect;
 export function CustomersPage() {
   const db = useDatabase();
   const { user } = useAuth();
+  const { t } = useTranslation();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [credits, setCredits] = useState<Credit[]>([]);
@@ -115,7 +117,7 @@ export function CustomersPage() {
   const handleSubmit = async () => {
     setError(null);
     if (!fullName.trim()) {
-      setError("Le nom complet est requis.");
+      setError(t("customers.errors.nameRequired"));
       return;
     }
 
@@ -129,9 +131,9 @@ export function CustomersPage() {
         createdBy: user?.id,
       };
       if (editingId) {
-        await updateCustomer(db, editingId, input);
+        await updateCustomer(db, editingId, input, user?.permissions ?? {});
       } else {
-        await createCustomer(db, input);
+        await createCustomer(db, input, user?.permissions ?? {});
       }
       resetForm();
       await refresh();
@@ -155,22 +157,26 @@ export function CustomersPage() {
     if (!user) return;
     const delta = Number(pointsDelta);
     if (!delta) {
-      setPointsError("Le delta doit être différent de zéro.");
+      setPointsError(t("customers.errors.deltaRequired"));
       return;
     }
 
     setAdjusting(true);
     try {
-      await adjustPoints(db, {
-        customerId: customer.id,
-        pointsDelta: delta,
-        userId: user.id,
-        reason: pointsReason.trim() || undefined,
-      });
+      await adjustPoints(
+        db,
+        {
+          customerId: customer.id,
+          pointsDelta: delta,
+          userId: user.id,
+          reason: pointsReason.trim() || undefined,
+        },
+        user.permissions,
+      );
       setAdjustingId(null);
       await refresh();
     } catch (err) {
-      setPointsError(err instanceof Error ? err.message : "Impossible d'ajuster les points.");
+      setPointsError(err instanceof Error ? err.message : t("customers.errors.adjustFailed"));
     } finally {
       setAdjusting(false);
     }
@@ -178,28 +184,28 @@ export function CustomersPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Clients</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <h1>{t("customers.title")}</h1>
         <button
           style={primaryButtonStyle}
           onClick={() => (showForm ? resetForm() : setShowForm(true))}
         >
-          {showForm ? "Annuler" : "+ Nouveau client"}
+          {showForm ? t("customers.cancel") : t("customers.new")}
         </button>
       </div>
 
       {showForm && (
         <div style={cardStyle}>
           <label>
-            Nom complet
+            {t("customers.fullName")}
             <input style={inputStyle} value={fullName} onChange={(e) => setFullName(e.target.value)} />
           </label>
           <label>
-            Téléphone
+            {t("customers.phone")}
             <input style={inputStyle} value={phone} onChange={(e) => setPhone(e.target.value)} />
           </label>
           <label>
-            Email
+            {t("customers.email")}
             <input
               style={inputStyle}
               type="email"
@@ -208,115 +214,117 @@ export function CustomersPage() {
             />
           </label>
           <label>
-            Adresse
+            {t("customers.address")}
             <input style={inputStyle} value={address} onChange={(e) => setAddress(e.target.value)} />
           </label>
 
-          {error && <p style={{ color: "#f87171" }}>{error}</p>}
+          {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
-            {saving ? "Enregistrement..." : editingId ? "Enregistrer les modifications" : "Créer le client"}
+            {saving ? t("customers.saving") : editingId ? t("customers.saveChanges") : t("customers.create")}
           </button>
         </div>
       )}
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>Nom</th>
-            <th style={thStyle}>Téléphone</th>
-            <th style={thStyle}>Email</th>
-            <th style={thStyle}>Solde créance</th>
-            <th style={thStyle}>Points fidélité</th>
-            <th style={thStyle}>Palier</th>
-            <th style={thStyle}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {customers.map((c) => (
-            <tr key={c.id}>
-              <td style={tdStyle}>{c.fullName}</td>
-              <td style={tdStyle}>{c.phone ?? "—"}</td>
-              <td style={tdStyle}>{c.email ?? "—"}</td>
-              <td style={{ ...tdStyle, color: creditBalance(c.id) > 0 ? "#fdba74" : undefined }}>
-                {creditBalance(c.id) > 0 ? creditBalance(c.id) : "—"}
-              </td>
-              <td style={tdStyle}>{c.loyaltyPoints}</td>
-              <td style={tdStyle}>
-                {(() => {
-                  const tier = computeTier(c.lifetimeLoyaltyPoints, tierThresholds.silver, tierThresholds.gold);
-                  return <span style={tierBadgeStyle(tier)}>{TIER_LABELS[tier]}</span>;
-                })()}
-              </td>
-              <td style={tdStyle}>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {user && hasPermission(user.permissions, "edit_customers") && (
+      <div className="table-scroll">
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>{t("customers.fullName")}</th>
+              <th style={thStyle}>{t("customers.phone")}</th>
+              <th style={thStyle}>{t("customers.email")}</th>
+              <th style={thStyle}>{t("customers.creditBalance")}</th>
+              <th style={thStyle}>{t("customers.loyaltyPoints")}</th>
+              <th style={thStyle}>{t("customers.tier")}</th>
+              <th style={thStyle}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {customers.map((c) => (
+              <tr key={c.id}>
+                <td style={tdStyle}>{c.fullName}</td>
+                <td style={tdStyle}>{c.phone ?? "—"}</td>
+                <td style={tdStyle}>{c.email ?? "—"}</td>
+                <td style={{ ...tdStyle, color: creditBalance(c.id) > 0 ? "var(--color-warning)" : undefined }}>
+                  {creditBalance(c.id) > 0 ? creditBalance(c.id) : "—"}
+                </td>
+                <td style={tdStyle}>{c.loyaltyPoints}</td>
+                <td style={tdStyle}>
+                  {(() => {
+                    const tier = computeTier(c.lifetimeLoyaltyPoints, tierThresholds.silver, tierThresholds.gold);
+                    return <span style={tierBadgeStyle(tier)}>{getTierLabel(tier)}</span>;
+                  })()}
+                </td>
+                <td style={tdStyle}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {user && hasPermission(user.permissions, "edit_customers") && (
+                      <button
+                        style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                        onClick={() => startEdit(c)}
+                      >
+                        {t("customers.edit")}
+                      </button>
+                    )}
                     <button
-                      style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                      onClick={() => startEdit(c)}
+                      style={{
+                        ...primaryButtonStyle,
+                        padding: "6px 12px",
+                        fontSize: 14,
+                        background: "transparent",
+                        border: "1px solid var(--color-border)",
+                        color: "var(--color-text)",
+                      }}
+                      onClick={() => startAdjust(c)}
                     >
-                      Modifier
-                    </button>
-                  )}
-                  <button
-                    style={{
-                      ...primaryButtonStyle,
-                      padding: "6px 12px",
-                      fontSize: 14,
-                      background: "transparent",
-                      border: "1px solid var(--color-border)",
-                      color: "var(--color-text)",
-                    }}
-                    onClick={() => startAdjust(c)}
-                  >
-                    Ajuster points
-                  </button>
-                </div>
-                {adjustingId === c.id && (
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-                    <input
-                      type="number"
-                      placeholder="+/- points"
-                      style={{ ...inputStyle, width: 100, marginTop: 0 }}
-                      value={pointsDelta}
-                      onChange={(e) => setPointsDelta(e.target.value)}
-                    />
-                    <input
-                      placeholder="Motif (optionnel)"
-                      style={{ ...inputStyle, width: 140, marginTop: 0 }}
-                      value={pointsReason}
-                      onChange={(e) => setPointsReason(e.target.value)}
-                    />
-                    <button
-                      style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                      onClick={() => handleAdjustSubmit(c)}
-                      disabled={adjusting}
-                    >
-                      Valider
-                    </button>
-                    <button
-                      style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
-                      onClick={() => setAdjustingId(null)}
-                    >
-                      Annuler
+                      {t("customers.adjustPoints")}
                     </button>
                   </div>
-                )}
-                {adjustingId === c.id && pointsError && (
-                  <p style={{ color: "#f87171", fontSize: 13 }}>{pointsError}</p>
-                )}
-              </td>
-            </tr>
-          ))}
-          {customers.length === 0 && (
-            <tr>
-              <td style={tdStyle} colSpan={7}>
-                Aucun client.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+                  {adjustingId === c.id && (
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+                      <input
+                        type="number"
+                        placeholder={t("customers.pointsDeltaPlaceholder")}
+                        style={{ ...inputStyle, width: 100, marginTop: 0 }}
+                        value={pointsDelta}
+                        onChange={(e) => setPointsDelta(e.target.value)}
+                      />
+                      <input
+                        placeholder={t("customers.pointsReasonPlaceholder")}
+                        style={{ ...inputStyle, width: 140, marginTop: 0 }}
+                        value={pointsReason}
+                        onChange={(e) => setPointsReason(e.target.value)}
+                      />
+                      <button
+                        style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                        onClick={() => handleAdjustSubmit(c)}
+                        disabled={adjusting}
+                      >
+                        {t("customers.confirm")}
+                      </button>
+                      <button
+                        style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
+                        onClick={() => setAdjustingId(null)}
+                      >
+                        {t("customers.cancelAdjust")}
+                      </button>
+                    </div>
+                  )}
+                  {adjustingId === c.id && pointsError && (
+                    <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{pointsError}</p>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {customers.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={7}>
+                  {t("customers.none")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </main>
   );
 }

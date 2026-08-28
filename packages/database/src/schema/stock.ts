@@ -28,6 +28,12 @@ export const stockBatches = sqliteTable("stock_batches", {
   lotNumber: text("lot_number"),
   expiryDate: text("expiry_date"),
   quantity: real("quantity").notNull().default(0),
+  // Coût d'achat unitaire de ce lot — NULL pour les lots créés avant
+  // l'introduction de ce champ, ou via une entrée de stock manuelle sans
+  // coût renseigné (voir StockPage "Entrée de stock"). ReportsService s'en
+  // sert pour calculer la marge réelle vendue ; repli sur
+  // products.purchasePrice quand NULL (voir son commentaire).
+  unitCost: real("unit_cost"),
 });
 
 // Grand livre des mouvements de stock : le solde courant se calcule par

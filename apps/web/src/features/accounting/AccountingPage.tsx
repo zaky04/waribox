@@ -22,23 +22,16 @@ import {
   type SyscohadaJournalLine,
 } from "@gestion-boutique/core";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { cardStyle, inputStyle, pageStyle, primaryButtonStyle, tableStyle, tdStyle, thStyle } from "../../components/sharedStyles";
+import { saveGeneratedFile } from "../../lib/saveFile";
 
 type SubTab = "income" | "balance" | "syscohada";
 type SyscohadaView = "ventes" | "achats" | "tresorerie" | "balance";
 
 function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 const secondaryButtonStyle = {
@@ -52,6 +45,7 @@ const secondaryButtonStyle = {
 
 export function AccountingPage() {
   const db = useDatabase();
+  const { t } = useTranslation();
 
   const [subTab, setSubTab] = useState<SubTab>("income");
 
@@ -101,40 +95,40 @@ export function AccountingPage() {
     if (subTab === "syscohada" && syscohadaEnabled) refreshSyscohada();
   }, [subTab, syscohadaEnabled, refreshSyscohada]);
 
-  const exportIncomePdf = () => {
+  const exportIncomePdf = async () => {
     if (!incomeStatement) return;
     const blob = buildIncomeStatementReportPdf(incomeStatement);
-    downloadBlob(blob, `compte-de-resultat-${fromDate}-${toDate}.pdf`);
+    await saveGeneratedFile(blob, `compte-de-resultat-${fromDate}-${toDate}.pdf`);
   };
 
-  const exportIncomeExcel = () => {
+  const exportIncomeExcel = async () => {
     if (!incomeStatement) return;
     const blob = buildIncomeStatementReportExcel(incomeStatement);
-    downloadBlob(blob, `compte-de-resultat-${fromDate}-${toDate}.xlsx`);
+    await saveGeneratedFile(blob, `compte-de-resultat-${fromDate}-${toDate}.xlsx`);
   };
 
-  const exportBalancePdf = () => {
+  const exportBalancePdf = async () => {
     if (!balanceSheet) return;
     const blob = buildBalanceSheetReportPdf(balanceSheet);
-    downloadBlob(blob, `bilan-${balanceSheet.asOfDate}.pdf`);
+    await saveGeneratedFile(blob, `bilan-${balanceSheet.asOfDate}.pdf`);
   };
 
-  const exportBalanceExcel = () => {
+  const exportBalanceExcel = async () => {
     if (!balanceSheet) return;
     const blob = buildBalanceSheetReportExcel(balanceSheet);
-    downloadBlob(blob, `bilan-${balanceSheet.asOfDate}.xlsx`);
+    await saveGeneratedFile(blob, `bilan-${balanceSheet.asOfDate}.xlsx`);
   };
 
   const SYSCOHADA_TITLES: Record<Exclude<SyscohadaView, "balance">, string> = {
-    ventes: "Journal des ventes (SYSCOHADA)",
-    achats: "Journal des achats (SYSCOHADA)",
-    tresorerie: "Journal de trésorerie (SYSCOHADA)",
+    ventes: t("accounting.titles.ventes"),
+    achats: t("accounting.titles.achats"),
+    tresorerie: t("accounting.titles.tresorerie"),
   };
 
-  const exportSyscohadaPdf = () => {
+  const exportSyscohadaPdf = async () => {
     if (syscohadaView === "balance") {
       const blob = buildSyscohadaBalancePdf({ from: fromDate, to: toDate, rows: syscohadaBalance });
-      downloadBlob(blob, `balance-generale-${fromDate}-${toDate}.pdf`);
+      await saveGeneratedFile(blob, `balance-generale-${fromDate}-${toDate}.pdf`);
       return;
     }
     const blob = buildSyscohadaJournalPdf({
@@ -143,13 +137,13 @@ export function AccountingPage() {
       to: toDate,
       lines: syscohadaLines,
     });
-    downloadBlob(blob, `journal-${syscohadaView}-${fromDate}-${toDate}.pdf`);
+    await saveGeneratedFile(blob, `journal-${syscohadaView}-${fromDate}-${toDate}.pdf`);
   };
 
-  const exportSyscohadaExcel = () => {
+  const exportSyscohadaExcel = async () => {
     if (syscohadaView === "balance") {
       const blob = buildSyscohadaBalanceExcel({ from: fromDate, to: toDate, rows: syscohadaBalance });
-      downloadBlob(blob, `balance-generale-${fromDate}-${toDate}.xlsx`);
+      await saveGeneratedFile(blob, `balance-generale-${fromDate}-${toDate}.xlsx`);
       return;
     }
     const blob = buildSyscohadaJournalExcel({
@@ -158,20 +152,20 @@ export function AccountingPage() {
       to: toDate,
       lines: syscohadaLines,
     });
-    downloadBlob(blob, `journal-${syscohadaView}-${fromDate}-${toDate}.xlsx`);
+    await saveGeneratedFile(blob, `journal-${syscohadaView}-${fromDate}-${toDate}.xlsx`);
   };
 
   const subTabs: { key: SubTab; label: string }[] = [
-    { key: "income", label: "Compte de résultat" },
-    { key: "balance", label: "Bilan" },
-    ...(syscohadaEnabled ? [{ key: "syscohada" as const, label: "Export SYSCOHADA" }] : []),
+    { key: "income", label: t("accounting.tabs.income") },
+    { key: "balance", label: t("accounting.tabs.balance") },
+    ...(syscohadaEnabled ? [{ key: "syscohada" as const, label: t("accounting.tabs.syscohada") }] : []),
   ];
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Comptabilité</h1>
-        <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <h1>{t("accounting.title")}</h1>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {subTabs.map((tab) => (
             <button
               key={tab.key}
@@ -189,16 +183,13 @@ export function AccountingPage() {
         </div>
       </div>
 
-      <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-        Vue comptable simplifiée à usage de gestion interne — ne remplace pas un bilan établi par un
-        expert-comptable.
-      </p>
+      <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("accounting.hint")}</p>
 
       {subTab === "income" && (
         <>
-          <div style={{ ...cardStyle, flexDirection: "row", gap: 16, alignItems: "flex-end" }}>
+          <div style={{ ...cardStyle, flexDirection: "row", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
             <label>
-              Du
+              {t("accounting.from")}
               <input
                 style={inputStyle}
                 type="date"
@@ -207,7 +198,7 @@ export function AccountingPage() {
               />
             </label>
             <label>
-              Au
+              {t("accounting.to")}
               <input style={inputStyle} type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
             </label>
           </div>
@@ -216,61 +207,63 @@ export function AccountingPage() {
             <>
               <div style={{ display: "flex", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
                 <div style={cardStyle}>
-                  <span style={{ color: "var(--color-text-muted)" }}>CA total</span>
+                  <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.revenue")}</span>
                   <strong style={{ fontSize: 22 }}>{incomeStatement.revenue.toFixed(0)}</strong>
                 </div>
                 <div style={cardStyle}>
-                  <span style={{ color: "var(--color-text-muted)" }}>Coût des ventes</span>
+                  <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.cogs")}</span>
                   <strong style={{ fontSize: 22 }}>{incomeStatement.cogs.toFixed(0)}</strong>
                 </div>
                 <div style={cardStyle}>
-                  <span style={{ color: "var(--color-text-muted)" }}>Charges</span>
+                  <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.expenses")}</span>
                   <strong style={{ fontSize: 22 }}>{incomeStatement.expensesTotal.toFixed(0)}</strong>
                 </div>
                 <div style={cardStyle}>
-                  <span style={{ color: "var(--color-text-muted)" }}>Résultat net</span>
+                  <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.netIncome")}</span>
                   <strong
-                    style={{ fontSize: 22, color: incomeStatement.netIncome >= 0 ? "#86efac" : "#f87171" }}
+                    style={{ fontSize: 22, color: incomeStatement.netIncome >= 0 ? "var(--color-success)" : "var(--color-danger)" }}
                   >
                     {incomeStatement.netIncome.toFixed(0)}
                   </strong>
                 </div>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24 }}>
-                <strong>Charges par catégorie</strong>
-                <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24, flexWrap: "wrap", gap: 8 }}>
+                <strong>{t("accounting.expensesByCategory")}</strong>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   <button style={secondaryButtonStyle} onClick={exportIncomePdf}>
-                    Export PDF
+                    {t("accounting.exportPdf")}
                   </button>
                   <button style={secondaryButtonStyle} onClick={exportIncomeExcel}>
-                    Export Excel
+                    {t("accounting.exportExcel")}
                   </button>
                 </div>
               </div>
-              <table style={tableStyle}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>Catégorie</th>
-                    <th style={thStyle}>Montant</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {incomeStatement.expensesByCategory.map((e) => (
-                    <tr key={e.category}>
-                      <td style={tdStyle}>{e.category}</td>
-                      <td style={tdStyle}>{e.amount.toFixed(0)}</td>
-                    </tr>
-                  ))}
-                  {incomeStatement.expensesByCategory.length === 0 && (
+              <div className="table-scroll">
+                <table style={tableStyle}>
+                  <thead>
                     <tr>
-                      <td style={tdStyle} colSpan={2}>
-                        Aucune charge sur cette période.
-                      </td>
+                      <th style={thStyle}>{t("accounting.category")}</th>
+                      <th style={thStyle}>{t("accounting.amount")}</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {incomeStatement.expensesByCategory.map((e) => (
+                      <tr key={e.category}>
+                        <td style={tdStyle}>{e.category}</td>
+                        <td style={tdStyle}>{e.amount.toFixed(0)}</td>
+                      </tr>
+                    ))}
+                    {incomeStatement.expensesByCategory.length === 0 && (
+                      <tr>
+                        <td style={tdStyle} colSpan={2}>
+                          {t("accounting.noExpenses")}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </>
           )}
         </>
@@ -280,35 +273,35 @@ export function AccountingPage() {
         <>
           <div style={{ display: "flex", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
             <div style={cardStyle}>
-              <span style={{ color: "var(--color-text-muted)" }}>Trésorerie</span>
+              <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.cash")}</span>
               <strong style={{ fontSize: 22 }}>{balanceSheet.cash.toFixed(0)}</strong>
             </div>
             <div style={cardStyle}>
-              <span style={{ color: "var(--color-text-muted)" }}>Valeur du stock</span>
+              <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.stockValue")}</span>
               <strong style={{ fontSize: 22 }}>{balanceSheet.stockValue.toFixed(0)}</strong>
             </div>
             <div style={cardStyle}>
-              <span style={{ color: "var(--color-text-muted)" }}>Créances clients</span>
+              <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.receivables")}</span>
               <strong style={{ fontSize: 22 }}>{balanceSheet.receivables.toFixed(0)}</strong>
             </div>
             <div style={cardStyle}>
-              <span style={{ color: "var(--color-text-muted)" }}>Total Actif</span>
+              <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.totalAssets")}</span>
               <strong style={{ fontSize: 22 }}>{balanceSheet.actifTotal.toFixed(0)}</strong>
             </div>
           </div>
 
           <div style={{ display: "flex", gap: 16, marginTop: 16, flexWrap: "wrap" }}>
             <div style={cardStyle}>
-              <span style={{ color: "var(--color-text-muted)" }}>Dettes fournisseurs</span>
+              <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.payables")}</span>
               <strong style={{ fontSize: 22 }}>{balanceSheet.payables.toFixed(0)}</strong>
             </div>
             <div style={cardStyle}>
-              <span style={{ color: "var(--color-text-muted)" }}>Total Passif</span>
+              <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.totalLiabilities")}</span>
               <strong style={{ fontSize: 22 }}>{balanceSheet.passifTotal.toFixed(0)}</strong>
             </div>
             <div style={cardStyle}>
-              <span style={{ color: "var(--color-text-muted)" }}>Capitaux propres (résiduel)</span>
-              <strong style={{ fontSize: 22, color: balanceSheet.equity >= 0 ? "#86efac" : "#f87171" }}>
+              <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.equity")}</span>
+              <strong style={{ fontSize: 22, color: balanceSheet.equity >= 0 ? "var(--color-success)" : "var(--color-danger)" }}>
                 {balanceSheet.equity.toFixed(0)}
               </strong>
             </div>
@@ -316,10 +309,10 @@ export function AccountingPage() {
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
             <button style={secondaryButtonStyle} onClick={exportBalancePdf}>
-              Export PDF
+              {t("accounting.exportPdf")}
             </button>
             <button style={secondaryButtonStyle} onClick={exportBalanceExcel}>
-              Export Excel
+              {t("accounting.exportExcel")}
             </button>
           </div>
         </>
@@ -338,17 +331,12 @@ export function AccountingPage() {
               color: "var(--color-text)",
             }}
           >
-            <strong>Base de départ, à valider avec un comptable —</strong> le plan de comptes et le
-            rattachement des catégories de dépenses aux comptes de charge sont une proposition standard
-            SYSCOHADA, pas encore ajustés pour ce commerce précis. Les achats ne portent aucune TVA
-            déductible (le schéma actuel n&apos;enregistre pas de TVA sur les achats), donc le compte 4452
-            n&apos;apparaît jamais dans ces journaux — à corriger manuellement si vos fournisseurs facturent
-            de la TVA récupérable.
+            {t("accounting.syscohadaWarning")}
           </div>
 
-          <div style={{ ...cardStyle, flexDirection: "row", gap: 16, alignItems: "flex-end", marginTop: 16 }}>
+          <div style={{ ...cardStyle, flexDirection: "row", flexWrap: "wrap", gap: 16, alignItems: "flex-end", marginTop: 16 }}>
             <label>
-              Du
+              {t("accounting.from")}
               <input
                 style={inputStyle}
                 type="date"
@@ -357,19 +345,19 @@ export function AccountingPage() {
               />
             </label>
             <label>
-              Au
+              {t("accounting.to")}
               <input style={inputStyle} type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
             </label>
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, flexWrap: "wrap", gap: 8 }}>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {(
                 [
-                  { key: "ventes", label: "Journal des ventes" },
-                  { key: "achats", label: "Journal des achats" },
-                  { key: "tresorerie", label: "Journal de trésorerie" },
-                  { key: "balance", label: "Balance générale" },
+                  { key: "ventes", label: t("accounting.views.ventes") },
+                  { key: "achats", label: t("accounting.views.achats") },
+                  { key: "tresorerie", label: t("accounting.views.tresorerie") },
+                  { key: "balance", label: t("accounting.views.balance") },
                 ] as { key: SyscohadaView; label: string }[]
               ).map((v) => (
                 <button
@@ -386,111 +374,115 @@ export function AccountingPage() {
                 </button>
               ))}
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               <button style={secondaryButtonStyle} onClick={exportSyscohadaPdf}>
-                Export PDF
+                {t("accounting.exportPdf")}
               </button>
               <button style={secondaryButtonStyle} onClick={exportSyscohadaExcel}>
-                Export Excel
+                {t("accounting.exportExcel")}
               </button>
             </div>
           </div>
 
           {syscohadaView !== "balance" ? (
-            <table style={{ ...tableStyle, marginTop: 16 }}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Date</th>
-                  <th style={thStyle}>Pièce</th>
-                  <th style={thStyle}>Compte</th>
-                  <th style={thStyle}>Intitulé</th>
-                  <th style={thStyle}>Libellé</th>
-                  <th style={thStyle}>Débit</th>
-                  <th style={thStyle}>Crédit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {syscohadaLines.map((l, i) => (
-                  <tr key={i}>
-                    <td style={tdStyle}>{l.date}</td>
-                    <td style={tdStyle}>{l.piece}</td>
-                    <td style={tdStyle}>{l.compte}</td>
-                    <td style={tdStyle}>{l.intitule}</td>
-                    <td style={tdStyle}>{l.libelle}</td>
-                    <td style={tdStyle}>{l.debit > 0 ? l.debit.toFixed(0) : ""}</td>
-                    <td style={tdStyle}>{l.credit > 0 ? l.credit.toFixed(0) : ""}</td>
-                  </tr>
-                ))}
-                {syscohadaLines.length === 0 && (
+            <div className="table-scroll" style={{ marginTop: 16 }}>
+              <table style={tableStyle}>
+                <thead>
                   <tr>
-                    <td style={tdStyle} colSpan={7}>
-                      Aucun mouvement sur cette période.
-                    </td>
+                    <th style={thStyle}>{t("accounting.date")}</th>
+                    <th style={thStyle}>{t("accounting.piece")}</th>
+                    <th style={thStyle}>{t("accounting.account")}</th>
+                    <th style={thStyle}>{t("accounting.label")}</th>
+                    <th style={thStyle}>{t("accounting.narration")}</th>
+                    <th style={thStyle}>{t("accounting.debit")}</th>
+                    <th style={thStyle}>{t("accounting.credit")}</th>
                   </tr>
+                </thead>
+                <tbody>
+                  {syscohadaLines.map((l, i) => (
+                    <tr key={i}>
+                      <td style={tdStyle}>{l.date}</td>
+                      <td style={tdStyle}>{l.piece}</td>
+                      <td style={tdStyle}>{l.compte}</td>
+                      <td style={tdStyle}>{l.intitule}</td>
+                      <td style={tdStyle}>{l.libelle}</td>
+                      <td style={tdStyle}>{l.debit > 0 ? l.debit.toFixed(0) : ""}</td>
+                      <td style={tdStyle}>{l.credit > 0 ? l.credit.toFixed(0) : ""}</td>
+                    </tr>
+                  ))}
+                  {syscohadaLines.length === 0 && (
+                    <tr>
+                      <td style={tdStyle} colSpan={7}>
+                        {t("accounting.noMovements")}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                {syscohadaLines.length > 0 && (
+                  <tfoot>
+                    <tr>
+                      <td style={tdStyle} colSpan={5}>
+                        <strong>{t("accounting.total")}</strong>
+                      </td>
+                      <td style={tdStyle}>
+                        <strong>{syscohadaLines.reduce((sum, l) => sum + l.debit, 0).toFixed(0)}</strong>
+                      </td>
+                      <td style={tdStyle}>
+                        <strong>{syscohadaLines.reduce((sum, l) => sum + l.credit, 0).toFixed(0)}</strong>
+                      </td>
+                    </tr>
+                  </tfoot>
                 )}
-              </tbody>
-              {syscohadaLines.length > 0 && (
-                <tfoot>
-                  <tr>
-                    <td style={tdStyle} colSpan={5}>
-                      <strong>Total</strong>
-                    </td>
-                    <td style={tdStyle}>
-                      <strong>{syscohadaLines.reduce((sum, l) => sum + l.debit, 0).toFixed(0)}</strong>
-                    </td>
-                    <td style={tdStyle}>
-                      <strong>{syscohadaLines.reduce((sum, l) => sum + l.credit, 0).toFixed(0)}</strong>
-                    </td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
+              </table>
+            </div>
           ) : (
-            <table style={{ ...tableStyle, marginTop: 16 }}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Compte</th>
-                  <th style={thStyle}>Intitulé</th>
-                  <th style={thStyle}>Débit</th>
-                  <th style={thStyle}>Crédit</th>
-                  <th style={thStyle}>Solde</th>
-                </tr>
-              </thead>
-              <tbody>
-                {syscohadaBalance.map((r) => (
-                  <tr key={r.compte}>
-                    <td style={tdStyle}>{r.compte}</td>
-                    <td style={tdStyle}>{r.intitule}</td>
-                    <td style={tdStyle}>{r.debit.toFixed(0)}</td>
-                    <td style={tdStyle}>{r.credit.toFixed(0)}</td>
-                    <td style={tdStyle}>{r.solde.toFixed(0)}</td>
-                  </tr>
-                ))}
-                {syscohadaBalance.length === 0 && (
+            <div className="table-scroll" style={{ marginTop: 16 }}>
+              <table style={tableStyle}>
+                <thead>
                   <tr>
-                    <td style={tdStyle} colSpan={5}>
-                      Aucun mouvement sur cette période.
-                    </td>
+                    <th style={thStyle}>{t("accounting.account")}</th>
+                    <th style={thStyle}>{t("accounting.label")}</th>
+                    <th style={thStyle}>{t("accounting.debit")}</th>
+                    <th style={thStyle}>{t("accounting.credit")}</th>
+                    <th style={thStyle}>{t("accounting.balanceColumn")}</th>
                   </tr>
+                </thead>
+                <tbody>
+                  {syscohadaBalance.map((r) => (
+                    <tr key={r.compte}>
+                      <td style={tdStyle}>{r.compte}</td>
+                      <td style={tdStyle}>{r.intitule}</td>
+                      <td style={tdStyle}>{r.debit.toFixed(0)}</td>
+                      <td style={tdStyle}>{r.credit.toFixed(0)}</td>
+                      <td style={tdStyle}>{r.solde.toFixed(0)}</td>
+                    </tr>
+                  ))}
+                  {syscohadaBalance.length === 0 && (
+                    <tr>
+                      <td style={tdStyle} colSpan={5}>
+                        {t("accounting.noMovements")}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                {syscohadaBalance.length > 0 && (
+                  <tfoot>
+                    <tr>
+                      <td style={tdStyle} colSpan={2}>
+                        <strong>{t("accounting.total")}</strong>
+                      </td>
+                      <td style={tdStyle}>
+                        <strong>{syscohadaBalance.reduce((sum, r) => sum + r.debit, 0).toFixed(0)}</strong>
+                      </td>
+                      <td style={tdStyle}>
+                        <strong>{syscohadaBalance.reduce((sum, r) => sum + r.credit, 0).toFixed(0)}</strong>
+                      </td>
+                      <td style={tdStyle} />
+                    </tr>
+                  </tfoot>
                 )}
-              </tbody>
-              {syscohadaBalance.length > 0 && (
-                <tfoot>
-                  <tr>
-                    <td style={tdStyle} colSpan={2}>
-                      <strong>Total</strong>
-                    </td>
-                    <td style={tdStyle}>
-                      <strong>{syscohadaBalance.reduce((sum, r) => sum + r.debit, 0).toFixed(0)}</strong>
-                    </td>
-                    <td style={tdStyle}>
-                      <strong>{syscohadaBalance.reduce((sum, r) => sum + r.credit, 0).toFixed(0)}</strong>
-                    </td>
-                    <td style={tdStyle} />
-                  </tr>
-                </tfoot>
-              )}
-            </table>
+              </table>
+            </div>
           )}
         </>
       )}

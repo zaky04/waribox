@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 export interface ChartPoint {
   label: string;
   value: number;
@@ -20,6 +22,7 @@ function labelStep(count: number): number {
 }
 
 export function BarChart({ data, height = 220, positiveColor = "#38bdf8", negativeColor = "#f87171" }: ChartProps) {
+  const { t } = useTranslation();
   const width = 720;
   const paddingLeft = 48;
   const paddingBottom = 28;
@@ -28,7 +31,7 @@ export function BarChart({ data, height = 220, positiveColor = "#38bdf8", negati
   const plotHeight = height - paddingTop - paddingBottom;
 
   if (data.length === 0) {
-    return <p style={{ color: TEXT_COLOR }}>Aucune donnée pour cette période.</p>;
+    return <p style={{ color: TEXT_COLOR }}>{t("common.noChartData")}</p>;
   }
 
   const maxValue = Math.max(0, ...data.map((d) => d.value));
@@ -82,6 +85,7 @@ export function BarChart({ data, height = 220, positiveColor = "#38bdf8", negati
 }
 
 export function LineChart({ data, height = 220, positiveColor = "#38bdf8", negativeColor = "#f87171" }: ChartProps) {
+  const { t } = useTranslation();
   const width = 720;
   const paddingLeft = 48;
   const paddingBottom = 28;
@@ -90,7 +94,7 @@ export function LineChart({ data, height = 220, positiveColor = "#38bdf8", negat
   const plotHeight = height - paddingTop - paddingBottom;
 
   if (data.length === 0) {
-    return <p style={{ color: TEXT_COLOR }}>Aucune donnée pour cette période.</p>;
+    return <p style={{ color: TEXT_COLOR }}>{t("common.noChartData")}</p>;
   }
 
   const maxValue = Math.max(0, ...data.map((d) => d.value));

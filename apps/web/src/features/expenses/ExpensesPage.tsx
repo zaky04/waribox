@@ -10,6 +10,7 @@ import {
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { FilterBar } from "../../components/FilterBar";
 import {
@@ -26,14 +27,6 @@ import { useAuth } from "../auth/useAuth";
 type Expense = typeof schema.expenses.$inferSelect;
 type User = { id: number; fullName: string };
 
-const PAYMENT_METHODS: { value: string; label: string }[] = [
-  { value: "cash", label: "Espèces" },
-  { value: "card", label: "Carte" },
-  { value: "mobile_money", label: "Mobile Money" },
-  { value: "bank_transfer", label: "Virement bancaire" },
-  { value: "other", label: "Autre" },
-];
-
 function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -41,8 +34,17 @@ function isoDate(date: Date): string {
 export function ExpensesPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
+  const { t } = useTranslation();
   const canManage = user ? hasPermission(user.permissions, "manage_expenses") : false;
   const canEdit = user ? hasPermission(user.permissions, "edit_expenses") : false;
+
+  const PAYMENT_METHODS: { value: string; label: string }[] = [
+    { value: "cash", label: t("expenses.paymentMethods.cash") },
+    { value: "card", label: t("expenses.paymentMethods.card") },
+    { value: "mobile_money", label: t("expenses.paymentMethods.mobile_money") },
+    { value: "bank_transfer", label: t("expenses.paymentMethods.bank_transfer") },
+    { value: "other", label: t("expenses.paymentMethods.other") },
+  ];
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -105,12 +107,12 @@ export function ExpensesPage() {
   const handleSubmit = async () => {
     setError(null);
     if (!category.trim()) {
-      setError("La catégorie est requise.");
+      setError(t("expenses.errors.categoryRequired"));
       return;
     }
     const value = Number(amount);
     if (!value || value <= 0) {
-      setError("Le montant doit être supérieur à zéro.");
+      setError(t("expenses.errors.amountPositive"));
       return;
     }
 
@@ -124,7 +126,7 @@ export function ExpensesPage() {
           paymentMethod,
           note: note.trim() || undefined,
           userId: user?.id,
-        });
+        }, user?.permissions ?? {});
       } else {
         await createExpense(db, {
           category: category.trim(),
@@ -134,32 +136,32 @@ export function ExpensesPage() {
           note: note.trim() || undefined,
           userId: user?.id,
           storeId: currentStoreId ?? undefined,
-        });
+        }, user?.permissions ?? {});
       }
       resetForm();
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible d'enregistrer la dépense.");
+      setError(err instanceof Error ? err.message : t("expenses.errors.saveFailed"));
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (expense: Expense) => {
-    if (!window.confirm(`Supprimer définitivement la dépense "${expense.category}" (${expense.amount}) ?`)) {
+    if (!window.confirm(t("expenses.confirmDelete", { category: expense.category, amount: expense.amount }))) {
       return;
     }
-    await deleteExpense(db, expense.id, user?.id);
+    await deleteExpense(db, expense.id, user?.permissions ?? {}, user?.id);
     await refresh();
   };
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Dépenses</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <h1>{t("expenses.title")}</h1>
         {canManage && (
           <button style={primaryButtonStyle} onClick={() => (showForm ? resetForm() : setShowForm(true))}>
-            {showForm ? "Annuler" : "+ Nouvelle dépense"}
+            {showForm ? t("expenses.cancel") : t("expenses.new")}
           </button>
         )}
       </div>
@@ -167,13 +169,13 @@ export function ExpensesPage() {
       {showForm && (
         <div style={cardStyle}>
           <label>
-            Catégorie
+            {t("expenses.category")}
             <input
               style={inputStyle}
               list="expense-categories"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              placeholder="Ex : Loyer"
+              placeholder={t("expenses.categoryPlaceholder")}
             />
             <datalist id="expense-categories">
               {EXPENSE_CATEGORIES.map((c) => (
@@ -182,7 +184,7 @@ export function ExpensesPage() {
             </datalist>
           </label>
           <label>
-            Montant
+            {t("expenses.amount")}
             <input
               style={inputStyle}
               type="number"
@@ -191,7 +193,7 @@ export function ExpensesPage() {
             />
           </label>
           <label>
-            Date d'effet
+            {t("expenses.expenseDate")}
             <input
               style={inputStyle}
               type="date"
@@ -200,7 +202,7 @@ export function ExpensesPage() {
             />
           </label>
           <label>
-            Méthode de paiement
+            {t("expenses.paymentMethod")}
             <select style={inputStyle} value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
               {PAYMENT_METHODS.map((m) => (
                 <option key={m.value} value={m.value}>
@@ -210,14 +212,14 @@ export function ExpensesPage() {
             </select>
           </label>
           <label>
-            Note (optionnel)
+            {t("expenses.note")}
             <input style={inputStyle} value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
 
-          {error && <p style={{ color: "#f87171" }}>{error}</p>}
+          {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
-            {saving ? "Enregistrement..." : editingId ? "Enregistrer les modifications" : "Créer la dépense"}
+            {saving ? t("expenses.saving") : editingId ? t("expenses.saveChanges") : t("expenses.create")}
           </button>
         </div>
       )}
@@ -229,7 +231,7 @@ export function ExpensesPage() {
         onToChange={setFilterTo}
         search={filterSearch}
         onSearchChange={setFilterSearch}
-        searchPlaceholder="Catégorie ou note..."
+        searchPlaceholder={t("expenses.searchPlaceholder")}
         onReset={() => {
           setFilterFrom("");
           setFilterTo("");
@@ -238,9 +240,9 @@ export function ExpensesPage() {
         }}
       >
         <label>
-          Catégorie
+          {t("expenses.category")}
           <select style={inputStyle} value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
-            <option value="">Toutes</option>
+            <option value="">{t("expenses.all")}</option>
             {EXPENSE_CATEGORIES.map((c) => (
               <option key={c} value={c}>
                 {c}
@@ -250,62 +252,64 @@ export function ExpensesPage() {
         </label>
       </FilterBar>
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>Date</th>
-            <th style={thStyle}>Catégorie</th>
-            <th style={thStyle}>Montant</th>
-            <th style={thStyle}>Note</th>
-            <th style={thStyle}>Utilisateur</th>
-            <th style={thStyle}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {expenses.map((expense) => (
-            <tr key={expense.id}>
-              <td style={tdStyle}>{expense.expenseDate}</td>
-              <td style={tdStyle}>{expense.category}</td>
-              <td style={tdStyle}>{expense.amount.toFixed(0)}</td>
-              <td style={tdStyle}>{expense.note ?? "—"}</td>
-              <td style={tdStyle}>{userName(expense.userId)}</td>
-              <td style={tdStyle}>
-                {canEdit && (
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                      onClick={() => startEdit(expense)}
-                    >
-                      Modifier
-                    </button>
-                    <button
-                      style={{
-                        background: "transparent",
-                        border: "1px solid #f87171",
-                        color: "#f87171",
-                        borderRadius: 8,
-                        padding: "6px 12px",
-                        fontSize: 14,
-                        cursor: "pointer",
-                      }}
-                      onClick={() => handleDelete(expense)}
-                    >
-                      Supprimer
-                    </button>
-                  </div>
-                )}
-              </td>
-            </tr>
-          ))}
-          {expenses.length === 0 && (
+      <div className="table-scroll">
+        <table style={tableStyle}>
+          <thead>
             <tr>
-              <td style={tdStyle} colSpan={6}>
-                Aucune dépense.
-              </td>
+              <th style={thStyle}>{t("expenses.date")}</th>
+              <th style={thStyle}>{t("expenses.category")}</th>
+              <th style={thStyle}>{t("expenses.amount")}</th>
+              <th style={thStyle}>{t("expenses.note")}</th>
+              <th style={thStyle}>{t("expenses.user")}</th>
+              <th style={thStyle}></th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {expenses.map((expense) => (
+              <tr key={expense.id}>
+                <td style={tdStyle}>{expense.expenseDate}</td>
+                <td style={tdStyle}>{expense.category}</td>
+                <td style={tdStyle}>{expense.amount.toFixed(0)}</td>
+                <td style={tdStyle}>{expense.note ?? "—"}</td>
+                <td style={tdStyle}>{userName(expense.userId)}</td>
+                <td style={tdStyle}>
+                  {canEdit && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      <button
+                        style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                        onClick={() => startEdit(expense)}
+                      >
+                        {t("expenses.edit")}
+                      </button>
+                      <button
+                        style={{
+                          background: "transparent",
+                          border: "1px solid var(--color-danger)",
+                          color: "var(--color-danger)",
+                          borderRadius: 8,
+                          padding: "6px 12px",
+                          fontSize: 14,
+                          cursor: "pointer",
+                        }}
+                        onClick={() => handleDelete(expense)}
+                      >
+                        {t("expenses.delete")}
+                      </button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {expenses.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={6}>
+                  {t("expenses.none")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </main>
   );
 }

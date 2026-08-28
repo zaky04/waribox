@@ -46,6 +46,11 @@ export const businessSettings = sqliteTable("business_settings", {
   // maintenance (installation d'une mise à jour) indépendamment du mot de
   // passe Admin du client.
   maintenanceCodeHash: text("maintenance_code_hash"),
+  // Même anti-brute-force que users.failedAttempts/lockedUntil (voir
+  // AuthService) — le code de maintenance est un secret à part entière, il
+  // mérite la même protection contre les essais répétés.
+  maintenanceCodeFailedAttempts: integer("maintenance_code_failed_attempts").notNull().default(0),
+  maintenanceCodeLockedUntil: text("maintenance_code_locked_until"),
   // Verrouille automatiquement la session (retour à l'écran PIN) après ce
   // délai d'inactivité — 0 désactive la fonctionnalité.
   autoLockMinutes: integer("auto_lock_minutes").notNull().default(0),

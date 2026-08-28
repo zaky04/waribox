@@ -14,6 +14,7 @@ import {
 import { schema } from "@gestion-boutique/database";
 import { buildReceipt, buildReceiptPdf, type ReceiptData } from "@gestion-boutique/printer";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
@@ -25,6 +26,9 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { openExternalUrl } from "../../lib/openExternalUrl";
+import { saveGeneratedFile } from "../../lib/saveFile";
+import { buildReceiptWhatsAppMessage, buildWhatsAppLink } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
 import { PrinterPanel } from "../printer/PrinterPanel";
 import { usePrinter } from "../printer/usePrinter";
@@ -47,13 +51,6 @@ interface CartLine {
   taxRate: number;
 }
 
-const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
-  { value: "cash", label: "Espèces" },
-  { value: "card", label: "Carte" },
-  { value: "mobile_money", label: "Mobile Money" },
-  { value: "credit", label: "Crédit" },
-];
-
 // Utilisé pour le nom du fichier PDF enregistré — inclut la date ET l'heure
 // pour distinguer plusieurs reçus générés le même jour.
 function timestampForFilename(): string {
@@ -62,20 +59,19 @@ function timestampForFilename(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
 }
 
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 export function SalesPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
+  const { t } = useTranslation();
   const { session, open, close } = useCashSession(currentStoreId);
   const printer = usePrinter();
+
+  const paymentMethods: { value: PaymentMethod; label: string }[] = [
+    { value: "cash", label: t("sales.paymentMethods.cash") },
+    { value: "card", label: t("sales.paymentMethods.card") },
+    { value: "mobile_money", label: t("sales.paymentMethods.mobile_money") },
+    { value: "credit", label: t("sales.paymentMethods.credit") },
+  ];
 
   const [mode, setMode] = useState<"pos" | "form">("pos");
   const [products, setProducts] = useState<Product[]>([]);
@@ -105,6 +101,7 @@ export function SalesPage() {
   const [checkingOut, setCheckingOut] = useState(false);
   const [lastSaleNumber, setLastSaleNumber] = useState<string | null>(null);
   const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null);
+  const [receiptPhone, setReceiptPhone] = useState("");
   const [printError, setPrintError] = useState<string | null>(null);
   const [showCloseSession, setShowCloseSession] = useState(false);
   const [expectedCash, setExpectedCash] = useState<number | null>(null);
@@ -183,7 +180,7 @@ export function SalesPage() {
     (code: string) => {
       const variant = variants.find((v) => v.barcode === code);
       if (!variant) {
-        setCheckoutError(`Aucun produit avec le code-barres "${code}".`);
+        setCheckoutError(t("sales.noProductForBarcode", { code }));
         return;
       }
       const product = products.find((p) => p.id === variant.productId);
@@ -191,7 +188,7 @@ export function SalesPage() {
       setCheckoutError(null);
       addVariantToCart(variant, product);
     },
-    [variants, products],
+    [variants, products, t],
   );
 
   useBarcodeScanner({ onScan: handleBarcodeScan, enabled: !!session });
@@ -297,7 +294,7 @@ export function SalesPage() {
     setCheckoutError(null);
     if (!user || !surfaceLocationId || !currentStoreId) return;
     if (cart.length === 0) {
-      setCheckoutError("Le panier est vide.");
+      setCheckoutError(t("sales.emptyCartError"));
       return;
     }
 
@@ -326,7 +323,7 @@ export function SalesPage() {
         amountPaid: paidValue,
         surfaceLocationId,
         storeId: currentStoreId,
-      });
+      }, user.permissions);
 
       const customerName =
         customers.find((c) => c.id === Number(customerId))?.fullName || newCustomerName.trim() || undefined;
@@ -356,6 +353,7 @@ export function SalesPage() {
         paymentMethod,
         amountPaid: paidValue,
       });
+      setReceiptPhone(customers.find((c) => c.id === Number(customerId))?.phone ?? "");
       setPrintError(null);
       setCart([]);
       setCustomerId("");
@@ -366,14 +364,14 @@ export function SalesPage() {
       setCashReceived("");
       await refresh();
     } catch (err) {
-      setCheckoutError(err instanceof Error ? err.message : "Impossible d'enregistrer la vente.");
+      setCheckoutError(err instanceof Error ? err.message : t("sales.saleError"));
     } finally {
       setCheckingOut(false);
     }
   };
 
   if (session === undefined) {
-    return <div style={{ padding: 24 }}>Chargement...</div>;
+    return <div style={{ padding: 24 }}>{t("sales.loading")}</div>;
   }
 
   if (!session) {
@@ -382,9 +380,9 @@ export function SalesPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Ventes</h1>
-        <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <h1>{t("sales.title")}</h1>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button
             onClick={() => setMode("pos")}
             style={{
@@ -394,7 +392,7 @@ export function SalesPage() {
               border: mode === "pos" ? "none" : "1px solid var(--color-border)",
             }}
           >
-            Mode Caisse
+            {t("sales.modePos")}
           </button>
           <button
             onClick={() => setMode("form")}
@@ -405,13 +403,13 @@ export function SalesPage() {
               border: mode === "form" ? "none" : "1px solid var(--color-border)",
             }}
           >
-            Mode Formulaire
+            {t("sales.modeForm")}
           </button>
           <button
             onClick={() => setShowPrinterPanel((v) => !v)}
             style={{ background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)", borderRadius: 8, padding: "0 16px" }}
           >
-            Imprimante
+            {t("sales.printer")}
           </button>
           <button
             onClick={async () => {
@@ -424,7 +422,7 @@ export function SalesPage() {
             }}
             style={{ background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)", borderRadius: 8, padding: "0 16px" }}
           >
-            Fermer la caisse
+            {t("sales.closeCashSession")}
           </button>
         </div>
       </div>
@@ -446,31 +444,33 @@ export function SalesPage() {
         <div
           style={{
             ...cardStyle,
-            borderLeft: "4px solid #86efac",
+            borderLeft: "4px solid var(--color-success)",
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 8,
           }}
         >
           <span>
-            Vente enregistrée : <strong>{lastSaleNumber}</strong>
+            {t("sales.saleRegistered")} <strong>{lastSaleNumber}</strong>
           </span>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             <button
               style={primaryButtonStyle}
               disabled={!printer.connected || !lastReceipt}
-              title={!printer.connected ? "Connecte une imprimante pour imprimer le ticket" : undefined}
+              title={!printer.connected ? t("sales.printerRequiredTooltip") : undefined}
               onClick={async () => {
                 if (!lastReceipt) return;
                 setPrintError(null);
                 try {
                   await printer.print(await buildReceipt(lastReceipt));
                 } catch (err) {
-                  setPrintError(err instanceof Error ? err.message : "Impression impossible.");
+                  setPrintError(err instanceof Error ? err.message : t("sales.printError"));
                 }
               }}
             >
-              Imprimer le ticket
+              {t("sales.printTicket")}
             </button>
             <button
               style={{
@@ -480,34 +480,54 @@ export function SalesPage() {
                 color: "var(--color-text)",
               }}
               disabled={!lastReceipt}
-              onClick={() => {
+              onClick={async () => {
                 if (!lastReceipt) return;
                 const blob = buildReceiptPdf(lastReceipt);
-                downloadBlob(blob, `recu-${lastSaleNumber}-${timestampForFilename()}.pdf`);
+                await saveGeneratedFile(blob, `recu-${lastSaleNumber}-${timestampForFilename()}.pdf`);
               }}
             >
-              Enregistrer en PDF
+              {t("sales.saveAsPdf")}
+            </button>
+            <input
+              style={{ ...inputStyle, width: 140, marginTop: 0 }}
+              placeholder={t("sales.customerPhonePlaceholder")}
+              value={receiptPhone}
+              onChange={(e) => setReceiptPhone(e.target.value)}
+            />
+            <button
+              style={{
+                ...primaryButtonStyle,
+                background: "transparent",
+                border: "1px solid var(--color-border)",
+                color: "var(--color-text)",
+              }}
+              disabled={!lastReceipt || !receiptPhone.trim()}
+              onClick={() => {
+                if (!lastReceipt) return;
+                const message = buildReceiptWhatsAppMessage(lastReceipt);
+                void openExternalUrl(buildWhatsAppLink(receiptPhone, businessSettings?.whatsappCountryCode, message));
+              }}
+            >
+              {t("sales.sendWhatsapp")}
             </button>
           </div>
         </div>
       )}
 
-      {printError && <p style={{ color: "#f87171" }}>{printError}</p>}
+      {printError && <p style={{ color: "var(--color-danger)" }}>{printError}</p>}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 24, marginTop: 24 }}>
+      <div className="cart-layout-grid">
         <div>
           {mode === "pos" ? (
             <>
               <input
                 style={inputStyle}
-                placeholder="Rechercher un produit..."
+                placeholder={t("sales.searchProductPlaceholder")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-                <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-                  Scanne un code-barres à tout moment pour ajouter directement au panier.
-                </p>
+                <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("sales.scanHint")}</p>
                 {isCameraScanSupported() && (
                   <button
                     onClick={() => setShowCameraScanner(true)}
@@ -522,7 +542,7 @@ export function SalesPage() {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    📷 Scanner (caméra)
+                    {t("sales.scanCamera")}
                   </button>
                 )}
               </div>
@@ -566,7 +586,7 @@ export function SalesPage() {
           ) : (
             <div style={cardStyle}>
               <label>
-                Ajouter un article
+                {t("sales.addItem")}
                 <SearchableSelect
                   value=""
                   onChange={(id) => {
@@ -574,8 +594,8 @@ export function SalesPage() {
                     if (product) addToCart(product);
                   }}
                   options={products.map((p) => ({ value: String(p.id), label: p.name }))}
-                  emptyLabel="— Choisir un produit —"
-                  placeholder="Rechercher un produit..."
+                  emptyLabel={t("sales.chooseProduct")}
+                  placeholder={t("sales.searchProductPlaceholder")}
                 />
               </label>
             </div>
@@ -583,7 +603,7 @@ export function SalesPage() {
         </div>
 
         <div style={cardStyle}>
-          <strong>Panier</strong>
+          <strong>{t("sales.cart")}</strong>
 
           {activePromotions.length > 0 && (
             <div
@@ -596,7 +616,7 @@ export function SalesPage() {
                 gap: 4,
               }}
             >
-              <strong style={{ fontSize: 13 }}>Promotions en cours</strong>
+              <strong style={{ fontSize: 13 }}>{t("sales.activePromotions")}</strong>
               {activePromotions.map((promo) => (
                 <label key={promo.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
                   <input
@@ -604,88 +624,100 @@ export function SalesPage() {
                     checked={checkedPromotionIds.has(promo.id)}
                     onChange={() => togglePromotion(promo.id)}
                   />
-                  {promo.name} — -{promo.discountPercent}% ({promo.scope === "product" ? "produits" : "facture"})
+                  {promo.name} — -{promo.discountPercent}% (
+                  {promo.scope === "product" ? t("sales.promoScopeProduct") : t("sales.promoScopeInvoice")})
                 </label>
               ))}
             </div>
           )}
 
           {cart.length === 0 ? (
-            <p style={{ color: "var(--color-text-muted)" }}>Aucun article.</p>
+            <p style={{ color: "var(--color-text-muted)" }}>{t("sales.emptyCart")}</p>
           ) : (
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Article</th>
-                  <th style={thStyle}>Qté</th>
-                  <th style={thStyle}>Total</th>
-                  <th style={thStyle}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {cart.map((line) => {
-                  const lineGross = line.quantity * line.unitPrice;
-                  const promo = lineDiscount(line.productId);
-                  const lineDiscountAmount = lineGross * (promo.percent / 100);
-                  return (
-                    <tr key={line.variantId}>
-                      <td style={tdStyle}>
-                        {line.productName}
-                        {promo.percent > 0 && (
-                          <div style={{ color: "#86efac", fontSize: 12 }}>
-                            Promo{promo.name ? ` ${promo.name}` : ""} -{promo.percent}%
-                          </div>
-                        )}
-                      </td>
-                      <td style={tdStyle}>
-                        <input
-                          type="number"
-                          value={line.quantity}
-                          onChange={(e) => updateQuantity(line.variantId, Number(e.target.value))}
-                          style={{ ...inputStyle, width: 60, marginTop: 0 }}
-                        />
-                      </td>
-                      <td style={tdStyle}>{(lineGross - lineDiscountAmount).toFixed(0)}</td>
-                      <td style={tdStyle}>
-                        <button
-                          onClick={() => removeLine(line.variantId)}
-                          style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
-                        >
-                          ✕
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>{t("sales.item")}</th>
+                    <th style={thStyle}>{t("sales.quantity")}</th>
+                    <th style={thStyle}>{t("sales.total")}</th>
+                    <th style={thStyle}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cart.map((line) => {
+                    const lineGross = line.quantity * line.unitPrice;
+                    const promo = lineDiscount(line.productId);
+                    const lineDiscountAmount = lineGross * (promo.percent / 100);
+                    return (
+                      <tr key={line.variantId}>
+                        <td style={tdStyle}>
+                          {line.productName}
+                          {promo.percent > 0 && (
+                            <div style={{ color: "var(--color-success)", fontSize: 12 }}>
+                              {t("sales.promo")}
+                              {promo.name ? ` ${promo.name}` : ""} -{promo.percent}%
+                            </div>
+                          )}
+                        </td>
+                        <td style={tdStyle}>
+                          <input
+                            type="number"
+                            value={line.quantity}
+                            onChange={(e) => updateQuantity(line.variantId, Number(e.target.value))}
+                            style={{ ...inputStyle, width: 60, marginTop: 0 }}
+                          />
+                        </td>
+                        <td style={tdStyle}>{(lineGross - lineDiscountAmount).toFixed(0)}</td>
+                        <td style={tdStyle}>
+                          <button
+                            onClick={() => removeLine(line.variantId)}
+                            style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
+                          >
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
 
           <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
-            <div>Sous-total : {subtotal.toFixed(0)}</div>
-            <div>Taxe : {taxTotal.toFixed(0)}</div>
+            <div>
+              {t("sales.subtotal")} {subtotal.toFixed(0)}
+            </div>
+            <div>
+              {t("sales.tax")} {taxTotal.toFixed(0)}
+            </div>
             {productPromoDiscount > 0 && (
-              <div style={{ color: "#86efac" }}>Remise promo produits : -{productPromoDiscount.toFixed(0)}</div>
+              <div style={{ color: "var(--color-success)" }}>
+                {t("sales.productPromoDiscount")} -{productPromoDiscount.toFixed(0)}
+              </div>
             )}
             {invoicePromoDiscount > 0 && (
-              <div style={{ color: "#86efac" }}>
-                Remise promo{checkedInvoicePromo ? ` ${checkedInvoicePromo.name}` : ""} : -
+              <div style={{ color: "var(--color-success)" }}>
+                {t("sales.invoicePromoDiscount")}
+                {checkedInvoicePromo ? ` ${checkedInvoicePromo.name}` : ""} : -
                 {invoicePromoDiscount.toFixed(0)}
               </div>
             )}
             {redemptionDiscount > 0 && (
-              <div style={{ color: "#86efac" }}>Réduction fidélité : -{redemptionDiscount.toFixed(0)}</div>
+              <div style={{ color: "var(--color-success)" }}>
+                {t("sales.loyaltyDiscount")} -{redemptionDiscount.toFixed(0)}
+              </div>
             )}
-            <div style={{ fontWeight: 700, fontSize: 18 }}>Total : {total.toFixed(0)}</div>
+            <div style={{ fontWeight: 700, fontSize: 18 }}>
+              {t("sales.totalLabel")} {total.toFixed(0)}
+            </div>
           </div>
 
-          <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-            Facultatif pour un client de passage. Renseigne un nom uniquement pour le crédit, un
-            paiement partiel, ou si tu veux suivre un client fidèle.
-          </p>
+          <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("sales.customerOptionalHint")}</p>
 
           <label>
-            Client déjà enregistré
+            {t("sales.registeredCustomer")}
             <SearchableSelect
               value={customerId}
               onChange={(id) => {
@@ -693,15 +725,15 @@ export function SalesPage() {
                 setRedeemPointsInput("");
               }}
               options={customers.map((c) => ({ value: String(c.id), label: c.fullName }))}
-              emptyLabel="— Client de passage —"
-              placeholder="Rechercher un client..."
+              emptyLabel={t("sales.noCustomer")}
+              placeholder={t("sales.searchCustomerPlaceholder")}
             />
           </label>
 
           {selectedCustomer && maxRedeemablePoints > 0 && (
             <label>
-              Points fidélité ({selectedCustomer.loyaltyPoints} pts disponibles) — utiliser jusqu'à{" "}
-              {maxRedeemablePoints.toFixed(0)} pts
+              {t("sales.loyaltyPoints")} ({selectedCustomer.loyaltyPoints} {t("sales.loyaltyPointsAvailable")}{" "}
+              {maxRedeemablePoints.toFixed(0)} {t("sales.pts")}
               <input
                 style={inputStyle}
                 type="number"
@@ -713,34 +745,35 @@ export function SalesPage() {
               />
               {redeemPointsValue > 0 && (
                 <span style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-                  Réduction : {redemptionDiscount.toFixed(0)}
+                  {t("sales.pointsReductionLabel")} {redemptionDiscount.toFixed(0)}
                 </span>
               )}
             </label>
           )}
           {!customerId && (
             <label>
-              Ou nom du client{needsCustomerIdentification ? " (requis pour le crédit)" : " (optionnel)"}
+              {t("sales.orCustomerName")}
+              {needsCustomerIdentification ? t("sales.requiredForCredit") : t("sales.optional")}
               <input
                 style={{
                   ...inputStyle,
-                  border: needsCustomerIdentification && !newCustomerName.trim() ? "1px solid #f87171" : inputStyle.border,
+                  border: needsCustomerIdentification && !newCustomerName.trim() ? "1px solid var(--color-danger)" : inputStyle.border,
                 }}
                 value={newCustomerName}
                 onChange={(e) => setNewCustomerName(e.target.value)}
-                placeholder="Nom du client"
+                placeholder={t("sales.customerNamePlaceholder")}
               />
             </label>
           )}
 
           <label>
-            Méthode de paiement
+            {t("sales.paymentMethod")}
             <select
               style={inputStyle}
               value={paymentMethod}
               onChange={(e) => handlePaymentMethodChange(e.target.value as PaymentMethod)}
             >
-              {PAYMENT_METHODS.map((m) => (
+              {paymentMethods.map((m) => (
                 <option key={m.value} value={m.value}>
                   {m.label}
                 </option>
@@ -749,7 +782,7 @@ export function SalesPage() {
           </label>
 
           <label>
-            Montant payé (laisser vide = total)
+            {t("sales.amountPaid")}
             <input
               style={inputStyle}
               type="number"
@@ -761,7 +794,7 @@ export function SalesPage() {
 
           {paymentMethod === "cash" && (
             <label>
-              Montant reçu (espèces)
+              {t("sales.cashReceived")}
               <input
                 style={inputStyle}
                 type="number"
@@ -771,16 +804,16 @@ export function SalesPage() {
               />
               {cashReceived !== "" && (
                 <div style={{ fontWeight: 700, fontSize: 16, marginTop: 4 }}>
-                  Monnaie à rendre : {changeDue.toFixed(0)}
+                  {t("sales.changeDue")} {changeDue.toFixed(0)}
                 </div>
               )}
             </label>
           )}
 
-          {checkoutError && <p style={{ color: "#f87171" }}>{checkoutError}</p>}
+          {checkoutError && <p style={{ color: "var(--color-danger)" }}>{checkoutError}</p>}
 
           <button style={primaryButtonStyle} onClick={handleCheckout} disabled={checkingOut}>
-            {checkingOut ? "Encaissement..." : "Encaisser"}
+            {checkingOut ? t("sales.checkingOut") : t("sales.checkout")}
           </button>
         </div>
       </div>

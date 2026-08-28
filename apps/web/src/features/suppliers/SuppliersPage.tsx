@@ -7,6 +7,7 @@ import {
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import {
   cardStyle,
@@ -25,6 +26,7 @@ type Debt = typeof schema.supplierDebts.$inferSelect;
 export function SuppliersPage() {
   const db = useDatabase();
   const { user } = useAuth();
+  const { t } = useTranslation();
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
@@ -74,7 +76,7 @@ export function SuppliersPage() {
   const handleSubmit = async () => {
     setError(null);
     if (!name.trim()) {
-      setError("Le nom du fournisseur est requis.");
+      setError(t("suppliers.errors.nameRequired"));
       return;
     }
 
@@ -87,9 +89,9 @@ export function SuppliersPage() {
         createdBy: user?.id,
       };
       if (editingId) {
-        await updateSupplier(db, editingId, input);
+        await updateSupplier(db, editingId, input, user?.permissions ?? {});
       } else {
-        await createSupplier(db, input);
+        await createSupplier(db, input, user?.permissions ?? {});
       }
       resetForm();
       await refresh();
@@ -103,28 +105,28 @@ export function SuppliersPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Fournisseurs</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <h1>{t("suppliers.title")}</h1>
         <button
           style={primaryButtonStyle}
           onClick={() => (showForm ? resetForm() : setShowForm(true))}
         >
-          {showForm ? "Annuler" : "+ Nouveau fournisseur"}
+          {showForm ? t("suppliers.cancel") : t("suppliers.new")}
         </button>
       </div>
 
       {showForm && (
         <div style={cardStyle}>
           <label>
-            Nom
+            {t("suppliers.name")}
             <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
           </label>
           <label>
-            Téléphone
+            {t("suppliers.phone")}
             <input style={inputStyle} value={phone} onChange={(e) => setPhone(e.target.value)} />
           </label>
           <label>
-            Personne de contact
+            {t("suppliers.contactPerson")}
             <input
               style={inputStyle}
               value={contactPerson}
@@ -132,54 +134,56 @@ export function SuppliersPage() {
             />
           </label>
 
-          {error && <p style={{ color: "#f87171" }}>{error}</p>}
+          {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
           <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
-            {saving ? "Enregistrement..." : editingId ? "Enregistrer les modifications" : "Créer le fournisseur"}
+            {saving ? t("suppliers.saving") : editingId ? t("suppliers.saveChanges") : t("suppliers.create")}
           </button>
         </div>
       )}
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>Nom</th>
-            <th style={thStyle}>Téléphone</th>
-            <th style={thStyle}>Contact</th>
-            <th style={thStyle}>Solde dette</th>
-            <th style={thStyle}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {suppliers.map((s) => (
-            <tr key={s.id}>
-              <td style={tdStyle}>{s.name}</td>
-              <td style={tdStyle}>{s.phone ?? "—"}</td>
-              <td style={tdStyle}>{s.contactPerson ?? "—"}</td>
-              <td style={{ ...tdStyle, color: debtBalance(s.id) > 0 ? "#fdba74" : undefined }}>
-                {debtBalance(s.id) > 0 ? debtBalance(s.id) : "—"}
-              </td>
-              <td style={tdStyle}>
-                {user && hasPermission(user.permissions, "edit_suppliers") && (
-                  <button
-                    style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                    onClick={() => startEdit(s)}
-                  >
-                    Modifier
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-          {suppliers.length === 0 && (
+      <div className="table-scroll">
+        <table style={tableStyle}>
+          <thead>
             <tr>
-              <td style={tdStyle} colSpan={5}>
-                Aucun fournisseur.
-              </td>
+              <th style={thStyle}>{t("suppliers.name")}</th>
+              <th style={thStyle}>{t("suppliers.phone")}</th>
+              <th style={thStyle}>{t("suppliers.contactPerson")}</th>
+              <th style={thStyle}>{t("suppliers.debtBalance")}</th>
+              <th style={thStyle}></th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {suppliers.map((s) => (
+              <tr key={s.id}>
+                <td style={tdStyle}>{s.name}</td>
+                <td style={tdStyle}>{s.phone ?? "—"}</td>
+                <td style={tdStyle}>{s.contactPerson ?? "—"}</td>
+                <td style={{ ...tdStyle, color: debtBalance(s.id) > 0 ? "var(--color-warning)" : undefined }}>
+                  {debtBalance(s.id) > 0 ? debtBalance(s.id) : "—"}
+                </td>
+                <td style={tdStyle}>
+                  {user && hasPermission(user.permissions, "edit_suppliers") && (
+                    <button
+                      style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                      onClick={() => startEdit(s)}
+                    >
+                      {t("suppliers.edit")}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {suppliers.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={5}>
+                  {t("suppliers.none")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </main>
   );
 }

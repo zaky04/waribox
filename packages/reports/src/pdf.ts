@@ -1,46 +1,107 @@
+import { t } from "@gestion-boutique/i18n";
 import { jsPDF } from "jspdf";
+
+const TABLE_MARGIN_X = 14;
+const TABLE_LINE_HEIGHT_MM = 6;
+const TABLE_CELL_GUTTER_MM = 2;
+
+// Colonnes de largeur égale par défaut (pas de `columnWeights`), ou
+// proportionnelles aux poids fournis — un intitulé de compte SYSCOHADA ou
+// une description de transaction est structurellement bien plus long qu'un
+// code de compte ou une date, une largeur uniforme les fait alors déborder
+// l'une sur l'autre (chevauchement visuel, texte illisible).
+function computeColumnLayout(headerCount: number, columnWeights?: number[]): { x: number[]; width: number[] } {
+  const usableWidth = 210 - TABLE_MARGIN_X * 2;
+  const weights = columnWeights ?? Array(headerCount).fill(1);
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+  const width = weights.map((w) => (usableWidth * w) / totalWeight);
+  const x: number[] = [];
+  let cursor = TABLE_MARGIN_X;
+  for (const w of width) {
+    x.push(cursor);
+    cursor += w;
+  }
+  return { x, width };
+}
+
+// Retourne à la ligne chaque cellule dans la largeur de sa colonne (jsPDF ne
+// le fait jamais spontanément avec `doc.text`, contrairement à un navigateur)
+// — sans ça, tout contenu plus long que la colonne déborde purement et
+// simplement sur la colonne suivante plutôt que d'être coupé ou de passer à
+// la ligne, d'où le chevauchement observé en pratique sur le journal
+// SYSCOHADA (numéro de pièce + code de compte, description de transaction).
+function drawTableRow(
+  doc: jsPDF,
+  cells: (string | number)[],
+  colX: number[],
+  colWidth: number[],
+  y: number,
+): number {
+  const wrapped = cells.map((cell, i) =>
+    doc.splitTextToSize(String(cell), Math.max((colWidth[i] ?? 0) - TABLE_CELL_GUTTER_MM, 10)) as string[],
+  );
+  const lineCount = Math.max(1, ...wrapped.map((lines) => lines.length));
+  wrapped.forEach((lines, i) => {
+    lines.forEach((line, li) => doc.text(line, colX[i] ?? 0, y + li * TABLE_LINE_HEIGHT_MM));
+  });
+  return y + lineCount * TABLE_LINE_HEIGHT_MM;
+}
 
 function drawTable(
   doc: jsPDF,
   startY: number,
   headers: string[],
   rows: (string | number)[][],
+  columnWeights?: number[],
 ): number {
-  const marginX = 14;
-  const colWidth = (210 - marginX * 2) / headers.length;
+  const { x: colX, width: colWidth } = computeColumnLayout(headers.length, columnWeights);
   let y = startY;
 
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
-  headers.forEach((header, i) => {
-    doc.text(String(header), marginX + i * colWidth, y);
-  });
-  y += 6;
+  y = drawTableRow(doc, headers, colX, colWidth, y) + 1;
   doc.setFont("helvetica", "normal");
 
   for (const row of rows) {
-    if (y > 280) {
+    const wrapped = row.map((cell, i) =>
+      doc.splitTextToSize(String(cell), Math.max((colWidth[i] ?? 0) - TABLE_CELL_GUTTER_MM, 10)) as string[],
+    );
+    const rowHeight = Math.max(1, ...wrapped.map((lines) => lines.length)) * TABLE_LINE_HEIGHT_MM;
+    if (y + rowHeight > 285) {
       doc.addPage();
       y = 20;
     }
-    row.forEach((cell, i) => {
-      doc.text(String(cell), marginX + i * colWidth, y);
-    });
-    y += 6;
+    y = drawTableRow(doc, row, colX, colWidth, y);
   }
 
   return y;
 }
 
-function buildReportPdf(title: string, subtitle: string, headers: string[], rows: (string | number)[][]): Blob {
+// Retourne à la ligne le sous-titre (souvent une phrase interpolée avec
+// plusieurs valeurs — dates, montants, compteurs) plutôt que de le laisser
+// déborder hors de la page, et décale le début du tableau en conséquence
+// pour ne jamais chevaucher une deuxième ligne de sous-titre.
+function drawWrappedSubtitle(doc: jsPDF, subtitle: string, y: number): number {
+  const lines = doc.splitTextToSize(subtitle, 210 - TABLE_MARGIN_X * 2) as string[];
+  doc.text(lines, TABLE_MARGIN_X, y);
+  return y + lines.length * TABLE_LINE_HEIGHT_MM;
+}
+
+function buildReportPdf(
+  title: string,
+  subtitle: string,
+  headers: string[],
+  rows: (string | number)[][],
+  columnWeights?: number[],
+): Blob {
   const doc = new jsPDF();
   doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
   doc.text(title, 14, 18);
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text(subtitle, 14, 26);
-  drawTable(doc, 36, headers, rows);
+  const tableStartY = drawWrappedSubtitle(doc, subtitle, 26) + 4;
+  drawTable(doc, tableStartY, headers, rows, columnWeights);
   return doc.output("blob");
 }
 
@@ -57,9 +118,19 @@ export interface SalesReportData {
 export function buildSalesReportPdf(data: SalesReportData): Blob {
   const rows = data.topProducts.map((p) => [p.name, p.quantity, p.revenue.toFixed(0)]);
   return buildReportPdf(
-    "Rapport des ventes",
-    `Du ${data.from} au ${data.to} — CA total : ${data.totalRevenue.toFixed(0)} — Ventes : ${data.saleCount} — Panier moyen : ${data.averageBasket.toFixed(0)}`,
-    ["Produit", "Quantité", "Revenu"],
+    t("documents.reports.sales.title"),
+    t("documents.reports.sales.subtitle", {
+      from: data.from,
+      to: data.to,
+      totalRevenue: data.totalRevenue.toFixed(0),
+      saleCount: data.saleCount,
+      averageBasket: data.averageBasket.toFixed(0),
+    }),
+    [
+      t("documents.reports.sales.columnProduct"),
+      t("documents.reports.sales.columnQuantity"),
+      t("documents.reports.sales.columnRevenue"),
+    ],
     rows,
   );
 }
@@ -88,15 +159,27 @@ export function buildMarginsReportPdf(data: MarginsReportData): Blob {
   const doc = new jsPDF();
   doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
-  doc.text("Rapport des marges", 14, 18);
+  doc.text(t("documents.reports.margins.title"), 14, 18);
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text(
-    `Du ${data.from} au ${data.to} — Revenu : ${data.revenue.toFixed(0)} — Coût : ${data.cost.toFixed(0)} — Marge : ${data.margin.toFixed(0)} (${data.marginRate.toFixed(1)}%)`,
-    14,
+  const subtitleEndY = drawWrappedSubtitle(
+    doc,
+    t("documents.reports.margins.subtitle", {
+      from: data.from,
+      to: data.to,
+      revenue: data.revenue.toFixed(0),
+      cost: data.cost.toFixed(0),
+      margin: data.margin.toFixed(0),
+      marginRate: data.marginRate.toFixed(1),
+    }),
     26,
   );
-  let y = drawTable(doc, 36, ["Date", "Marge"], rows);
+  let y = drawTable(
+    doc,
+    subtitleEndY + 4,
+    [t("documents.reports.margins.columnDate"), t("documents.reports.margins.columnMargin")],
+    rows,
+  );
 
   if (data.productBreakdown && data.productBreakdown.length > 0) {
     y += 10;
@@ -105,7 +188,7 @@ export function buildMarginsReportPdf(data: MarginsReportData): Blob {
       y = 20;
     }
     doc.setFont("helvetica", "bold");
-    doc.text("Produits les plus rentables (analyse ABC)", 14, y);
+    doc.text(t("documents.reports.margins.breakdownHeading"), 14, y);
     y += 8;
     doc.setFont("helvetica", "normal");
     const productRows = data.productBreakdown.map((p) => [
@@ -116,7 +199,24 @@ export function buildMarginsReportPdf(data: MarginsReportData): Blob {
       `${p.cumulativeShare.toFixed(1)}%`,
       p.abcClass,
     ]);
-    drawTable(doc, y, ["Produit", "Qté", "Marge", "Taux", "Cumul", "Classe"], productRows);
+    drawTable(
+      doc,
+      y,
+      [
+        t("documents.reports.margins.columnProduct"),
+        t("documents.reports.margins.columnQty"),
+        t("documents.reports.margins.columnMargin"),
+        t("documents.reports.margins.columnRate"),
+        t("documents.reports.margins.columnCumulative"),
+        t("documents.reports.margins.columnClass"),
+      ],
+      productRows,
+      // Le nom du produit a besoin de bien plus de place que les 5 autres
+      // colonnes (pourcentages/lettre de classe, toujours courts) — une
+      // répartition égale forcerait un retour à la ligne systématique sur
+      // cette seule colonne.
+      [3, 1, 1, 1, 1, 1],
+    );
   }
 
   return doc.output("blob");
@@ -136,10 +236,20 @@ export function buildCashFlowReportPdf(data: CashFlowReportData): Blob {
   const doc = new jsPDF();
   doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
-  doc.text("Rapport de trésorerie", 14, 18);
+  doc.text(t("documents.reports.cashFlow.title"), 14, 18);
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  let y = drawTable(doc, 30, ["Mois", "Entrées", "Sorties", "Net"], rows);
+  let y = drawTable(
+    doc,
+    30,
+    [
+      t("documents.reports.cashFlow.columnMonth"),
+      t("documents.reports.cashFlow.columnIn"),
+      t("documents.reports.cashFlow.columnOut"),
+      t("documents.reports.cashFlow.columnNet"),
+    ],
+    rows,
+  );
 
   if (data.projection) {
     y += 10;
@@ -148,12 +258,15 @@ export function buildCashFlowReportPdf(data: CashFlowReportData): Blob {
       y = 20;
     }
     doc.setFont("helvetica", "bold");
-    doc.text(
-      `Projection sur ${data.projection.years} an(s) — croissance annuelle : ${data.projection.growthRate}%`,
-      14,
+    y = drawWrappedSubtitle(
+      doc,
+      t("documents.reports.cashFlow.projectionSubtitle", {
+        years: data.projection.years,
+        growthRate: data.projection.growthRate,
+      }),
       y,
     );
-    y += 8;
+    y += 4;
     doc.setFont("helvetica", "normal");
     const projRows = data.projection.byYear.map((p) => [
       p.year,
@@ -162,7 +275,18 @@ export function buildCashFlowReportPdf(data: CashFlowReportData): Blob {
       p.projectedNet.toFixed(0),
       p.cumulative.toFixed(0),
     ]);
-    drawTable(doc, y, ["Année", "Entrées", "Sorties", "Net", "Cumulé"], projRows);
+    drawTable(
+      doc,
+      y,
+      [
+        t("documents.reports.cashFlow.columnYear"),
+        t("documents.reports.cashFlow.columnIn"),
+        t("documents.reports.cashFlow.columnOut"),
+        t("documents.reports.cashFlow.columnNet"),
+        t("documents.reports.cashFlow.columnCumulative"),
+      ],
+      projRows,
+    );
   }
 
   return doc.output("blob");
@@ -183,9 +307,16 @@ export interface IncomeStatementReportData {
 export function buildIncomeStatementReportPdf(data: IncomeStatementReportData): Blob {
   const rows = data.expensesByCategory.map((e) => [e.category, e.amount.toFixed(0)]);
   return buildReportPdf(
-    "Compte de résultat (simplifié)",
-    `Du ${data.from} au ${data.to} — CA : ${data.revenue.toFixed(0)} — Coût des ventes : ${data.cogs.toFixed(0)} — Charges : ${data.expensesTotal.toFixed(0)} — Résultat net : ${data.netIncome.toFixed(0)}`,
-    ["Catégorie de charge", "Montant"],
+    t("documents.reports.incomeStatement.title"),
+    t("documents.reports.incomeStatement.subtitle", {
+      from: data.from,
+      to: data.to,
+      revenue: data.revenue.toFixed(0),
+      cogs: data.cogs.toFixed(0),
+      expensesTotal: data.expensesTotal.toFixed(0),
+      netIncome: data.netIncome.toFixed(0),
+    }),
+    [t("documents.reports.incomeStatement.columnCategory"), t("documents.reports.incomeStatement.columnAmount")],
     rows,
   );
 }
@@ -203,9 +334,15 @@ export interface TaxReportData {
 export function buildTaxReportPdf(data: TaxReportData): Blob {
   const rows = data.byDay.map((d) => [d.date, d.taxCollected.toFixed(0)]);
   return buildReportPdf(
-    "Rapport TVA collectée",
-    `Du ${data.from} au ${data.to} — TVA ventes : ${data.salesTaxTotal.toFixed(0)} — TVA remboursée : ${data.refundsTaxTotal.toFixed(0)} — TVA nette : ${data.totalTaxCollected.toFixed(0)}`,
-    ["Date", "TVA collectée"],
+    t("documents.reports.tax.title"),
+    t("documents.reports.tax.subtitle", {
+      from: data.from,
+      to: data.to,
+      salesTaxTotal: data.salesTaxTotal.toFixed(0),
+      refundsTaxTotal: data.refundsTaxTotal.toFixed(0),
+      totalTaxCollected: data.totalTaxCollected.toFixed(0),
+    }),
+    [t("documents.reports.tax.columnDate"), t("documents.reports.tax.columnTaxCollected")],
     rows,
   );
 }
@@ -223,15 +360,20 @@ export interface BalanceSheetReportData {
 
 export function buildBalanceSheetReportPdf(data: BalanceSheetReportData): Blob {
   const rows: (string | number)[][] = [
-    ["Trésorerie", data.cash.toFixed(0)],
-    ["Valeur du stock", data.stockValue.toFixed(0)],
-    ["Créances clients", data.receivables.toFixed(0)],
-    ["Total Actif", data.actifTotal.toFixed(0)],
-    ["Dettes fournisseurs", data.payables.toFixed(0)],
-    ["Total Passif", data.passifTotal.toFixed(0)],
-    ["Capitaux propres (résiduel)", data.equity.toFixed(0)],
+    [t("documents.reports.balanceSheet.rowCash"), data.cash.toFixed(0)],
+    [t("documents.reports.balanceSheet.rowStockValue"), data.stockValue.toFixed(0)],
+    [t("documents.reports.balanceSheet.rowReceivables"), data.receivables.toFixed(0)],
+    [t("documents.reports.balanceSheet.rowTotalAssets"), data.actifTotal.toFixed(0)],
+    [t("documents.reports.balanceSheet.rowPayables"), data.payables.toFixed(0)],
+    [t("documents.reports.balanceSheet.rowTotalLiabilities"), data.passifTotal.toFixed(0)],
+    [t("documents.reports.balanceSheet.rowEquity"), data.equity.toFixed(0)],
   ];
-  return buildReportPdf("Bilan (simplifié, non certifié)", `Au ${data.asOfDate}`, ["Poste", "Montant"], rows);
+  return buildReportPdf(
+    t("documents.reports.balanceSheet.title"),
+    t("documents.reports.balanceSheet.subtitle", { asOfDate: data.asOfDate }),
+    [t("documents.reports.balanceSheet.columnItem"), t("documents.reports.balanceSheet.columnAmount")],
+    rows,
+  );
 }
 
 export interface SyscohadaJournalLine {
@@ -265,9 +407,29 @@ export function buildSyscohadaJournalPdf(data: SyscohadaJournalReportData): Blob
   ]);
   return buildReportPdf(
     data.title,
-    `Du ${data.from} au ${data.to} — Total débit : ${totalDebit.toFixed(0)} — Total crédit : ${totalCredit.toFixed(0)}`,
-    ["Date", "Pièce", "Compte", "Intitulé", "Libellé", "Débit", "Crédit"],
+    t("documents.reports.syscohadaJournal.subtitle", {
+      from: data.from,
+      to: data.to,
+      totalDebit: totalDebit.toFixed(0),
+      totalCredit: totalCredit.toFixed(0),
+    }),
+    [
+      t("documents.reports.syscohadaJournal.columnDate"),
+      t("documents.reports.syscohadaJournal.columnPiece"),
+      t("documents.reports.syscohadaJournal.columnAccount"),
+      t("documents.reports.syscohadaJournal.columnLabel"),
+      t("documents.reports.syscohadaJournal.columnDescription"),
+      t("documents.reports.syscohadaJournal.columnDebit"),
+      t("documents.reports.syscohadaJournal.columnCredit"),
+    ],
     rows,
+    // Intitulé (nom de compte) et Libellé (description de transaction) sont
+    // du texte libre potentiellement long ("État, TVA facturée sur ventes de
+    // marchandises", "Vente VTE-2026-000001 — Client comptant") — bien plus
+    // que les codes/dates/montants des 5 autres colonnes. "Compte"/"Account"
+    // reste plus large que son propre contenu (3-4 chiffres) car c'est
+    // l'intitulé de colonne lui-même le plus large élément de cette colonne.
+    [1.3, 1.6, 1.0, 2.3, 2.6, 1.0, 1.0],
   );
 }
 
@@ -288,9 +450,69 @@ export function buildSyscohadaBalancePdf(data: SyscohadaBalanceReportData): Blob
     r.solde.toFixed(0),
   ]);
   return buildReportPdf(
-    "Balance générale (SYSCOHADA)",
-    `Du ${data.from} au ${data.to} — Total débit : ${totalDebit.toFixed(0)} — Total crédit : ${totalCredit.toFixed(0)}`,
-    ["Compte", "Intitulé", "Débit", "Crédit", "Solde"],
+    t("documents.reports.syscohadaBalance.title"),
+    t("documents.reports.syscohadaBalance.subtitle", {
+      from: data.from,
+      to: data.to,
+      totalDebit: totalDebit.toFixed(0),
+      totalCredit: totalCredit.toFixed(0),
+    }),
+    [
+      t("documents.reports.syscohadaBalance.columnAccount"),
+      t("documents.reports.syscohadaBalance.columnLabel"),
+      t("documents.reports.syscohadaBalance.columnDebit"),
+      t("documents.reports.syscohadaBalance.columnCredit"),
+      t("documents.reports.syscohadaBalance.columnBalance"),
+    ],
+    rows,
+    [1.1, 2.2, 1, 1, 1],
+  );
+}
+
+export interface CashSessionReportRow {
+  userName: string;
+  openedAt: string;
+  openingAmount: number;
+  closedAt: string | null;
+  closingAmount: number | null;
+  expectedAmount: number | null;
+  difference: number | null;
+}
+
+export interface CashSessionsReportData {
+  from: string;
+  to: string;
+  rows: CashSessionReportRow[];
+}
+
+export function buildCashSessionsReportPdf(data: CashSessionsReportData): Blob {
+  const totalDifference = data.rows.reduce((sum, r) => sum + (r.difference ?? 0), 0);
+  const rows = data.rows.map((r) => [
+    r.openedAt,
+    r.userName,
+    r.openingAmount.toFixed(0),
+    r.closedAt ?? t("documents.reports.ongoing"),
+    r.closingAmount != null ? r.closingAmount.toFixed(0) : "—",
+    r.expectedAmount != null ? r.expectedAmount.toFixed(0) : "—",
+    r.difference != null ? r.difference.toFixed(0) : "—",
+  ]);
+  return buildReportPdf(
+    t("documents.reports.cashSessions.title"),
+    t("documents.reports.cashSessions.subtitle", {
+      from: data.from,
+      to: data.to,
+      count: data.rows.length,
+      totalDifference: totalDifference.toFixed(0),
+    }),
+    [
+      t("documents.reports.cashSessions.columnOpenedAt"),
+      t("documents.reports.cashSessions.columnCashier"),
+      t("documents.reports.cashSessions.columnOpeningAmount"),
+      t("documents.reports.cashSessions.columnClosedAt"),
+      t("documents.reports.cashSessions.columnClosingAmount"),
+      t("documents.reports.cashSessions.columnExpected"),
+      t("documents.reports.cashSessions.columnDifference"),
+    ],
     rows,
   );
 }

@@ -1,7 +1,9 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { desc, eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { requirePermission, type PermissionSet } from "../domain/permissions";
 
 export async function listSupplierDebts(db: Database, storeId?: number) {
   const query = db.select().from(schema.supplierDebts).orderBy(desc(schema.supplierDebts.id));
@@ -22,7 +24,12 @@ export interface RecordDebtPaymentInput {
   userId: number;
 }
 
-export async function recordDebtPayment(db: Database, input: RecordDebtPaymentInput) {
+export async function recordDebtPayment(
+  db: Database,
+  input: RecordDebtPaymentInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "manage_debts");
   const debt = await db
     .select()
     .from(schema.supplierDebts)
@@ -30,15 +37,13 @@ export async function recordDebtPayment(db: Database, input: RecordDebtPaymentIn
     .get();
 
   if (!debt) {
-    throw new Error("Dette introuvable.");
+    throw new Error(t("coreErrors.debts.notFound"));
   }
   if (input.amount <= 0) {
-    throw new Error("Le montant du paiement doit être supérieur à zéro.");
+    throw new Error(t("coreErrors.debts.amountPositive"));
   }
   if (input.amount > debt.remainingBalance) {
-    throw new Error(
-      `Le montant dépasse le solde restant (${debt.remainingBalance}).`,
-    );
+    throw new Error(t("coreErrors.common.amountExceedsBalance", { balance: debt.remainingBalance }));
   }
 
   await db.insert(schema.supplierDebtPayments).values({

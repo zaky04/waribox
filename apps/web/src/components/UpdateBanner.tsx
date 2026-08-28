@@ -1,6 +1,8 @@
 import { useRegisterSW } from "virtual:pwa-register/react";
+import { useTranslation } from "react-i18next";
 
 export function UpdateBanner() {
+  const { t } = useTranslation();
   const { needRefresh: [needRefresh, setNeedRefresh], updateServiceWorker } = useRegisterSW();
 
   if (!needRefresh) return null;
@@ -11,6 +13,7 @@ export function UpdateBanner() {
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
+        flexWrap: "wrap",
         gap: 16,
         padding: "10px 24px",
         background: "var(--color-bg-elevated)",
@@ -18,8 +21,8 @@ export function UpdateBanner() {
         color: "var(--color-text)",
       }}
     >
-      <span>Une nouvelle version de l'application est disponible.</span>
-      <div style={{ display: "flex", gap: 8 }}>
+      <span>{t("updateBanner.message")}</span>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         <button
           onClick={() => updateServiceWorker(true)}
           style={{
@@ -32,13 +35,13 @@ export function UpdateBanner() {
             cursor: "pointer",
           }}
         >
-          Mettre à jour
+          {t("updateBanner.update")}
         </button>
         <button
           onClick={() => setNeedRefresh(false)}
           style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
         >
-          Plus tard
+          {t("updateBanner.later")}
         </button>
       </div>
     </div>

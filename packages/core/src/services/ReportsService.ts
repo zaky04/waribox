@@ -1,5 +1,6 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { and, eq } from "drizzle-orm";
 import { listAllVariants, listProducts } from "./ProductsService";
 import { listSales } from "./SalesService";
 
@@ -118,8 +119,75 @@ export interface MarginsSummary {
   byDay: { date: string; margin: number }[];
 }
 
-// La marge s'appuie sur products.purchasePrice actuel (pas de coût historique
-// par lot d'achat) — approximation volontaire, voir le plan de Phase 7.
+// Coût réel des marchandises vendues, calculé à partir des mouvements de
+// stock liés à chaque vente et du coût du lot d'où ils proviennent
+// (stock_batches.unitCost, renseigné par PurchasesService.createPurchase à
+// l'achat) — plutôt que products.purchasePrice *actuel*, qui peut avoir
+// changé depuis la vente. Repli sur ce prix actuel quand le mouvement n'a
+// pas de lot connu ou que le lot n'a pas de coût renseigné (entrée de stock
+// manuelle sans coût, ou vente antérieure à cette fonctionnalité — voir le
+// commentaire sur stock_batches.unitCost).
+//
+// Regroupé par (vente, variante), pas directement par ligne de vente : les
+// mouvements de stock ne référencent que la vente et la variante, pas la
+// ligne exacte — si une même variante apparaît sur plusieurs lignes d'une
+// même vente (rare), le coût du groupe est réparti au prorata des quantités
+// via allocateCostByQuantityShare.
+async function getCostOfGoodsSoldBySaleAndVariant(
+  db: Database,
+  variants: Awaited<ReturnType<typeof listAllVariants>>,
+  products: Awaited<ReturnType<typeof listProducts>>,
+): Promise<Map<string, number>> {
+  const [movements, batches] = await Promise.all([
+    db
+      .select()
+      .from(schema.stockMovements)
+      .where(and(eq(schema.stockMovements.movementType, "sale"), eq(schema.stockMovements.referenceType, "sale"))),
+    db.select().from(schema.stockBatches),
+  ]);
+
+  const batchCostById = new Map(batches.map((b) => [b.id, b.unitCost]));
+  const purchasePriceByVariantId = new Map(
+    variants.map((v) => [v.id, products.find((p) => p.id === v.productId)?.purchasePrice ?? 0]),
+  );
+
+  const costBySaleVariant = new Map<string, number>();
+  for (const m of movements) {
+    if (m.referenceId == null) continue;
+    const batchCost = m.batchId != null ? batchCostById.get(m.batchId) : undefined;
+    const unitCost = batchCost ?? purchasePriceByVariantId.get(m.variantId) ?? 0;
+    const key = `${m.referenceId}:${m.variantId}`;
+    costBySaleVariant.set(key, (costBySaleVariant.get(key) ?? 0) + -m.quantityDelta * unitCost);
+  }
+  return costBySaleVariant;
+}
+
+function totalQuantityBySaleVariant(
+  items: { saleId: number; variantId: number; quantity: number }[],
+): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const item of items) {
+    const key = `${item.saleId}:${item.variantId}`;
+    map.set(key, (map.get(key) ?? 0) + item.quantity);
+  }
+  return map;
+}
+
+// Répartit le coût total d'un groupe (vente, variante) au prorata de la
+// quantité d'une ligne de vente précise dans ce groupe — voir le commentaire
+// sur getCostOfGoodsSoldBySaleAndVariant pour pourquoi ce prorata est
+// nécessaire. `totalQuantity <= 0` ne devrait pas arriver (une ligne de
+// vente implique forcément une quantité positive dans le groupe), géré par
+// prudence plutôt que de diviser par zéro.
+export function allocateCostByQuantityShare(
+  totalCost: number,
+  itemQuantity: number,
+  totalQuantity: number,
+): number {
+  if (totalQuantity <= 0) return 0;
+  return totalCost * (itemQuantity / totalQuantity);
+}
+
 export async function getMarginsSummary(
   db: Database,
   range: DateRange,
@@ -140,6 +208,9 @@ export async function getMarginsSummary(
   );
   const items = allSaleItems.filter((item) => salesInRange.has(item.saleId));
 
+  const costBySaleVariant = await getCostOfGoodsSoldBySaleAndVariant(db, variants, products);
+  const qtyBySaleVariant = totalQuantityBySaleVariant(items);
+
   let revenue = 0;
   let cost = 0;
   const byDayMap = new Map<string, number>();
@@ -147,18 +218,21 @@ export async function getMarginsSummary(
   for (const item of items) {
     const sale = salesInRange.get(item.saleId);
     if (!sale) continue;
-    const variant = variants.find((v) => v.id === item.variantId);
-    const product = variant ? products.find((p) => p.id === variant.productId) : undefined;
 
+    const key = `${item.saleId}:${item.variantId}`;
     const itemRevenue = item.quantity * item.unitPrice - item.discount;
-    const itemCost = product ? item.quantity * product.purchasePrice : 0;
+    const itemCost = allocateCostByQuantityShare(
+      costBySaleVariant.get(key) ?? 0,
+      item.quantity,
+      qtyBySaleVariant.get(key) ?? item.quantity,
+    );
     const itemMargin = itemRevenue - itemCost;
 
     revenue += itemRevenue;
     cost += itemCost;
 
-    const key = dayKey(sale.createdAt);
-    byDayMap.set(key, (byDayMap.get(key) ?? 0) + itemMargin);
+    const dayKeyValue = dayKey(sale.createdAt);
+    byDayMap.set(dayKeyValue, (byDayMap.get(dayKeyValue) ?? 0) + itemMargin);
   }
 
   const margin = revenue - cost;
@@ -210,6 +284,9 @@ export async function getProductMarginsBreakdown(
   );
   const items = allSaleItems.filter((item) => salesInRange.has(item.saleId));
 
+  const costBySaleVariant = await getCostOfGoodsSoldBySaleAndVariant(db, variants, products);
+  const qtyBySaleVariant = totalQuantityBySaleVariant(items);
+
   const byProduct = new Map<
     number,
     { name: string; quantity: number; revenue: number; cost: number }
@@ -220,8 +297,13 @@ export async function getProductMarginsBreakdown(
     const product = variant ? products.find((p) => p.id === variant.productId) : undefined;
     if (!product) continue;
 
+    const key = `${item.saleId}:${item.variantId}`;
     const itemRevenue = item.quantity * item.unitPrice - item.discount;
-    const itemCost = item.quantity * product.purchasePrice;
+    const itemCost = allocateCostByQuantityShare(
+      costBySaleVariant.get(key) ?? 0,
+      item.quantity,
+      qtyBySaleVariant.get(key) ?? item.quantity,
+    );
 
     const existing = byProduct.get(product.id) ?? {
       name: product.name,

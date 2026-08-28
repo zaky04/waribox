@@ -1,4 +1,5 @@
 import {
+  getLocationDisplayName,
   getRefundTotalsBySale,
   getSettings,
   hasPermission,
@@ -15,6 +16,7 @@ import {
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { useAuth } from "../auth/useAuth";
 import { FilterBar } from "../../components/FilterBar";
@@ -32,61 +34,9 @@ type Batch = typeof schema.stockBatches.$inferSelect;
 type Customer = typeof schema.customers.$inferSelect;
 type User = Awaited<ReturnType<typeof listUsers>>[number];
 
-const PAYMENT_STATUS_LABELS: Record<string, string> = {
-  paid: "Payée",
-  partial: "Partielle",
-  credit: "Crédit",
-};
-
-const MOVEMENT_TYPE_LABELS: Record<string, string> = {
-  purchase: "Achat",
-  sale: "Vente",
-  transfer: "Transfert",
-  adjustment: "Ajustement",
-  loss: "Perte",
-  return: "Retour client",
-};
-
 // Pour les mouvements "loss", referenceType porte le motif (voir StockPage.tsx)
 // plutôt qu'une référence à une autre entité — pas de conflit avec les autres
 // types de mouvement, qui n'utilisent jamais ces valeurs.
-const LOSS_REASON_LABELS: Record<string, string> = {
-  expiry: "Péremption",
-  damage: "Casse / Destruction",
-  theft: "Vol",
-  other: "Autre",
-};
-
-const ACTION_LABELS: Record<string, string> = {
-  create_sale: "Vente enregistrée",
-  create_refund: "Remboursement enregistré",
-  create_product: "Produit créé",
-  create_category: "Catégorie créée",
-  create_user: "Utilisateur créé",
-  update_user: "Utilisateur modifié",
-  activate_user: "Utilisateur activé",
-  deactivate_user: "Utilisateur désactivé",
-  impersonate_user: "Connexion en tant qu'un autre utilisateur",
-  open_cash_session: "Caisse ouverte",
-  close_cash_session: "Caisse fermée",
-  create_customer: "Client créé",
-  update_customer: "Client modifié",
-  create_supplier: "Fournisseur créé",
-  update_supplier: "Fournisseur modifié",
-  create_purchase: "Achat enregistré",
-  record_credit_repayment: "Remboursement créance enregistré",
-  record_debt_payment: "Paiement dette enregistré",
-  adjust_loyalty_points: "Points fidélité ajustés",
-  create_service_order: "Ticket de service créé",
-  update_service_order: "Ticket de service modifié",
-  update_service_order_item: "Article de ticket modifié",
-  update_service_order_item_status: "Statut d'article modifié",
-  set_maintenance_code: "Code de maintenance défini",
-  change_maintenance_code: "Code de maintenance changé",
-  create_expense: "Dépense enregistrée",
-  update_expense: "Dépense modifiée",
-  delete_expense: "Dépense supprimée",
-};
 
 interface SalesFilterState {
   from: string;
@@ -136,6 +86,7 @@ const EMPTY_ACTION_FILTERS: ActionFilterState = { from: "", to: "", userId: "", 
 export function JournalsPage() {
   const db = useDatabase();
   const { user } = useAuth();
+  const { t } = useTranslation();
   const canManageRefunds = hasPermission(user?.permissions ?? {}, "manage_refunds");
   const [tab, setTab] = useState<"sales" | "stock" | "actions">("sales");
   const [refundingSale, setRefundingSale] = useState<Sale | null>(null);
@@ -157,6 +108,60 @@ export function JournalsPage() {
   const [salesFilters, setSalesFilters] = useState<SalesFilterState>(EMPTY_SALES_FILTERS);
   const [stockFilters, setStockFilters] = useState<StockFilterState>(EMPTY_STOCK_FILTERS);
   const [actionFilters, setActionFilters] = useState<ActionFilterState>(EMPTY_ACTION_FILTERS);
+
+  const PAYMENT_STATUS_LABELS: Record<string, string> = {
+    paid: t("common.paymentStatus.paid"),
+    partial: t("common.paymentStatus.partial"),
+    credit: t("common.paymentStatus.credit"),
+  };
+
+  const MOVEMENT_TYPE_LABELS: Record<string, string> = {
+    purchase: t("journals.movementTypes.purchase"),
+    sale: t("journals.movementTypes.sale"),
+    transfer: t("journals.movementTypes.transfer"),
+    adjustment: t("journals.movementTypes.adjustment"),
+    loss: t("journals.movementTypes.loss"),
+    return: t("journals.movementTypes.return"),
+  };
+
+  const LOSS_REASON_LABELS: Record<string, string> = {
+    expiry: t("journals.lossReasons.expiry"),
+    damage: t("journals.lossReasons.damage"),
+    theft: t("journals.lossReasons.theft"),
+    other: t("journals.lossReasons.other"),
+  };
+
+  const ACTION_LABELS: Record<string, string> = {
+    create_sale: t("journals.actionLabels.create_sale"),
+    create_refund: t("journals.actionLabels.create_refund"),
+    create_product: t("journals.actionLabels.create_product"),
+    update_product: t("journals.actionLabels.update_product"),
+    create_category: t("journals.actionLabels.create_category"),
+    create_user: t("journals.actionLabels.create_user"),
+    update_user: t("journals.actionLabels.update_user"),
+    activate_user: t("journals.actionLabels.activate_user"),
+    deactivate_user: t("journals.actionLabels.deactivate_user"),
+    impersonate_user: t("journals.actionLabels.impersonate_user"),
+    open_cash_session: t("journals.actionLabels.open_cash_session"),
+    close_cash_session: t("journals.actionLabels.close_cash_session"),
+    create_customer: t("journals.actionLabels.create_customer"),
+    update_customer: t("journals.actionLabels.update_customer"),
+    create_supplier: t("journals.actionLabels.create_supplier"),
+    update_supplier: t("journals.actionLabels.update_supplier"),
+    create_purchase: t("journals.actionLabels.create_purchase"),
+    record_credit_repayment: t("journals.actionLabels.record_credit_repayment"),
+    record_debt_payment: t("journals.actionLabels.record_debt_payment"),
+    adjust_loyalty_points: t("journals.actionLabels.adjust_loyalty_points"),
+    create_service_order: t("journals.actionLabels.create_service_order"),
+    update_service_order: t("journals.actionLabels.update_service_order"),
+    update_service_order_item: t("journals.actionLabels.update_service_order_item"),
+    update_service_order_item_status: t("journals.actionLabels.update_service_order_item_status"),
+    set_maintenance_code: t("journals.actionLabels.set_maintenance_code"),
+    change_maintenance_code: t("journals.actionLabels.change_maintenance_code"),
+    create_expense: t("journals.actionLabels.create_expense"),
+    update_expense: t("journals.actionLabels.update_expense"),
+    delete_expense: t("journals.actionLabels.delete_expense"),
+  };
 
   const refreshReference = useCallback(async () => {
     const [productRows, variantRows, locationRows, batchRows, userRows, customerRows, storeRows, settings] =
@@ -234,7 +239,10 @@ export function JournalsPage() {
   }, [refreshActions]);
 
   const userName = (userId: number | null) => users.find((u) => u.id === userId)?.fullName ?? "—";
-  const locationName = (locationId: number) => locations.find((l) => l.id === locationId)?.name ?? "—";
+  const locationName = (locationId: number) => {
+    const name = locations.find((l) => l.id === locationId)?.name;
+    return name ? getLocationDisplayName(name) : "—";
+  };
   const customerName = (customerId: number | null) => customers.find((c) => c.id === customerId)?.fullName ?? null;
   const storeName = (storeId: number | null) => stores.find((s) => s.id === storeId)?.name ?? "—";
   const variantLabel = (variantId: number) => {
@@ -280,9 +288,9 @@ export function JournalsPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Journaux</h1>
-        <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <h1>{t("journals.title")}</h1>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {(["sales", "stock", "actions"] as const).map((key) => (
             <button
               key={key}
@@ -294,7 +302,7 @@ export function JournalsPage() {
                 border: tab === key ? "none" : "1px solid var(--color-border)",
               }}
             >
-              {key === "sales" ? "Ventes" : key === "stock" ? "Stock" : "Actions"}
+              {t(`journals.tabs.${key}`)}
             </button>
           ))}
         </div>
@@ -309,17 +317,17 @@ export function JournalsPage() {
             onToChange={(v) => setSalesFilters((f) => ({ ...f, to: v }))}
             search={salesFilters.search}
             onSearchChange={(v) => setSalesFilters((f) => ({ ...f, search: v }))}
-            searchPlaceholder="Numéro de vente..."
+            searchPlaceholder={t("journals.sales.searchPlaceholder")}
             onReset={() => setSalesFilters(EMPTY_SALES_FILTERS)}
           >
             <label>
-              Caissier
+              {t("journals.sales.cashier")}
               <select
                 style={inputStyle}
                 value={salesFilters.userId}
                 onChange={(e) => setSalesFilters((f) => ({ ...f, userId: e.target.value }))}
               >
-                <option value="">Tous</option>
+                <option value="">{t("journals.sales.all")}</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.fullName}
@@ -328,13 +336,13 @@ export function JournalsPage() {
               </select>
             </label>
             <label>
-              Statut paiement
+              {t("journals.sales.paymentStatus")}
               <select
                 style={inputStyle}
                 value={salesFilters.paymentStatus}
                 onChange={(e) => setSalesFilters((f) => ({ ...f, paymentStatus: e.target.value }))}
               >
-                <option value="">Tous</option>
+                <option value="">{t("journals.sales.all")}</option>
                 {Object.entries(PAYMENT_STATUS_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
@@ -343,23 +351,23 @@ export function JournalsPage() {
               </select>
             </label>
             <label>
-              Client
+              {t("journals.sales.customer")}
               <input
                 style={inputStyle}
                 value={salesFilters.customerSearch}
                 onChange={(e) => setSalesFilters((f) => ({ ...f, customerSearch: e.target.value }))}
-                placeholder="Nom du client..."
+                placeholder={t("journals.sales.customerNamePlaceholder")}
               />
             </label>
             {multiStoreEnabled && (
               <label>
-                Boutique
+                {t("journals.sales.store")}
                 <select
                   style={inputStyle}
                   value={salesFilters.storeId}
                   onChange={(e) => setSalesFilters((f) => ({ ...f, storeId: e.target.value }))}
                 >
-                  <option value="">Toutes</option>
+                  <option value="">{t("journals.sales.allStores")}</option>
                   {stores.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
@@ -370,83 +378,85 @@ export function JournalsPage() {
             )}
           </FilterBar>
 
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>Numéro</th>
-                <th style={thStyle}>Date</th>
-                <th style={thStyle}>Client</th>
-                <th style={thStyle}>Mode</th>
-                {multiStoreEnabled && <th style={thStyle}>Boutique</th>}
-                <th style={thStyle}>Total</th>
-                <th style={thStyle}>Paiement</th>
-                <th style={thStyle}>Caissier</th>
-                {canManageRefunds && <th style={thStyle}>Remboursement</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredSales.map((sale) => (
-                <tr key={sale.id}>
-                  <td style={tdStyle}>{sale.number}</td>
-                  <td style={tdStyle}>{sale.createdAt}</td>
-                  <td style={tdStyle}>{customerName(sale.customerId) ?? "—"}</td>
-                  <td style={tdStyle}>{sale.saleMode === "pos" ? "Caisse" : "Formulaire"}</td>
-                  {multiStoreEnabled && <td style={tdStyle}>{storeName(sale.storeId)}</td>}
-                  <td style={tdStyle}>{sale.total}</td>
-                  <td style={tdStyle}>{PAYMENT_STATUS_LABELS[sale.paymentStatus] ?? sale.paymentStatus}</td>
-                  <td style={tdStyle}>{userName(sale.userId)}</td>
-                  {canManageRefunds && (
-                    <td style={{ ...tdStyle, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                      {sale.status === "refunded" && <span style={{ color: "#f87171" }}>Remboursée</span>}
-                      {sale.status !== "refunded" && (refundTotals[sale.id] ?? 0) > 0 && (
-                        <span style={{ color: "#fdba74" }}>Remboursée partiellement</span>
-                      )}
-                      {(refundTotals[sale.id] ?? 0) > 0 && (
-                        <button
-                          onClick={() => setHistorySale(sale)}
-                          style={{
-                            background: "transparent",
-                            border: "1px solid var(--color-border)",
-                            color: "var(--color-text)",
-                            borderRadius: "var(--radius-md)",
-                            padding: "6px 12px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          Historique
-                        </button>
-                      )}
-                      {sale.status !== "refunded" && (
-                        <button
-                          onClick={() => setRefundingSale(sale)}
-                          style={{
-                            background: "transparent",
-                            border: "1px solid var(--color-border)",
-                            color: "var(--color-text)",
-                            borderRadius: "var(--radius-md)",
-                            padding: "6px 12px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          Rembourser
-                        </button>
-                      )}
-                    </td>
-                  )}
-                </tr>
-              ))}
-              {filteredSales.length === 0 && (
+          <div className="table-scroll">
+            <table style={tableStyle}>
+              <thead>
                 <tr>
-                  <td
-                    style={tdStyle}
-                    colSpan={7 + (multiStoreEnabled ? 1 : 0) + (canManageRefunds ? 1 : 0)}
-                  >
-                    Aucune vente pour cette sélection.
-                  </td>
+                  <th style={thStyle}>{t("journals.sales.number")}</th>
+                  <th style={thStyle}>{t("journals.sales.date")}</th>
+                  <th style={thStyle}>{t("journals.sales.customer")}</th>
+                  <th style={thStyle}>{t("journals.sales.mode")}</th>
+                  {multiStoreEnabled && <th style={thStyle}>{t("journals.sales.store")}</th>}
+                  <th style={thStyle}>{t("journals.sales.total")}</th>
+                  <th style={thStyle}>{t("journals.sales.payment")}</th>
+                  <th style={thStyle}>{t("journals.sales.cashier")}</th>
+                  {canManageRefunds && <th style={thStyle}>{t("journals.sales.refundColumn")}</th>}
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredSales.map((sale) => (
+                  <tr key={sale.id}>
+                    <td style={tdStyle}>{sale.number}</td>
+                    <td style={tdStyle}>{sale.createdAt}</td>
+                    <td style={tdStyle}>{customerName(sale.customerId) ?? "—"}</td>
+                    <td style={tdStyle}>{sale.saleMode === "pos" ? t("journals.sales.modePos") : t("journals.sales.modeForm")}</td>
+                    {multiStoreEnabled && <td style={tdStyle}>{storeName(sale.storeId)}</td>}
+                    <td style={tdStyle}>{sale.total}</td>
+                    <td style={tdStyle}>{PAYMENT_STATUS_LABELS[sale.paymentStatus] ?? sale.paymentStatus}</td>
+                    <td style={tdStyle}>{userName(sale.userId)}</td>
+                    {canManageRefunds && (
+                      <td style={{ ...tdStyle, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                        {sale.status === "refunded" && <span style={{ color: "var(--color-danger)" }}>{t("journals.sales.refunded")}</span>}
+                        {sale.status !== "refunded" && (refundTotals[sale.id] ?? 0) > 0 && (
+                          <span style={{ color: "var(--color-warning)" }}>{t("journals.sales.partiallyRefunded")}</span>
+                        )}
+                        {(refundTotals[sale.id] ?? 0) > 0 && (
+                          <button
+                            onClick={() => setHistorySale(sale)}
+                            style={{
+                              background: "transparent",
+                              border: "1px solid var(--color-border)",
+                              color: "var(--color-text)",
+                              borderRadius: "var(--radius-md)",
+                              padding: "6px 12px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {t("journals.sales.history")}
+                          </button>
+                        )}
+                        {sale.status !== "refunded" && (
+                          <button
+                            onClick={() => setRefundingSale(sale)}
+                            style={{
+                              background: "transparent",
+                              border: "1px solid var(--color-border)",
+                              color: "var(--color-text)",
+                              borderRadius: "var(--radius-md)",
+                              padding: "6px 12px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {t("journals.sales.refund")}
+                          </button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+                {filteredSales.length === 0 && (
+                  <tr>
+                    <td
+                      style={tdStyle}
+                      colSpan={7 + (multiStoreEnabled ? 1 : 0) + (canManageRefunds ? 1 : 0)}
+                    >
+                      {t("journals.sales.noSales")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
@@ -472,17 +482,17 @@ export function JournalsPage() {
             onToChange={(v) => setStockFilters((f) => ({ ...f, to: v }))}
             search={stockFilters.search}
             onSearchChange={(v) => setStockFilters((f) => ({ ...f, search: v }))}
-            searchPlaceholder="Nom du produit..."
+            searchPlaceholder={t("journals.stock.searchPlaceholder")}
             onReset={() => setStockFilters(EMPTY_STOCK_FILTERS)}
           >
             <label>
-              Utilisateur
+              {t("journals.stock.user")}
               <select
                 style={inputStyle}
                 value={stockFilters.userId}
                 onChange={(e) => setStockFilters((f) => ({ ...f, userId: e.target.value }))}
               >
-                <option value="">Tous</option>
+                <option value="">{t("journals.stock.all")}</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.fullName}
@@ -491,13 +501,13 @@ export function JournalsPage() {
               </select>
             </label>
             <label>
-              Type de mouvement
+              {t("journals.stock.movementType")}
               <select
                 style={inputStyle}
                 value={stockFilters.movementType}
                 onChange={(e) => setStockFilters((f) => ({ ...f, movementType: e.target.value }))}
               >
-                <option value="">Tous</option>
+                <option value="">{t("journals.stock.all")}</option>
                 {Object.entries(MOVEMENT_TYPE_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
@@ -506,13 +516,13 @@ export function JournalsPage() {
               </select>
             </label>
             <label>
-              Emplacement
+              {t("journals.stock.location")}
               <select
                 style={inputStyle}
                 value={stockFilters.locationId}
                 onChange={(e) => setStockFilters((f) => ({ ...f, locationId: e.target.value }))}
               >
-                <option value="">Tous</option>
+                <option value="">{t("journals.stock.all")}</option>
                 {locations.map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.name}
@@ -522,46 +532,48 @@ export function JournalsPage() {
             </label>
           </FilterBar>
 
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>Date</th>
-                <th style={thStyle}>Produit</th>
-                <th style={thStyle}>Emplacement</th>
-                <th style={thStyle}>Type</th>
-                <th style={thStyle}>Motif</th>
-                <th style={thStyle}>Lot</th>
-                <th style={thStyle}>Quantité</th>
-                <th style={thStyle}>Utilisateur</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredMovements.map((m) => (
-                <tr key={m.id}>
-                  <td style={tdStyle}>{m.createdAt}</td>
-                  <td style={tdStyle}>{variantLabel(m.variantId)}</td>
-                  <td style={tdStyle}>{locationName(m.locationId)}</td>
-                  <td style={tdStyle}>{MOVEMENT_TYPE_LABELS[m.movementType] ?? m.movementType}</td>
-                  <td style={tdStyle}>
-                    {m.movementType === "loss" ? (LOSS_REASON_LABELS[m.referenceType ?? ""] ?? "—") : "—"}
-                  </td>
-                  <td style={tdStyle}>{lotLabel(m.batchId)}</td>
-                  <td style={{ ...tdStyle, color: m.quantityDelta < 0 ? "#f87171" : "#86efac" }}>
-                    {m.quantityDelta > 0 ? "+" : ""}
-                    {m.quantityDelta}
-                  </td>
-                  <td style={tdStyle}>{userName(m.createdBy)}</td>
-                </tr>
-              ))}
-              {filteredMovements.length === 0 && (
+          <div className="table-scroll">
+            <table style={tableStyle}>
+              <thead>
                 <tr>
-                  <td style={tdStyle} colSpan={8}>
-                    Aucun mouvement de stock pour cette sélection.
-                  </td>
+                  <th style={thStyle}>{t("journals.stock.date")}</th>
+                  <th style={thStyle}>{t("journals.stock.product")}</th>
+                  <th style={thStyle}>{t("journals.stock.location")}</th>
+                  <th style={thStyle}>{t("journals.stock.type")}</th>
+                  <th style={thStyle}>{t("journals.stock.reason")}</th>
+                  <th style={thStyle}>{t("journals.stock.lot")}</th>
+                  <th style={thStyle}>{t("journals.stock.quantity")}</th>
+                  <th style={thStyle}>{t("journals.stock.user")}</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredMovements.map((m) => (
+                  <tr key={m.id}>
+                    <td style={tdStyle}>{m.createdAt}</td>
+                    <td style={tdStyle}>{variantLabel(m.variantId)}</td>
+                    <td style={tdStyle}>{locationName(m.locationId)}</td>
+                    <td style={tdStyle}>{MOVEMENT_TYPE_LABELS[m.movementType] ?? m.movementType}</td>
+                    <td style={tdStyle}>
+                      {m.movementType === "loss" ? (LOSS_REASON_LABELS[m.referenceType ?? ""] ?? "—") : "—"}
+                    </td>
+                    <td style={tdStyle}>{lotLabel(m.batchId)}</td>
+                    <td style={{ ...tdStyle, color: m.quantityDelta < 0 ? "var(--color-danger)" : "var(--color-success)" }}>
+                      {m.quantityDelta > 0 ? "+" : ""}
+                      {m.quantityDelta}
+                    </td>
+                    <td style={tdStyle}>{userName(m.createdBy)}</td>
+                  </tr>
+                ))}
+                {filteredMovements.length === 0 && (
+                  <tr>
+                    <td style={tdStyle} colSpan={8}>
+                      {t("journals.stock.noMovements")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
@@ -574,17 +586,17 @@ export function JournalsPage() {
             onToChange={(v) => setActionFilters((f) => ({ ...f, to: v }))}
             search={actionFilters.search}
             onSearchChange={(v) => setActionFilters((f) => ({ ...f, search: v }))}
-            searchPlaceholder="Recherche libre..."
+            searchPlaceholder={t("journals.actions.searchPlaceholder")}
             onReset={() => setActionFilters(EMPTY_ACTION_FILTERS)}
           >
             <label>
-              Utilisateur
+              {t("journals.actions.user")}
               <select
                 style={inputStyle}
                 value={actionFilters.userId}
                 onChange={(e) => setActionFilters((f) => ({ ...f, userId: e.target.value }))}
               >
-                <option value="">Tous</option>
+                <option value="">{t("journals.actions.all")}</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.fullName}
@@ -593,13 +605,13 @@ export function JournalsPage() {
               </select>
             </label>
             <label>
-              Action
+              {t("journals.actions.action")}
               <select
                 style={inputStyle}
                 value={actionFilters.action}
                 onChange={(e) => setActionFilters((f) => ({ ...f, action: e.target.value }))}
               >
-                <option value="">Toutes</option>
+                <option value="">{t("journals.actions.allActions")}</option>
                 {knownActions.map((action) => (
                   <option key={action} value={action}>
                     {ACTION_LABELS[action]}
@@ -609,39 +621,41 @@ export function JournalsPage() {
             </label>
           </FilterBar>
 
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>Date</th>
-                <th style={thStyle}>Utilisateur</th>
-                <th style={thStyle}>Action</th>
-                <th style={thStyle}>Détails</th>
-              </tr>
-            </thead>
-            <tbody>
-              {auditEntries.map((entry) => (
-                <tr key={entry.id}>
-                  <td style={tdStyle}>{entry.createdAt}</td>
-                  <td style={tdStyle}>{userName(entry.userId)}</td>
-                  <td style={tdStyle}>{ACTION_LABELS[entry.action] ?? entry.action}</td>
-                  <td style={tdStyle}>
-                    {entry.metadata
-                      ? Object.entries(JSON.parse(entry.metadata) as Record<string, unknown>)
-                          .map(([k, v]) => `${k}: ${v}`)
-                          .join(", ")
-                      : "—"}
-                  </td>
-                </tr>
-              ))}
-              {auditEntries.length === 0 && (
+          <div className="table-scroll">
+            <table style={tableStyle}>
+              <thead>
                 <tr>
-                  <td style={tdStyle} colSpan={4}>
-                    Aucune action enregistrée pour cette sélection.
-                  </td>
+                  <th style={thStyle}>{t("journals.actions.date")}</th>
+                  <th style={thStyle}>{t("journals.actions.user")}</th>
+                  <th style={thStyle}>{t("journals.actions.action")}</th>
+                  <th style={thStyle}>{t("journals.actions.details")}</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {auditEntries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td style={tdStyle}>{entry.createdAt}</td>
+                    <td style={tdStyle}>{userName(entry.userId)}</td>
+                    <td style={tdStyle}>{ACTION_LABELS[entry.action] ?? entry.action}</td>
+                    <td style={tdStyle}>
+                      {entry.metadata
+                        ? Object.entries(JSON.parse(entry.metadata) as Record<string, unknown>)
+                            .map(([k, v]) => `${k}: ${v}`)
+                            .join(", ")
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+                {auditEntries.length === 0 && (
+                  <tr>
+                    <td style={tdStyle} colSpan={4}>
+                      {t("journals.actions.noActions")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </main>

@@ -1,3 +1,5 @@
+import { t } from "@gestion-boutique/i18n";
+
 interface GoogleTokenResponse {
   access_token: string;
   error?: string;
@@ -37,7 +39,7 @@ export function loadGoogleIdentityScript(): Promise<void> {
       script.src = "https://accounts.google.com/gsi/client";
       script.async = true;
       script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Impossible de charger Google Identity Services."));
+      script.onerror = () => reject(new Error(t("sync.errors.googleIdentityLoadFailed")));
       document.head.appendChild(script);
     });
   }
@@ -57,7 +59,7 @@ function getTokenClient(clientId: string): GoogleTokenClient {
       scope: DRIVE_SCOPE,
       callback: (response) => {
         if (response.error || !response.access_token) {
-          currentReject?.(new Error(response.error ?? "Connexion Google Drive refusée."));
+          currentReject?.(new Error(response.error ?? t("sync.errors.driveConnectionDenied")));
         } else {
           currentResolve?.(response.access_token);
         }
@@ -78,18 +80,14 @@ const TOKEN_REQUEST_TIMEOUT_MS = 60_000;
 export async function requestGoogleDriveAccessToken(clientId: string): Promise<string> {
   await loadGoogleIdentityScript();
   if (!window.google) {
-    throw new Error("Google Identity Services indisponible.");
+    throw new Error(t("sync.errors.googleIdentityUnavailable"));
   }
   const client = getTokenClient(clientId);
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       currentResolve = null;
       currentReject = null;
-      reject(
-        new Error(
-          "La fenêtre de connexion Google n'a pas abouti (bloquée par le navigateur, fermée, ou Client ID invalide).",
-        ),
-      );
+      reject(new Error(t("sync.errors.connectionTimedOut")));
     }, TOKEN_REQUEST_TIMEOUT_MS);
 
     currentResolve = (token) => {
@@ -110,7 +108,7 @@ async function findFileId(accessToken: string, filename: string): Promise<string
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!response.ok) {
-    throw new Error("Impossible de lister les fichiers Google Drive.");
+    throw new Error(t("sync.errors.listFilesFailed"));
   }
   const data = await response.json();
   return data.files?.[0]?.id ?? null;
@@ -133,7 +131,7 @@ export async function uploadToGoogleDrive(
       body: blob,
     });
     if (!response.ok) {
-      throw new Error("Échec de la mise à jour du fichier sur Google Drive.");
+      throw new Error(t("sync.errors.updateFileFailed"));
     }
     return;
   }
@@ -148,6 +146,6 @@ export async function uploadToGoogleDrive(
     body: form,
   });
   if (!response.ok) {
-    throw new Error("Échec de l'envoi du fichier vers Google Drive.");
+    throw new Error(t("sync.errors.uploadFileFailed"));
   }
 }

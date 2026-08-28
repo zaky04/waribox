@@ -1,5 +1,6 @@
 import { updateSettings } from "@gestion-boutique/core";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { authCardStyle, authPrimaryButtonStyle } from "./styles";
 import { useAuth } from "./useAuth";
@@ -16,15 +17,6 @@ type ModuleKey =
   | "enablePurchases"
   | "enableServiceOrders";
 
-const MODULES: { key: ModuleKey; label: string }[] = [
-  { key: "enableSales", label: "Ventes au comptoir" },
-  { key: "enableProducts", label: "Catalogue produits" },
-  { key: "enableStock", label: "Gestion de stock" },
-  { key: "enableSuppliers", label: "Fournisseurs" },
-  { key: "enablePurchases", label: "Achats" },
-  { key: "enableServiceOrders", label: "Tickets de service (dépôt/retrait différé — pressing, cordonnerie...)" },
-];
-
 // Écran affiché une seule fois, juste après la création du compte
 // administrateur (voir AuthGate.tsx) — un pressing n'a par exemple aucun
 // besoin des modules Ventes/Produits/Stock/Fournisseurs/Achats. Modifiable
@@ -32,6 +24,17 @@ const MODULES: { key: ModuleKey; label: string }[] = [
 export function ModuleSetupScreen({ onDone }: ModuleSetupScreenProps) {
   const db = useDatabase();
   const { user } = useAuth();
+  const { t } = useTranslation();
+
+  const MODULES: { key: ModuleKey; label: string }[] = [
+    { key: "enableSales", label: t("settings.modules.sales") },
+    { key: "enableProducts", label: t("settings.modules.products") },
+    { key: "enableStock", label: t("settings.modules.stock") },
+    { key: "enableSuppliers", label: t("settings.modules.suppliers") },
+    { key: "enablePurchases", label: t("settings.modules.purchases") },
+    { key: "enableServiceOrders", label: t("settings.modules.serviceOrders") },
+  ];
+
   const [selected, setSelected] = useState<Record<ModuleKey, boolean>>({
     enableSales: true,
     enableProducts: true,
@@ -54,11 +57,8 @@ export function ModuleSetupScreen({ onDone }: ModuleSetupScreenProps) {
 
   return (
     <main style={{ maxWidth: 480, margin: "60px auto", padding: 24 }}>
-      <h1>Modules à activer</h1>
-      <p style={{ color: "var(--color-text-muted)" }}>
-        Choisis les fonctionnalités utiles à ton commerce — modifiable à tout moment ensuite dans
-        Paramètres.
-      </p>
+      <h1>{t("auth.moduleSetup.title")}</h1>
+      <p style={{ color: "var(--color-text-muted)" }}>{t("auth.moduleSetup.hint")}</p>
 
       <div style={authCardStyle}>
         {MODULES.map((m) => (
@@ -73,7 +73,7 @@ export function ModuleSetupScreen({ onDone }: ModuleSetupScreenProps) {
         ))}
 
         <button style={authPrimaryButtonStyle} onClick={handleSubmit} disabled={saving}>
-          {saving ? "Enregistrement..." : "Continuer"}
+          {saving ? t("auth.moduleSetup.saving") : t("auth.moduleSetup.continue")}
         </button>
       </div>
     </main>

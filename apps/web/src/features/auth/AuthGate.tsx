@@ -7,6 +7,7 @@ import {
   hasPermission,
 } from "@gestion-boutique/core";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { useSessionStore } from "../../stores/session";
 import { LoginScreen } from "./LoginScreen";
@@ -16,6 +17,7 @@ import { SetupAdminScreen } from "./SetupAdminScreen";
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const db = useDatabase();
+  const { t } = useTranslation();
   const user = useSessionStore((s) => s.user);
   const isLocked = useSessionStore((s) => s.isLocked);
   const currentStoreId = useSessionStore((s) => s.currentStoreId);
@@ -87,7 +89,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [db, user, currentStoreId, setCurrentStore]);
 
   if (needsSetup === null) {
-    return <div style={{ padding: 24 }}>Chargement...</div>;
+    return <div style={{ padding: 24 }}>{t("auth.loading")}</div>;
   }
 
   // `user` prime sur `needsSetup` : dès que SetupAdminScreen a créé le premier
@@ -102,7 +104,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
 
   if (!bootstrapped) {
-    return <div style={{ padding: 24 }}>Chargement...</div>;
+    return <div style={{ padding: 24 }}>{t("auth.loading")}</div>;
   }
 
   if (!modulesConfigured) {

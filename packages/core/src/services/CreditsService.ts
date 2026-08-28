@@ -1,7 +1,9 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { desc, eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { requireAnyPermission, type PermissionSet } from "../domain/permissions";
 
 export async function listCustomerCredits(db: Database, storeId?: number) {
   const query = db.select().from(schema.customerCredits).orderBy(desc(schema.customerCredits.id));
@@ -34,7 +36,16 @@ export interface RecordCreditRepaymentInput {
   userId: number;
 }
 
-export async function recordCreditRepayment(db: Database, input: RecordCreditRepaymentInput) {
+// Accessible depuis Créances (manage_credits) ET depuis le suivi des tickets
+// de service (manage_service_orders, pour régler une créance née d'un ticket
+// partiellement payé) — une seule des deux permissions suffit, voir
+// requireAnyPermission.
+export async function recordCreditRepayment(
+  db: Database,
+  input: RecordCreditRepaymentInput,
+  actingPermissions: PermissionSet,
+) {
+  requireAnyPermission(actingPermissions, ["manage_credits", "manage_service_orders"]);
   const credit = await db
     .select()
     .from(schema.customerCredits)
@@ -42,15 +53,13 @@ export async function recordCreditRepayment(db: Database, input: RecordCreditRep
     .get();
 
   if (!credit) {
-    throw new Error("Créance introuvable.");
+    throw new Error(t("coreErrors.credits.notFound"));
   }
   if (input.amount <= 0) {
-    throw new Error("Le montant du remboursement doit être supérieur à zéro.");
+    throw new Error(t("coreErrors.credits.amountPositive"));
   }
   if (input.amount > credit.remainingBalance) {
-    throw new Error(
-      `Le montant dépasse le solde restant (${credit.remainingBalance}).`,
-    );
+    throw new Error(t("coreErrors.common.amountExceedsBalance", { balance: credit.remainingBalance }));
   }
 
   await db.insert(schema.creditRepayments).values({

@@ -1,18 +1,13 @@
 import { listRefundItems, listRefundsForSale, listSaleItems, type RefundMethod } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { cardStyle } from "../../components/sharedStyles";
 
 type Sale = typeof schema.sales.$inferSelect;
 type Refund = typeof schema.refunds.$inferSelect;
 type RefundItem = typeof schema.refundItems.$inferSelect;
-
-const METHOD_LABELS: Record<RefundMethod, string> = {
-  cash: "Espèces",
-  card: "Carte",
-  mobile_money: "Mobile money",
-};
 
 export function RefundHistoryModal({
   sale,
@@ -24,6 +19,12 @@ export function RefundHistoryModal({
   onClose: () => void;
 }) {
   const db = useDatabase();
+  const { t } = useTranslation();
+  const METHOD_LABELS: Record<RefundMethod, string> = {
+    cash: t("journals.refundMethods.cash"),
+    card: t("journals.refundMethods.card"),
+    mobile_money: t("journals.refundMethods.mobile_money"),
+  };
   const [refunds, setRefunds] = useState<Refund[]>([]);
   const [itemsByRefund, setItemsByRefund] = useState<Record<number, RefundItem[]>>({});
   const [variantBySaleItem, setVariantBySaleItem] = useState<Record<number, number>>({});
@@ -54,16 +55,20 @@ export function RefundHistoryModal({
         alignItems: "center",
         justifyContent: "center",
         zIndex: 1000,
+        padding: 16,
       }}
       onClick={onClose}
     >
-      <div style={{ ...cardStyle, width: 560, maxHeight: "85vh", overflowY: "auto", marginTop: 0 }} onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ margin: 0 }}>Remboursements — vente {sale.number}</h2>
+      <div
+        style={{ ...cardStyle, width: "min(560px, 100%)", maxHeight: "85vh", overflowY: "auto", marginTop: 0 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 style={{ margin: 0 }}>{t("journals.refundHistoryModal.title", { number: sale.number })}</h2>
 
         {loading ? (
-          <p>Chargement...</p>
+          <p>{t("journals.refundHistoryModal.loading")}</p>
         ) : refunds.length === 0 ? (
-          <p>Aucun remboursement pour cette vente.</p>
+          <p>{t("journals.refundHistoryModal.none")}</p>
         ) : (
           refunds.map((refund) => (
             <div
@@ -75,7 +80,7 @@ export function RefundHistoryModal({
                 marginTop: 12,
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                 <strong>{refund.createdAt}</strong>
                 <strong>{refund.total.toFixed(0)}</strong>
               </div>
@@ -89,7 +94,7 @@ export function RefundHistoryModal({
                   return (
                     <li key={item.id}>
                       {variantId !== undefined ? variantLabel(variantId) : "—"} × {item.quantity} — {item.total.toFixed(0)}
-                      {item.restocked ? " (remis en stock)" : ""}
+                      {item.restocked ? t("journals.refundHistoryModal.restocked") : ""}
                     </li>
                   );
                 })}
@@ -98,7 +103,7 @@ export function RefundHistoryModal({
           ))
         )}
 
-        <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+        <div style={{ display: "flex", gap: 12, marginTop: 16, flexWrap: "wrap" }}>
           <button
             onClick={onClose}
             style={{
@@ -110,7 +115,7 @@ export function RefundHistoryModal({
               cursor: "pointer",
             }}
           >
-            Fermer
+            {t("journals.refundHistoryModal.close")}
           </button>
         </div>
       </div>

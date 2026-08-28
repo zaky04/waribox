@@ -1,4 +1,5 @@
 import { exportDatabaseFile, importDatabaseFile, schema, type Database } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { and, desc, eq } from "drizzle-orm";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 
@@ -71,16 +72,16 @@ const SQLITE_HEADER = "SQLite format 3" + String.fromCharCode(0);
 // complexité d'un second moteur SQLite juste pour valider.
 export function validateBackupFile(bytes: Uint8Array): void {
   if (bytes.length < 16) {
-    throw new Error("Ce fichier est trop petit pour être une sauvegarde valide.");
+    throw new Error(t("coreErrors.backup.fileTooSmall"));
   }
   for (let i = 0; i < SQLITE_HEADER.length; i++) {
     if (bytes[i] !== SQLITE_HEADER.charCodeAt(i)) {
-      throw new Error("Ce fichier n'est pas une base SQLite valide.");
+      throw new Error(t("coreErrors.backup.notSqlite"));
     }
   }
   const text = new TextDecoder("iso-8859-1").decode(bytes);
   if (!text.includes("business_settings")) {
-    throw new Error("Ce fichier ne semble pas être une sauvegarde WariBox.");
+    throw new Error(t("coreErrors.backup.notWariboxBackup"));
   }
 }
 

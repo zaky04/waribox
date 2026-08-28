@@ -1,18 +1,13 @@
 import { createRefund, getRefundedQuantities, listSaleItems, type RefundMethod } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { useAuth } from "../auth/useAuth";
 import { cardStyle, inputStyle, primaryButtonStyle } from "../../components/sharedStyles";
 
 type Sale = typeof schema.sales.$inferSelect;
 type SaleItem = typeof schema.saleItems.$inferSelect;
-
-const METHOD_LABELS: Record<RefundMethod, string> = {
-  cash: "Espèces",
-  card: "Carte",
-  mobile_money: "Mobile money",
-};
 
 interface RefundLineState {
   quantity: string;
@@ -32,6 +27,13 @@ export function RefundModal({
 }) {
   const db = useDatabase();
   const { user } = useAuth();
+  const { t } = useTranslation();
+
+  const METHOD_LABELS: Record<RefundMethod, string> = {
+    cash: t("journals.refundMethods.cash"),
+    card: t("journals.refundMethods.card"),
+    mobile_money: t("journals.refundMethods.mobile_money"),
+  };
 
   const [items, setItems] = useState<SaleItem[]>([]);
   const [refunded, setRefunded] = useState<Record<number, number>>({});
@@ -76,7 +78,7 @@ export function RefundModal({
       .filter((line) => line.quantity > 0);
 
     if (selected.length === 0) {
-      setError("Indique une quantité à rembourser pour au moins un article.");
+      setError(t("journals.refundModal.errorQuantityRequired"));
       return;
     }
 
@@ -90,7 +92,7 @@ export function RefundModal({
       onDone();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible d'enregistrer le remboursement.");
+      setError(err instanceof Error ? err.message : t("journals.refundModal.errorGeneric"));
     } finally {
       setSaving(false);
     }
@@ -106,23 +108,27 @@ export function RefundModal({
         alignItems: "center",
         justifyContent: "center",
         zIndex: 1000,
+        padding: 16,
       }}
       onClick={onClose}
     >
-      <div style={{ ...cardStyle, width: 560, maxHeight: "85vh", overflowY: "auto", marginTop: 0 }} onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ margin: 0 }}>Rembourser la vente {sale.number}</h2>
+      <div
+        style={{ ...cardStyle, width: "min(560px, 100%)", maxHeight: "85vh", overflowY: "auto", marginTop: 0 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 style={{ margin: 0 }}>{t("journals.refundModal.title", { number: sale.number })}</h2>
 
         {loading ? (
-          <p>Chargement...</p>
+          <p>{t("journals.refundModal.loading")}</p>
         ) : (
           <>
             <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left", padding: 6 }}>Article</th>
-                  <th style={{ textAlign: "right", padding: 6 }}>Restant</th>
-                  <th style={{ textAlign: "right", padding: 6 }}>Qté à rembourser</th>
-                  <th style={{ textAlign: "center", padding: 6 }}>Remettre en stock</th>
+                  <th style={{ textAlign: "left", padding: 6 }}>{t("journals.refundModal.item")}</th>
+                  <th style={{ textAlign: "right", padding: 6 }}>{t("journals.refundModal.remaining")}</th>
+                  <th style={{ textAlign: "right", padding: 6 }}>{t("journals.refundModal.quantityToRefund")}</th>
+                  <th style={{ textAlign: "center", padding: 6 }}>{t("journals.refundModal.restock")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -168,12 +174,12 @@ export function RefundModal({
             </table>
 
             <label style={{ display: "block", marginTop: 12 }}>
-              Motif (optionnel)
+              {t("journals.refundModal.reason")}
               <input style={inputStyle} value={reason} onChange={(e) => setReason(e.target.value)} />
             </label>
 
             <label style={{ display: "block", marginTop: 12 }}>
-              Méthode de remboursement
+              {t("journals.refundModal.method")}
               <select style={inputStyle} value={method} onChange={(e) => setMethod(e.target.value as RefundMethod)}>
                 {Object.entries(METHOD_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>
@@ -183,13 +189,15 @@ export function RefundModal({
               </select>
             </label>
 
-            <p style={{ marginTop: 12, fontWeight: 600 }}>Total à rembourser : {previewTotal.toFixed(2)}</p>
+            <p style={{ marginTop: 12, fontWeight: 600 }}>
+              {t("journals.refundModal.totalToRefund")} {previewTotal.toFixed(2)}
+            </p>
 
-            {error && <p style={{ color: "#f87171" }}>{error}</p>}
+            {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
-            <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+            <div style={{ display: "flex", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
               <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
-                {saving ? "Enregistrement..." : "Rembourser"}
+                {saving ? t("journals.refundModal.saving") : t("journals.refundModal.submit")}
               </button>
               <button
                 onClick={onClose}
@@ -202,7 +210,7 @@ export function RefundModal({
                   cursor: "pointer",
                 }}
               >
-                Annuler
+                {t("journals.refundModal.cancel")}
               </button>
             </div>
           </>

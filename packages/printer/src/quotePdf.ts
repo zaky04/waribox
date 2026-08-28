@@ -1,3 +1,4 @@
+import { t } from "@gestion-boutique/i18n";
 import { jsPDF } from "jspdf";
 
 export interface QuotePdfData {
@@ -34,7 +35,7 @@ export function buildQuotePdf(data: QuotePdfData): Blob {
     y += 6;
   }
   if (data.businessPhone) {
-    doc.text(`Tél : ${data.businessPhone}`, marginX, y);
+    doc.text(t("documents.common.phone", { phone: data.businessPhone }), marginX, y);
     y += 6;
   }
   if (data.businessEmail) {
@@ -44,48 +45,56 @@ export function buildQuotePdf(data: QuotePdfData): Blob {
 
   doc.setFontSize(14);
   doc.setFont("helvetica", "bold");
-  doc.text(`Devis ${data.quoteNumber}`, marginX, y + 8);
+  doc.text(t("documents.quote.title", { number: data.quoteNumber }), marginX, y + 8);
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text(`Date : ${data.date}`, marginX, y + 16);
+  doc.text(t("documents.quote.date", { date: data.date }), marginX, y + 16);
   if (data.validUntil) {
-    doc.text(`Valable jusqu'au : ${data.validUntil}`, marginX, y + 22);
+    doc.text(t("documents.quote.validUntil", { date: data.validUntil }), marginX, y + 22);
   }
   if (data.customerName) {
-    doc.text(`Client : ${data.customerName}`, marginX, y + 28);
+    doc.text(t("documents.common.customer", { name: data.customerName }), marginX, y + 28);
   }
 
   y += 38;
   const colWidth = (210 - marginX * 2) / 4;
   doc.setFont("helvetica", "bold");
-  doc.text("Article", marginX, y);
-  doc.text("Qté", marginX + colWidth * 2, y);
-  doc.text("Prix unit.", marginX + colWidth * 2.7, y);
-  doc.text("Total", marginX + colWidth * 3.5, y);
+  doc.text(t("documents.quote.columnArticle"), marginX, y);
+  doc.text(t("documents.quote.columnQty"), marginX + colWidth * 2, y);
+  doc.text(t("documents.quote.columnUnitPrice"), marginX + colWidth * 2.7, y);
+  doc.text(t("documents.quote.columnTotal"), marginX + colWidth * 3.5, y);
   y += 6;
   doc.setFont("helvetica", "normal");
 
+  // Retourne à la ligne la description (seule colonne en texte libre, donc
+  // seule à risquer de déborder sur la colonne Qté) — sans ça, une
+  // description plus longue que la largeur de sa colonne se superpose
+  // visuellement au reste de la ligne, jsPDF ne le faisant jamais de
+  // lui-même.
+  const descriptionWidth = colWidth * 2 - 4;
   for (const line of data.lines) {
-    if (y > 270) {
+    const descriptionLines = doc.splitTextToSize(line.description, descriptionWidth) as string[];
+    const rowHeight = Math.max(1, descriptionLines.length) * 6;
+    if (y + rowHeight > 270) {
       doc.addPage();
       y = 20;
     }
-    doc.text(line.description, marginX, y);
+    doc.text(descriptionLines, marginX, y);
     doc.text(String(line.quantity), marginX + colWidth * 2, y);
     doc.text(line.unitPrice.toFixed(0), marginX + colWidth * 2.7, y);
     doc.text(line.total.toFixed(0), marginX + colWidth * 3.5, y);
-    y += 6;
+    y += rowHeight;
   }
 
   y += 6;
-  doc.text(`Sous-total : ${data.subtotal.toFixed(0)}`, marginX + colWidth * 2.7, y);
+  doc.text(t("documents.common.subtotal", { amount: data.subtotal.toFixed(0) }), marginX + colWidth * 2.7, y);
   y += 6;
   if (data.tax > 0) {
-    doc.text(`dont TVA : ${data.tax.toFixed(0)}`, marginX + colWidth * 2.7, y);
+    doc.text(t("documents.common.tax", { amount: data.tax.toFixed(0) }), marginX + colWidth * 2.7, y);
     y += 6;
   }
   doc.setFont("helvetica", "bold");
-  doc.text(`TOTAL : ${data.total.toFixed(0)}`, marginX + colWidth * 2.7, y);
+  doc.text(t("documents.common.total", { amount: data.total.toFixed(0) }), marginX + colWidth * 2.7, y);
 
   return doc.output("blob");
 }

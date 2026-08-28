@@ -22,9 +22,11 @@ import {
   type ServiceOrderTicketData,
 } from "@gestion-boutique/printer";
 import { Fragment, useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { buildWhatsAppLink } from "../../lib/whatsapp";
 import { openExternalUrl } from "../../lib/openExternalUrl";
+import { saveGeneratedFile } from "../../lib/saveFile";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
   badgeStyle,
@@ -61,13 +63,6 @@ interface EditableItem {
   taxRate: number;
 }
 
-const PAYMENT_METHODS: { value: ServiceOrderPaymentMethod; label: string }[] = [
-  { value: "cash", label: "Espèces" },
-  { value: "card", label: "Carte" },
-  { value: "mobile_money", label: "Mobile Money" },
-  { value: "credit", label: "Crédit" },
-];
-
 // Utilisé pour le nom du fichier PDF enregistré — inclut la date ET l'heure
 // pour distinguer plusieurs tickets générés le même jour.
 function timestampForFilename(): string {
@@ -76,39 +71,39 @@ function timestampForFilename(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
 }
 
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 const ITEM_STATUSES: ServiceOrderItemStatus[] = ["received", "in_progress", "ready", "picked_up"];
-const ITEM_STATUS_LABELS: Record<ServiceOrderItemStatus, string> = {
-  received: "Reçu",
-  in_progress: "En cours",
-  ready: "Prêt",
-  picked_up: "Retiré",
-};
-const AGGREGATE_STATUS_LABELS: Record<ServiceOrderAggregateStatus, string> = {
-  received: "Reçu",
-  in_progress: "En cours",
-  ready: "Prêt",
-  partially_picked_up: "Partiellement retiré",
-  closed: "Clôturé",
-};
-const PAYMENT_STATUS_LABELS: Record<string, string> = {
-  paid: "Payé",
-  partial: "Partiel",
-  credit: "Crédit",
-};
 
 export function ServiceOrdersPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
+  const { t } = useTranslation();
   const printer = usePrinter();
+
+  const PAYMENT_METHODS: { value: ServiceOrderPaymentMethod; label: string }[] = [
+    { value: "cash", label: t("sales.paymentMethods.cash") },
+    { value: "card", label: t("sales.paymentMethods.card") },
+    { value: "mobile_money", label: t("sales.paymentMethods.mobile_money") },
+    { value: "credit", label: t("sales.paymentMethods.credit") },
+  ];
+
+  const ITEM_STATUS_LABELS: Record<ServiceOrderItemStatus, string> = {
+    received: t("serviceOrders.itemStatus.received"),
+    in_progress: t("serviceOrders.itemStatus.in_progress"),
+    ready: t("serviceOrders.itemStatus.ready"),
+    picked_up: t("serviceOrders.itemStatus.picked_up"),
+  };
+  const AGGREGATE_STATUS_LABELS: Record<ServiceOrderAggregateStatus, string> = {
+    received: t("serviceOrders.aggregateStatus.received"),
+    in_progress: t("serviceOrders.aggregateStatus.in_progress"),
+    ready: t("serviceOrders.aggregateStatus.ready"),
+    partially_picked_up: t("serviceOrders.aggregateStatus.partially_picked_up"),
+    closed: t("serviceOrders.aggregateStatus.closed"),
+  };
+  const PAYMENT_STATUS_LABELS: Record<string, string> = {
+    paid: t("serviceOrders.paymentStatus.paid"),
+    partial: t("serviceOrders.paymentStatus.partial"),
+    credit: t("serviceOrders.paymentStatus.credit"),
+  };
 
   const [view, setView] = useState<"new" | "track" | "history">("new");
   const [showPrinterPanel, setShowPrinterPanel] = useState(false);
@@ -161,7 +156,7 @@ export function ServiceOrdersPage() {
   const refreshTrack = useCallback(async () => {
     const storeId = currentStoreId ?? undefined;
     const [orderRows, creditRows] = await Promise.all([
-      listServiceOrders(db, storeId),
+      listServiceOrders(db, { storeId }),
       listCustomerCredits(db, storeId),
     ]);
     setOrders(orderRows);
@@ -214,11 +209,11 @@ export function ServiceOrdersPage() {
     setCheckoutError(null);
     if (!user) return;
     if (lines.length === 0) {
-      setCheckoutError("Le ticket doit contenir au moins un article.");
+      setCheckoutError(t("serviceOrders.errors.itemRequired"));
       return;
     }
     if (lines.some((l) => !l.description.trim())) {
-      setCheckoutError("Chaque article doit avoir une description.");
+      setCheckoutError(t("serviceOrders.errors.descriptionRequired"));
       return;
     }
 
@@ -242,7 +237,7 @@ export function ServiceOrdersPage() {
         paymentMethod,
         amountPaid: paidValue,
         storeId: currentStoreId ?? undefined,
-      });
+      }, user.permissions);
 
       const selectedCustomer = customers.find((c) => c.id === Number(customerId));
       const customerName = selectedCustomer?.fullName || newCustomerName.trim() || undefined;
@@ -284,7 +279,7 @@ export function ServiceOrdersPage() {
       setPaymentMethod("cash");
       await refreshCatalog();
     } catch (err) {
-      setCheckoutError(err instanceof Error ? err.message : "Impossible d'enregistrer le ticket.");
+      setCheckoutError(err instanceof Error ? err.message : t("serviceOrders.errors.saveFailed"));
     } finally {
       setCheckingOut(false);
     }
@@ -306,7 +301,7 @@ export function ServiceOrdersPage() {
 
   const handleStatusChange = async (item: ServiceOrderItem, status: ServiceOrderItemStatus) => {
     if (!user) return;
-    await updateServiceOrderItemStatus(db, { itemId: item.id, status, userId: user.id });
+    await updateServiceOrderItemStatus(db, { itemId: item.id, status, userId: user.id }, user.permissions);
     const items = await listServiceOrderItems(db, item.serviceOrderId);
     setItemsByOrder((prev) => ({ ...prev, [item.serviceOrderId]: items }));
     await refreshTrack();
@@ -343,7 +338,7 @@ export function ServiceOrdersPage() {
     if (!user) return;
     setHistoryError(null);
     if (editItems.some((i) => !i.description.trim())) {
-      setHistoryError("Chaque article doit avoir une description.");
+      setHistoryError(t("serviceOrders.errors.historyDescriptionRequired"));
       return;
     }
     setSavingHistory(true);
@@ -357,6 +352,7 @@ export function ServiceOrdersPage() {
           notes: editNotes.trim() || null,
         },
         user.id,
+        user.permissions,
       );
       for (const item of editItems) {
         await updateServiceOrderItem(
@@ -369,6 +365,7 @@ export function ServiceOrdersPage() {
             taxRate: item.taxRate,
           },
           user.id,
+          user.permissions,
         );
       }
       const items = await listServiceOrderItems(db, orderId);
@@ -376,7 +373,7 @@ export function ServiceOrdersPage() {
       await refreshTrack();
       setExpandedOrderId(null);
     } catch (err) {
-      setHistoryError(err instanceof Error ? err.message : "Impossible d'enregistrer les modifications.");
+      setHistoryError(err instanceof Error ? err.message : t("serviceOrders.errors.historySaveFailed"));
     } finally {
       setSavingHistory(false);
     }
@@ -392,16 +389,16 @@ export function ServiceOrdersPage() {
     setRepayError(null);
     const value = Number(repayAmount);
     if (!value || value <= 0) {
-      setRepayError("Le montant doit être supérieur à zéro.");
+      setRepayError(t("serviceOrders.errors.repayAmountPositive"));
       return;
     }
     setRepaying(true);
     try {
-      await recordCreditRepayment(db, { creditId: credit.id, amount: value, userId: user.id });
+      await recordCreditRepayment(db, { creditId: credit.id, amount: value, userId: user.id }, user.permissions);
       setRepayAmount("");
       await refreshTrack();
     } catch (err) {
-      setRepayError(err instanceof Error ? err.message : "Impossible d'enregistrer le remboursement.");
+      setRepayError(err instanceof Error ? err.message : t("serviceOrders.errors.repayFailed"));
     } finally {
       setRepaying(false);
     }
@@ -409,9 +406,9 @@ export function ServiceOrdersPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Tickets de service</h1>
-        <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <h1>{t("serviceOrders.title")}</h1>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button
             onClick={() => setView("new")}
             style={{
@@ -421,7 +418,7 @@ export function ServiceOrdersPage() {
               border: view === "new" ? "none" : "1px solid var(--color-border)",
             }}
           >
-            Nouveau ticket
+            {t("serviceOrders.newTicket")}
           </button>
           <button
             onClick={() => setView("track")}
@@ -432,7 +429,7 @@ export function ServiceOrdersPage() {
               border: view === "track" ? "none" : "1px solid var(--color-border)",
             }}
           >
-            Suivi
+            {t("serviceOrders.tracking")}
           </button>
           {user && hasPermission(user.permissions, "edit_service_orders") && (
             <button
@@ -444,7 +441,7 @@ export function ServiceOrdersPage() {
                 border: view === "history" ? "none" : "1px solid var(--color-border)",
               }}
             >
-              Historique
+              {t("serviceOrders.history")}
             </button>
           )}
           <button
@@ -457,7 +454,7 @@ export function ServiceOrdersPage() {
               padding: "0 16px",
             }}
           >
-            Imprimante
+            {t("serviceOrders.printer")}
           </button>
         </div>
       </div>
@@ -470,31 +467,33 @@ export function ServiceOrdersPage() {
             <div
               style={{
                 ...cardStyle,
-                borderLeft: "4px solid #86efac",
+                borderLeft: "4px solid var(--color-success)",
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 8,
               }}
             >
               <span>
-                Ticket enregistré : <strong>{lastOrderNumber}</strong>
+                {t("serviceOrders.registered")} <strong>{lastOrderNumber}</strong>
               </span>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 <button
                   style={primaryButtonStyle}
                   disabled={!printer.connected || !lastTicket}
-                  title={!printer.connected ? "Connecte une imprimante pour imprimer le ticket" : undefined}
+                  title={!printer.connected ? t("serviceOrders.printerRequiredTooltip") : undefined}
                   onClick={async () => {
                     if (!lastTicket) return;
                     setPrintError(null);
                     try {
                       await printer.print(await buildServiceOrderTicket(lastTicket));
                     } catch (err) {
-                      setPrintError(err instanceof Error ? err.message : "Impression impossible.");
+                      setPrintError(err instanceof Error ? err.message : t("serviceOrders.printError"));
                     }
                   }}
                 >
-                  Imprimer le ticket
+                  {t("serviceOrders.printTicket")}
                 </button>
                 <button
                   style={{
@@ -504,96 +503,95 @@ export function ServiceOrdersPage() {
                     color: "var(--color-text)",
                   }}
                   disabled={!lastTicket}
-                  onClick={() => {
+                  onClick={async () => {
                     if (!lastTicket) return;
                     const blob = buildServiceOrderTicketPdf(lastTicket);
-                    downloadBlob(blob, `ticket-${lastOrderNumber}-${timestampForFilename()}.pdf`);
+                    await saveGeneratedFile(blob, `ticket-${lastOrderNumber}-${timestampForFilename()}.pdf`);
                   }}
                 >
-                  Enregistrer en PDF
+                  {t("serviceOrders.saveAsPdf")}
                 </button>
               </div>
             </div>
           )}
-          {printError && <p style={{ color: "#f87171" }}>{printError}</p>}
+          {printError && <p style={{ color: "var(--color-danger)" }}>{printError}</p>}
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 24, marginTop: 24 }}>
+          <div className="cart-layout-grid">
             <div style={cardStyle}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <strong>Articles déposés</strong>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                <strong>{t("serviceOrders.depositedItems")}</strong>
                 <button
                   type="button"
                   style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
                   onClick={addManualLine}
                 >
-                  + Ajouter un article
+                  {t("serviceOrders.addItem")}
                 </button>
               </div>
               <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-                Saisie libre — décris l'article (ex : "Chemise blanche col italien", "iPhone 12, écran
-                fissuré") et son prix. Ajoute une ligne par article à suivre individuellement (ex : une
-                ligne par chemise si le client peut les retirer séparément), ou une seule ligne avec
-                quantité &gt; 1 si le lot est toujours retiré ensemble.
+                {t("serviceOrders.freeEntryHint")}
               </p>
 
               {lines.length === 0 ? (
-                <p style={{ color: "var(--color-text-muted)" }}>Aucun article.</p>
+                <p style={{ color: "var(--color-text-muted)" }}>{t("serviceOrders.emptyItems")}</p>
               ) : (
-                <table style={tableStyle}>
-                  <thead>
-                    <tr>
-                      <th style={thStyle}>Description</th>
-                      <th style={thStyle}>Qté</th>
-                      <th style={thStyle}>Prix unit.</th>
-                      <th style={thStyle}>Total</th>
-                      <th style={thStyle}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lines.map((line) => (
-                      <tr key={line.key}>
-                        <td style={tdStyle}>
-                          <input
-                            style={{ ...inputStyle, marginTop: 0 }}
-                            value={line.description}
-                            onChange={(e) => updateLine(line.key, { description: e.target.value })}
-                          />
-                        </td>
-                        <td style={tdStyle}>
-                          <input
-                            type="number"
-                            min={1}
-                            value={line.quantity}
-                            onChange={(e) => updateLine(line.key, { quantity: Number(e.target.value) })}
-                            style={{ ...inputStyle, width: 60, marginTop: 0 }}
-                          />
-                        </td>
-                        <td style={tdStyle}>
-                          <input
-                            type="number"
-                            min={0}
-                            value={line.unitPrice}
-                            onChange={(e) => updateLine(line.key, { unitPrice: Number(e.target.value) })}
-                            style={{ ...inputStyle, width: 90, marginTop: 0 }}
-                          />
-                        </td>
-                        <td style={tdStyle}>{(line.quantity * line.unitPrice).toFixed(0)}</td>
-                        <td style={tdStyle}>
-                          <button
-                            onClick={() => removeLine(line.key)}
-                            style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
-                          >
-                            ✕
-                          </button>
-                        </td>
+                <div className="table-scroll">
+                  <table style={tableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>{t("serviceOrders.description")}</th>
+                        <th style={thStyle}>{t("serviceOrders.quantity")}</th>
+                        <th style={thStyle}>{t("serviceOrders.unitPrice")}</th>
+                        <th style={thStyle}>{t("serviceOrders.total")}</th>
+                        <th style={thStyle}></th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {lines.map((line) => (
+                        <tr key={line.key}>
+                          <td style={tdStyle}>
+                            <input
+                              style={{ ...inputStyle, marginTop: 0 }}
+                              value={line.description}
+                              onChange={(e) => updateLine(line.key, { description: e.target.value })}
+                            />
+                          </td>
+                          <td style={tdStyle}>
+                            <input
+                              type="number"
+                              min={1}
+                              value={line.quantity}
+                              onChange={(e) => updateLine(line.key, { quantity: Number(e.target.value) })}
+                              style={{ ...inputStyle, width: 60, marginTop: 0 }}
+                            />
+                          </td>
+                          <td style={tdStyle}>
+                            <input
+                              type="number"
+                              min={0}
+                              value={line.unitPrice}
+                              onChange={(e) => updateLine(line.key, { unitPrice: Number(e.target.value) })}
+                              style={{ ...inputStyle, width: 90, marginTop: 0 }}
+                            />
+                          </td>
+                          <td style={tdStyle}>{(line.quantity * line.unitPrice).toFixed(0)}</td>
+                          <td style={tdStyle}>
+                            <button
+                              onClick={() => removeLine(line.key)}
+                              style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
 
               <label>
-                Date de retrait prévue (optionnelle)
+                {t("serviceOrders.promisedDate")}
                 <input
                   style={inputStyle}
                   type="date"
@@ -602,7 +600,7 @@ export function ServiceOrdersPage() {
                 />
               </label>
               <label>
-                Notes
+                {t("serviceOrders.notes")}
                 <textarea
                   style={{ ...inputStyle, minHeight: 60 }}
                   value={notes}
@@ -612,60 +610,59 @@ export function ServiceOrdersPage() {
             </div>
 
             <div style={cardStyle}>
-              <strong>Client & paiement</strong>
+              <strong>{t("serviceOrders.customerAndPayment")}</strong>
               <div>
-                <div>Sous-total : {subtotal.toFixed(0)}</div>
-                <div>Taxe : {taxTotal.toFixed(0)}</div>
-                <div style={{ fontWeight: 700, fontSize: 18 }}>Total : {total.toFixed(0)}</div>
+                <div>{t("serviceOrders.subtotal")} {subtotal.toFixed(0)}</div>
+                <div>{t("serviceOrders.tax")} {taxTotal.toFixed(0)}</div>
+                <div style={{ fontWeight: 700, fontSize: 18 }}>{t("serviceOrders.totalLabel")} {total.toFixed(0)}</div>
               </div>
 
               <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-                Facultatif pour un ticket payé intégralement. Renseigne au moins un nom et un téléphone
-                pour un paiement partiel/à crédit, ou pour rattacher la fidélité d'un client déjà connu.
+                {t("serviceOrders.optionalPaidHint")}
               </p>
 
               <label>
-                Client déjà enregistré
+                {t("serviceOrders.registeredCustomer")}
                 <SearchableSelect
                   value={customerId}
                   onChange={setCustomerId}
                   options={customers.map((c) => ({ value: String(c.id), label: c.fullName }))}
-                  emptyLabel="— Aucun / nouveau —"
-                  placeholder="Rechercher un client..."
+                  emptyLabel={t("serviceOrders.noCustomerOption")}
+                  placeholder={t("serviceOrders.searchCustomerPlaceholder")}
                 />
               </label>
 
               {!customerId && (
                 <>
                   <label>
-                    Nom{needsCustomerIdentification ? " (requis)" : " (optionnel)"}
+                    {t("serviceOrders.name")}{needsCustomerIdentification ? t("serviceOrders.requiredSuffix") : t("serviceOrders.optionalSuffix")}
                     <input
                       style={{
                         ...inputStyle,
                         border:
                           needsCustomerIdentification && !newCustomerName.trim()
-                            ? "1px solid #f87171"
+                            ? "1px solid var(--color-danger)"
                             : inputStyle.border,
                       }}
                       value={newCustomerName}
                       onChange={(e) => setNewCustomerName(e.target.value)}
-                      placeholder="Nom du client"
+                      placeholder={t("serviceOrders.namePlaceholder")}
                     />
                   </label>
                   <label>
-                    Téléphone
+                    {t("serviceOrders.phone")}
                     <input
                       style={inputStyle}
                       value={newCustomerPhone}
                       onChange={(e) => setNewCustomerPhone(e.target.value)}
-                      placeholder="07 00 00 00 00"
+                      placeholder={t("serviceOrders.phonePlaceholder")}
                     />
                   </label>
                 </>
               )}
 
               <label>
-                Méthode de paiement
+                {t("serviceOrders.paymentMethod")}
                 <select
                   style={inputStyle}
                   value={paymentMethod}
@@ -680,7 +677,7 @@ export function ServiceOrdersPage() {
               </label>
 
               <label>
-                Montant payé (laisser vide = total)
+                {t("serviceOrders.amountPaid")}
                 <input
                   style={inputStyle}
                   type="number"
@@ -690,10 +687,10 @@ export function ServiceOrdersPage() {
                 />
               </label>
 
-              {checkoutError && <p style={{ color: "#f87171" }}>{checkoutError}</p>}
+              {checkoutError && <p style={{ color: "var(--color-danger)" }}>{checkoutError}</p>}
 
               <button style={primaryButtonStyle} onClick={handleSubmit} disabled={checkingOut}>
-                {checkingOut ? "Enregistrement..." : "Enregistrer et imprimer"}
+                {checkingOut ? t("serviceOrders.saving") : t("serviceOrders.submitAndPrint")}
               </button>
             </div>
           </div>
@@ -702,305 +699,314 @@ export function ServiceOrdersPage() {
 
       {view === "track" && (
         <div style={cardStyle}>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>Ticket</th>
-                <th style={thStyle}>Client</th>
-                <th style={thStyle}>Statut</th>
-                <th style={thStyle}>Paiement</th>
-                <th style={thStyle}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => {
-                const items = itemsByOrder[order.id] ?? [];
-                const summary = deriveOrderStatus(items);
-                const credit = creditForOrder(order.id);
-                const expanded = expandedOrderId === order.id;
+          <div className="table-scroll">
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>{t("serviceOrders.ticket")}</th>
+                  <th style={thStyle}>{t("serviceOrders.customer")}</th>
+                  <th style={thStyle}>{t("serviceOrders.status")}</th>
+                  <th style={thStyle}>{t("serviceOrders.payment")}</th>
+                  <th style={thStyle}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((order) => {
+                  const items = itemsByOrder[order.id] ?? [];
+                  const summary = deriveOrderStatus(items);
+                  const credit = creditForOrder(order.id);
+                  const expanded = expandedOrderId === order.id;
 
-                return (
-                  <Fragment key={order.id}>
-                    <tr>
-                      <td style={tdStyle}>{order.number}</td>
-                      <td style={tdStyle}>{customerName(order.customerId)}</td>
-                      <td style={tdStyle}>
-                        {expanded
-                          ? `${AGGREGATE_STATUS_LABELS[summary.status]} (${summary.pickedUpCount}/${summary.totalCount})`
-                          : order.closedAt
-                            ? "Clôturé"
-                            : "—"}
-                      </td>
-                      <td style={tdStyle}>
-                        <span style={badgeStyle(order.paymentStatus === "paid" ? "ok" : "warning")}>
-                          {PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus}
-                        </span>
-                      </td>
-                      <td style={tdStyle}>
-                        <button
-                          style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                          onClick={() => toggleExpand(order.id)}
-                        >
-                          {expanded ? "Fermer" : "Détail"}
-                        </button>
-                      </td>
-                    </tr>
-                    {expanded && (
+                  return (
+                    <Fragment key={order.id}>
                       <tr>
-                        <td style={tdStyle} colSpan={5}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                            {items.map((item) => (
-                              <div
-                                key={item.id}
-                                style={{ display: "flex", alignItems: "center", gap: 12 }}
-                              >
-                                <span style={{ flex: 1 }}>
-                                  {item.quantity} x {item.description || "Article"}
-                                </span>
-                                <select
-                                  style={{ ...inputStyle, width: 160, marginTop: 0 }}
-                                  value={item.status}
-                                  onChange={(e) =>
-                                    handleStatusChange(item, e.target.value as ServiceOrderItemStatus)
-                                  }
-                                >
-                                  {ITEM_STATUSES.map((s) => (
-                                    <option key={s} value={s}>
-                                      {ITEM_STATUS_LABELS[s]}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            ))}
-
-                            {summary.status === "ready" && customerPhone(order.customerId) && (
-                              <button
-                                style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14, alignSelf: "flex-start" }}
-                                onClick={() => {
-                                  const phone = customerPhone(order.customerId)!;
-                                  const message = `Bonjour ${customerName(order.customerId)}, votre ticket ${order.number} est prêt à récupérer chez ${businessSettings?.businessName ?? "nous"}.`;
-                                  void openExternalUrl(
-                                    buildWhatsAppLink(phone, businessSettings?.whatsappCountryCode, message),
-                                  );
-                                }}
-                              >
-                                Notifier sur WhatsApp
-                              </button>
-                            )}
-
-                            {order.notes && (
-                              <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>Notes : {order.notes}</p>
-                            )}
-                            {order.promisedDate && (
-                              <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-                                Retrait prévu : {order.promisedDate}
-                              </p>
-                            )}
-
-                            {credit && (
-                              <div
-                                style={{
-                                  borderTop: "1px solid var(--color-border)",
-                                  paddingTop: 12,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 8,
-                                }}
-                              >
-                                <span>Solde restant : {credit.remainingBalance.toFixed(0)}</span>
-                                <input
-                                  type="number"
-                                  style={{ ...inputStyle, width: 90, marginTop: 0 }}
-                                  value={repayAmount}
-                                  onChange={(e) => setRepayAmount(e.target.value)}
-                                  placeholder={credit.remainingBalance.toFixed(0)}
-                                />
-                                <button
-                                  style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                                  onClick={() => handleRepay(credit)}
-                                  disabled={repaying}
-                                >
-                                  Encaisser le solde
-                                </button>
-                              </div>
-                            )}
-                            {repayError && <p style={{ color: "#f87171" }}>{repayError}</p>}
-                          </div>
+                        <td style={tdStyle}>{order.number}</td>
+                        <td style={tdStyle}>{customerName(order.customerId)}</td>
+                        <td style={tdStyle}>
+                          {expanded
+                            ? `${AGGREGATE_STATUS_LABELS[summary.status]} (${summary.pickedUpCount}/${summary.totalCount})`
+                            : order.closedAt
+                              ? t("serviceOrders.closedStatus")
+                              : "—"}
+                        </td>
+                        <td style={tdStyle}>
+                          <span style={badgeStyle(order.paymentStatus === "paid" ? "ok" : "warning")}>
+                            {PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus}
+                          </span>
+                        </td>
+                        <td style={tdStyle}>
+                          <button
+                            style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                            onClick={() => toggleExpand(order.id)}
+                          >
+                            {expanded ? t("serviceOrders.close") : t("serviceOrders.detail")}
+                          </button>
                         </td>
                       </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-              {orders.length === 0 && (
-                <tr>
-                  <td style={tdStyle} colSpan={5}>
-                    Aucun ticket pour le moment.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                      {expanded && (
+                        <tr>
+                          <td style={tdStyle} colSpan={5}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                              {items.map((item) => (
+                                <div
+                                  key={item.id}
+                                  style={{ display: "flex", alignItems: "center", gap: 12 }}
+                                >
+                                  <span style={{ flex: 1 }}>
+                                    {item.quantity} x {item.description || t("serviceOrders.itemFallback")}
+                                  </span>
+                                  <select
+                                    style={{ ...inputStyle, width: 160, marginTop: 0 }}
+                                    value={item.status}
+                                    onChange={(e) =>
+                                      handleStatusChange(item, e.target.value as ServiceOrderItemStatus)
+                                    }
+                                  >
+                                    {ITEM_STATUSES.map((s) => (
+                                      <option key={s} value={s}>
+                                        {ITEM_STATUS_LABELS[s]}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              ))}
+
+                              {summary.status === "ready" && customerPhone(order.customerId) && (
+                                <button
+                                  style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14, alignSelf: "flex-start" }}
+                                  onClick={() => {
+                                    const phone = customerPhone(order.customerId)!;
+                                    const message = t("whatsapp.serviceOrderReady", {
+                                      customerName: customerName(order.customerId),
+                                      orderNumber: order.number,
+                                      business: businessSettings?.businessName ?? t("whatsapp.defaultBusinessName"),
+                                    });
+                                    void openExternalUrl(
+                                      buildWhatsAppLink(phone, businessSettings?.whatsappCountryCode, message),
+                                    );
+                                  }}
+                                >
+                                  {t("serviceOrders.notifyWhatsapp")}
+                                </button>
+                              )}
+
+                              {order.notes && (
+                                <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("serviceOrders.notesLabel")} {order.notes}</p>
+                              )}
+                              {order.promisedDate && (
+                                <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
+                                  {t("serviceOrders.promisedPickup")} {order.promisedDate}
+                                </p>
+                              )}
+
+                              {credit && (
+                                <div
+                                  style={{
+                                    borderTop: "1px solid var(--color-border)",
+                                    paddingTop: 12,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    flexWrap: "wrap",
+                                  }}
+                                >
+                                  <span>{t("serviceOrders.remainingBalance")} {credit.remainingBalance.toFixed(0)}</span>
+                                  <input
+                                    type="number"
+                                    style={{ ...inputStyle, width: 90, marginTop: 0 }}
+                                    value={repayAmount}
+                                    onChange={(e) => setRepayAmount(e.target.value)}
+                                    placeholder={credit.remainingBalance.toFixed(0)}
+                                  />
+                                  <button
+                                    style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                                    onClick={() => handleRepay(credit)}
+                                    disabled={repaying}
+                                  >
+                                    {t("serviceOrders.collectBalance")}
+                                  </button>
+                                </div>
+                              )}
+                              {repayError && <p style={{ color: "var(--color-danger)" }}>{repayError}</p>}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+                {orders.length === 0 && (
+                  <tr>
+                    <td style={tdStyle} colSpan={5}>
+                      {t("serviceOrders.noTickets")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {view === "history" && (
         <div style={cardStyle}>
           <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-            Corrige un ticket déjà créé (client, date prévue, notes, articles). Ces corrections ne
-            rejouent pas automatiquement les paiements ou créances déjà enregistrés — ajuste le solde
-            manuellement dans Créances si le total change après une correction de prix.
+            {t("serviceOrders.historyHint")}
           </p>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>Ticket</th>
-                <th style={thStyle}>Client</th>
-                <th style={thStyle}>Total</th>
-                <th style={thStyle}>Paiement</th>
-                <th style={thStyle}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => {
-                const expanded = expandedOrderId === order.id;
+          <div className="table-scroll">
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>{t("serviceOrders.ticket")}</th>
+                  <th style={thStyle}>{t("serviceOrders.customer")}</th>
+                  <th style={thStyle}>{t("serviceOrders.total")}</th>
+                  <th style={thStyle}>{t("serviceOrders.payment")}</th>
+                  <th style={thStyle}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((order) => {
+                  const expanded = expandedOrderId === order.id;
 
-                return (
-                  <Fragment key={order.id}>
-                    <tr>
-                      <td style={tdStyle}>{order.number}</td>
-                      <td style={tdStyle}>{customerName(order.customerId)}</td>
-                      <td style={tdStyle}>{order.total.toFixed(0)}</td>
-                      <td style={tdStyle}>
-                        <span style={badgeStyle(order.paymentStatus === "paid" ? "ok" : "warning")}>
-                          {PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus}
-                        </span>
-                      </td>
-                      <td style={tdStyle}>
-                        <button
-                          style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                          onClick={() => historyToggleExpand(order)}
-                        >
-                          {expanded ? "Fermer" : "Corriger"}
-                        </button>
-                      </td>
-                    </tr>
-                    {expanded && (
+                  return (
+                    <Fragment key={order.id}>
                       <tr>
-                        <td style={tdStyle} colSpan={5}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                            <label>
-                              Client
-                              <SearchableSelect
-                                value={editCustomerId}
-                                onChange={setEditCustomerId}
-                                options={customers.map((c) => ({ value: String(c.id), label: c.fullName }))}
-                                emptyLabel="— Aucun —"
-                                placeholder="Rechercher un client..."
-                              />
-                            </label>
-                            <label>
-                              Date de retrait prévue
-                              <input
-                                style={inputStyle}
-                                type="date"
-                                value={editPromisedDate}
-                                onChange={(e) => setEditPromisedDate(e.target.value)}
-                              />
-                            </label>
-                            <label>
-                              Notes
-                              <textarea
-                                style={{ ...inputStyle, minHeight: 60 }}
-                                value={editNotes}
-                                onChange={(e) => setEditNotes(e.target.value)}
-                              />
-                            </label>
-
-                            <table style={tableStyle}>
-                              <thead>
-                                <tr>
-                                  <th style={thStyle}>Description</th>
-                                  <th style={thStyle}>Qté</th>
-                                  <th style={thStyle}>Prix unit.</th>
-                                  <th style={thStyle}>TVA %</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {editItems.map((item) => (
-                                  <tr key={item.id}>
-                                    <td style={tdStyle}>
-                                      <input
-                                        style={{ ...inputStyle, marginTop: 0 }}
-                                        value={item.description}
-                                        onChange={(e) =>
-                                          updateEditItem(item.id, { description: e.target.value })
-                                        }
-                                      />
-                                    </td>
-                                    <td style={tdStyle}>
-                                      <input
-                                        type="number"
-                                        min={1}
-                                        value={item.quantity}
-                                        onChange={(e) =>
-                                          updateEditItem(item.id, { quantity: Number(e.target.value) })
-                                        }
-                                        style={{ ...inputStyle, width: 60, marginTop: 0 }}
-                                      />
-                                    </td>
-                                    <td style={tdStyle}>
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        value={item.unitPrice}
-                                        onChange={(e) =>
-                                          updateEditItem(item.id, { unitPrice: Number(e.target.value) })
-                                        }
-                                        style={{ ...inputStyle, width: 90, marginTop: 0 }}
-                                      />
-                                    </td>
-                                    <td style={tdStyle}>
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        value={item.taxRate}
-                                        onChange={(e) =>
-                                          updateEditItem(item.id, { taxRate: Number(e.target.value) })
-                                        }
-                                        style={{ ...inputStyle, width: 70, marginTop: 0 }}
-                                      />
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-
-                            {historyError && <p style={{ color: "#f87171" }}>{historyError}</p>}
-
-                            <button
-                              style={primaryButtonStyle}
-                              onClick={() => handleSaveHistory(order.id)}
-                              disabled={savingHistory}
-                            >
-                              {savingHistory ? "Enregistrement..." : "Enregistrer"}
-                            </button>
-                          </div>
+                        <td style={tdStyle}>{order.number}</td>
+                        <td style={tdStyle}>{customerName(order.customerId)}</td>
+                        <td style={tdStyle}>{order.total.toFixed(0)}</td>
+                        <td style={tdStyle}>
+                          <span style={badgeStyle(order.paymentStatus === "paid" ? "ok" : "warning")}>
+                            {PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus}
+                          </span>
+                        </td>
+                        <td style={tdStyle}>
+                          <button
+                            style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                            onClick={() => historyToggleExpand(order)}
+                          >
+                            {expanded ? t("serviceOrders.close") : t("serviceOrders.correct")}
+                          </button>
                         </td>
                       </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-              {orders.length === 0 && (
-                <tr>
-                  <td style={tdStyle} colSpan={5}>
-                    Aucun ticket pour le moment.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                      {expanded && (
+                        <tr>
+                          <td style={tdStyle} colSpan={5}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                              <label>
+                                {t("serviceOrders.customer")}
+                                <SearchableSelect
+                                  value={editCustomerId}
+                                  onChange={setEditCustomerId}
+                                  options={customers.map((c) => ({ value: String(c.id), label: c.fullName }))}
+                                  emptyLabel={t("serviceOrders.noCustomerEditOption")}
+                                  placeholder={t("serviceOrders.searchCustomerPlaceholder")}
+                                />
+                              </label>
+                              <label>
+                                {t("serviceOrders.promisedDate")}
+                                <input
+                                  style={inputStyle}
+                                  type="date"
+                                  value={editPromisedDate}
+                                  onChange={(e) => setEditPromisedDate(e.target.value)}
+                                />
+                              </label>
+                              <label>
+                                {t("serviceOrders.notes")}
+                                <textarea
+                                  style={{ ...inputStyle, minHeight: 60 }}
+                                  value={editNotes}
+                                  onChange={(e) => setEditNotes(e.target.value)}
+                                />
+                              </label>
+
+                              <div className="table-scroll">
+                                <table style={tableStyle}>
+                                  <thead>
+                                    <tr>
+                                      <th style={thStyle}>{t("serviceOrders.description")}</th>
+                                      <th style={thStyle}>{t("serviceOrders.quantity")}</th>
+                                      <th style={thStyle}>{t("serviceOrders.unitPrice")}</th>
+                                      <th style={thStyle}>{t("serviceOrders.taxRatePercent")}</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {editItems.map((item) => (
+                                      <tr key={item.id}>
+                                        <td style={tdStyle}>
+                                          <input
+                                            style={{ ...inputStyle, marginTop: 0 }}
+                                            value={item.description}
+                                            onChange={(e) =>
+                                              updateEditItem(item.id, { description: e.target.value })
+                                            }
+                                          />
+                                        </td>
+                                        <td style={tdStyle}>
+                                          <input
+                                            type="number"
+                                            min={1}
+                                            value={item.quantity}
+                                            onChange={(e) =>
+                                              updateEditItem(item.id, { quantity: Number(e.target.value) })
+                                            }
+                                            style={{ ...inputStyle, width: 60, marginTop: 0 }}
+                                          />
+                                        </td>
+                                        <td style={tdStyle}>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            value={item.unitPrice}
+                                            onChange={(e) =>
+                                              updateEditItem(item.id, { unitPrice: Number(e.target.value) })
+                                            }
+                                            style={{ ...inputStyle, width: 90, marginTop: 0 }}
+                                          />
+                                        </td>
+                                        <td style={tdStyle}>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            value={item.taxRate}
+                                            onChange={(e) =>
+                                              updateEditItem(item.id, { taxRate: Number(e.target.value) })
+                                            }
+                                            style={{ ...inputStyle, width: 70, marginTop: 0 }}
+                                          />
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {historyError && <p style={{ color: "var(--color-danger)" }}>{historyError}</p>}
+
+                              <button
+                                style={primaryButtonStyle}
+                                onClick={() => handleSaveHistory(order.id)}
+                                disabled={savingHistory}
+                              >
+                                {savingHistory ? t("serviceOrders.saving") : t("serviceOrders.save")}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+                {orders.length === 0 && (
+                  <tr>
+                    <td style={tdStyle} colSpan={5}>
+                      {t("serviceOrders.noTickets")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </main>

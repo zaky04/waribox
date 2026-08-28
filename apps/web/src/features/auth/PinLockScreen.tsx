@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "./useAuth";
 import { authPrimaryButtonStyle } from "./styles";
 
@@ -6,6 +7,7 @@ const KEYPAD = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"];
 
 export function PinLockScreen() {
   const { user, unlockWithPin, logout } = useAuth();
+  const { t } = useTranslation();
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -40,7 +42,7 @@ export function PinLockScreen() {
 
   return (
     <main style={{ maxWidth: 320, margin: "60px auto", padding: 24, textAlign: "center" }}>
-      <h1>Session verrouillée</h1>
+      <h1>{t("auth.pinLock.title")}</h1>
       <p style={{ color: "var(--color-text-muted)" }}>{user?.fullName}</p>
 
       <div style={{ display: "flex", justifyContent: "center", gap: 12, margin: "24px 0" }}>
@@ -58,7 +60,7 @@ export function PinLockScreen() {
         ))}
       </div>
 
-      {error && <p style={{ color: "#f87171" }}>{error}</p>}
+      {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
         {KEYPAD.map((key, i) => (
@@ -85,7 +87,7 @@ export function PinLockScreen() {
         onClick={logout}
         style={{ ...authPrimaryButtonStyle, background: "transparent", color: "var(--color-text-muted)", marginTop: 24 }}
       >
-        Se déconnecter
+        {t("auth.pinLock.logout")}
       </button>
     </main>
   );

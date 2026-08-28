@@ -1,4 +1,5 @@
 import { impersonateUser, verifyPassword, verifyPin } from "@gestion-boutique/core";
+import { t } from "@gestion-boutique/i18n";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { useSessionStore } from "../../stores/session";
 
@@ -18,19 +19,19 @@ export function useAuth() {
 
   async function login(identifier: string, password: string) {
     const authUser = await verifyPassword(db, identifier, password);
-    if (!authUser) throw new Error("Identifiants incorrects");
+    if (!authUser) throw new Error(t("auth.errors.invalidCredentials"));
     setUser(authUser);
   }
 
   async function unlockWithPin(pin: string) {
-    if (!user) throw new Error("Aucune session active");
+    if (!user) throw new Error(t("auth.errors.noActiveSession"));
     const valid = await verifyPin(db, user.id, pin);
-    if (!valid) throw new Error("Code PIN incorrect");
+    if (!valid) throw new Error(t("auth.errors.wrongPin"));
     unlock();
   }
 
   async function impersonateUserById(targetUserId: number) {
-    if (!user) throw new Error("Aucune session active");
+    if (!user) throw new Error(t("auth.errors.noActiveSession"));
     const target = await impersonateUser(db, targetUserId, user.permissions, user.id);
     impersonate(target);
   }

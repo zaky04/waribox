@@ -1,8 +1,10 @@
 import type { Database } from "@gestion-boutique/database";
-import { schema } from "@gestion-boutique/database";
+import { schema, withTransaction } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { desc, eq, sql } from "drizzle-orm";
 import { logAction } from "./AuditService";
-import { listLocations, recordMovement } from "./StockService";
+import { requirePermission, type PermissionSet } from "../domain/permissions";
+import { createBatch, listLocations, recordMovement } from "./StockService";
 
 async function nextPurchaseNumber(db: Database): Promise<string> {
   const row = await db.select({ count: sql<number>`COUNT(*)` }).from(schema.purchases).get();
@@ -29,90 +31,116 @@ export interface CreatePurchaseInput {
   storeId: number;
 }
 
-export async function createPurchase(db: Database, input: CreatePurchaseInput) {
+export async function createPurchase(
+  db: Database,
+  input: CreatePurchaseInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "manage_suppliers");
   if (input.items.length === 0) {
-    throw new Error("L'achat doit contenir au moins un article.");
+    throw new Error(t("coreErrors.purchases.itemRequired"));
   }
   for (const item of input.items) {
     if (item.quantity <= 0) {
-      throw new Error("La quantité de chaque article doit être supérieure à zéro.");
+      throw new Error(t("coreErrors.purchases.quantityPositive"));
     }
   }
 
-  const locations = await listLocations(db, input.storeId);
-  const reserve = locations.find((l) => l.type === "reserve" || l.type.startsWith("reserve#"));
-  if (!reserve) {
-    throw new Error("Emplacement de réserve introuvable pour cette boutique.");
-  }
+  // Même raisonnement que SalesService.createSale/RefundsService.createRefund :
+  // toute la séquence lecture-validation-écriture doit être atomique, pas
+  // seulement les écritures — un achat enregistré sans que le stock ne bouge
+  // (ou l'inverse) laisserait la comptabilité et le stock désynchronisés.
+  return withTransaction(async () => {
+    const locations = await listLocations(db, input.storeId);
+    const reserve = locations.find((l) => l.type === "reserve" || l.type.startsWith("reserve#"));
+    if (!reserve) {
+      throw new Error(t("coreErrors.purchases.reserveLocationNotFound"));
+    }
 
-  const total = input.items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
-  const amountPaid = input.amountPaid ?? total;
+    const total = input.items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
+    const amountPaid = input.amountPaid ?? total;
 
-  const number = await nextPurchaseNumber(db);
+    const number = await nextPurchaseNumber(db);
 
-  const purchase = await db
-    .insert(schema.purchases)
-    .values({
-      number,
-      supplierId: input.supplierId,
+    const purchase = await db
+      .insert(schema.purchases)
+      .values({
+        number,
+        supplierId: input.supplierId,
+        userId: input.userId,
+        storeId: input.storeId,
+        total,
+      })
+      .returning()
+      .get();
+
+    for (const item of input.items) {
+      await db.insert(schema.purchaseItems).values({
+        purchaseId: purchase.id,
+        variantId: item.variantId,
+        quantity: item.quantity,
+        unitCost: item.unitCost,
+      });
+
+      // Chaque ligne d'achat devient son propre lot, coût inclus — sans ça,
+      // le stock acheté partait sans traçabilité de coût (voir le commentaire
+      // sur ReportsService.getMarginsSummary) et sans participer au FEFO. Un
+      // lot sans date de péremption se range naturellement après les lots
+      // périssables dans consumeStockFefo (voir son tri), donc ça ne change
+      // rien à la priorité des produits suivis en péremption.
+      const batch = await createBatch(db, {
+        variantId: item.variantId,
+        locationId: reserve.id,
+        quantity: item.quantity,
+        expiryDate: undefined,
+        unitCost: item.unitCost,
+      });
+
+      await recordMovement(db, {
+        variantId: item.variantId,
+        locationId: reserve.id,
+        quantityDelta: item.quantity,
+        movementType: "purchase",
+        referenceType: "purchase",
+        referenceId: purchase.id,
+        batchId: batch.id,
+        userId: input.userId,
+      });
+    }
+
+    if (amountPaid > 0) {
+      await db.insert(schema.payments).values({
+        referenceType: "purchase",
+        referenceId: purchase.id,
+        method: input.paymentMethod,
+        amount: amountPaid,
+        receivedBy: input.userId,
+        storeId: input.storeId,
+      });
+    }
+
+    if (amountPaid < total) {
+      await db.insert(schema.supplierDebts).values({
+        supplierId: input.supplierId,
+        purchaseId: purchase.id,
+        storeId: input.storeId,
+        originalAmount: total - amountPaid,
+        remainingBalance: total - amountPaid,
+        dueDate: input.dueDate,
+        status: "open",
+      });
+    }
+
+    await logAction(db, {
       userId: input.userId,
-      storeId: input.storeId,
-      total,
-    })
-    .returning()
-    .get();
-
-  for (const item of input.items) {
-    await db.insert(schema.purchaseItems).values({
-      purchaseId: purchase.id,
-      variantId: item.variantId,
-      quantity: item.quantity,
-      unitCost: item.unitCost,
+      action: "create_purchase",
+      entity: "purchase",
+      entityId: purchase.id,
+      metadata: { number: purchase.number, total },
     });
 
-    await recordMovement(db, {
-      variantId: item.variantId,
-      locationId: reserve.id,
-      quantityDelta: item.quantity,
-      movementType: "purchase",
-      referenceType: "purchase",
-      referenceId: purchase.id,
-      userId: input.userId,
-    });
-  }
-
-  if (amountPaid > 0) {
-    await db.insert(schema.payments).values({
-      referenceType: "purchase",
-      referenceId: purchase.id,
-      method: input.paymentMethod,
-      amount: amountPaid,
-      receivedBy: input.userId,
-      storeId: input.storeId,
-    });
-  }
-
-  if (amountPaid < total) {
-    await db.insert(schema.supplierDebts).values({
-      supplierId: input.supplierId,
-      purchaseId: purchase.id,
-      storeId: input.storeId,
-      originalAmount: total - amountPaid,
-      remainingBalance: total - amountPaid,
-      dueDate: input.dueDate,
-      status: "open",
-    });
-  }
-
-  await logAction(db, {
-    userId: input.userId,
-    action: "create_purchase",
-    entity: "purchase",
-    entityId: purchase.id,
-    metadata: { number: purchase.number, total },
+    return purchase;
   });
-
-  return purchase;
 }
 
 export async function listPurchases(db: Database, storeId?: number) {

@@ -11,6 +11,7 @@ import {
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import {
   badgeStyle,
@@ -34,15 +35,16 @@ type ServiceOrderItem = typeof schema.serviceOrderItems.$inferSelect;
 type Variant = typeof schema.productVariants.$inferSelect;
 type Product = typeof schema.products.$inferSelect;
 
-const STATUS_LABELS: Record<string, string> = {
-  open: "Ouverte",
-  partial: "Partielle",
-  settled: "Soldée",
-};
-
 export function CreditsPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
+  const { t } = useTranslation();
+
+  const STATUS_LABELS: Record<string, string> = {
+    open: t("common.debtCreditStatus.open"),
+    partial: t("common.debtCreditStatus.partial"),
+    settled: t("common.debtCreditStatus.settled"),
+  };
 
   const [credits, setCredits] = useState<Credit[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -129,7 +131,13 @@ export function CreditsPage() {
   const handleNotifyOverdue = (credit: Credit) => {
     const phone = customerPhone(credit.customerId);
     if (!phone) return;
-    const message = `Bonjour ${customerName(credit.customerId)}, vous avez une créance de ${credit.remainingBalance} en retard depuis le ${credit.dueDate} chez ${businessSettings?.businessName ?? "nous"} (réf. ${referenceNumber(credit)}). Merci de bien vouloir régulariser dès que possible.`;
+    const message = t("whatsapp.overdueDebt", {
+      customerName: customerName(credit.customerId),
+      amount: credit.remainingBalance,
+      dueDate: credit.dueDate,
+      business: businessSettings?.businessName ?? t("whatsapp.defaultBusinessName"),
+      reference: referenceNumber(credit),
+    });
     void openExternalUrl(buildWhatsAppLink(phone, businessSettings?.whatsappCountryCode, message));
   };
 
@@ -144,18 +152,18 @@ export function CreditsPage() {
     if (!user) return;
     const value = Number(amount);
     if (!value || value <= 0) {
-      setError("Le montant doit être supérieur à zéro.");
+      setError(t("credits.errors.amountPositive"));
       return;
     }
 
     setSaving(true);
     try {
-      await recordCreditRepayment(db, { creditId: credit.id, amount: value, userId: user.id });
+      await recordCreditRepayment(db, { creditId: credit.id, amount: value, userId: user.id }, user.permissions);
       setPayingId(null);
       setAmount("");
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible d'enregistrer le remboursement.");
+      setError(err instanceof Error ? err.message : t("credits.errors.paymentFailed"));
     } finally {
       setSaving(false);
     }
@@ -163,8 +171,8 @@ export function CreditsPage() {
 
   return (
     <main style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Créances</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <h1>{t("credits.title")}</h1>
         <button
           style={{
             ...primaryButtonStyle,
@@ -174,108 +182,110 @@ export function CreditsPage() {
           }}
           onClick={() => setShowSettled((v) => !v)}
         >
-          {showSettled ? "Masquer les soldées" : "Afficher les soldées"}
+          {showSettled ? t("credits.hideSettled") : t("credits.showSettled")}
         </button>
       </div>
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>Date</th>
-            <th style={thStyle}>Client</th>
-            <th style={thStyle}>Référence</th>
-            <th style={thStyle}>Article</th>
-            <th style={thStyle}>Montant initial</th>
-            <th style={thStyle}>Solde restant</th>
-            <th style={thStyle}>Échéance</th>
-            <th style={thStyle}>Statut</th>
-            <th style={thStyle}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {visibleCredits.map((credit) => {
-            const overdue = isCreditOverdue(credit);
-            const phone = customerPhone(credit.customerId);
-            return (
-              <tr key={credit.id}>
-                <td style={tdStyle}>{credit.createdAt}</td>
-                <td style={tdStyle}>{customerName(credit.customerId)}</td>
-                <td style={tdStyle}>{referenceNumber(credit)}</td>
-                <td style={tdStyle}>{articleSummary(credit)}</td>
-                <td style={tdStyle}>{credit.originalAmount}</td>
-                <td style={tdStyle}>{credit.remainingBalance}</td>
-                <td style={tdStyle}>{credit.dueDate ?? "—"}</td>
-                <td style={tdStyle}>
-                  <span style={badgeStyle(credit.status === "settled" ? "ok" : overdue ? "danger" : "warning")}>
-                    {overdue ? "En retard" : STATUS_LABELS[credit.status] ?? credit.status}
-                  </span>
-                </td>
-                <td style={tdStyle}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    {credit.status !== "settled" &&
-                      (payingId === credit.id ? (
-                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          <input
-                            type="number"
-                            style={{ ...inputStyle, width: 90, marginTop: 0 }}
-                            value={amount}
-                            onChange={(e) => setAmount(e.target.value)}
-                          />
+      <div className="table-scroll">
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>{t("credits.date")}</th>
+              <th style={thStyle}>{t("credits.customer")}</th>
+              <th style={thStyle}>{t("credits.reference")}</th>
+              <th style={thStyle}>{t("credits.article")}</th>
+              <th style={thStyle}>{t("credits.originalAmount")}</th>
+              <th style={thStyle}>{t("credits.remainingBalance")}</th>
+              <th style={thStyle}>{t("credits.dueDate")}</th>
+              <th style={thStyle}>{t("credits.status")}</th>
+              <th style={thStyle}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleCredits.map((credit) => {
+              const overdue = isCreditOverdue(credit);
+              const phone = customerPhone(credit.customerId);
+              return (
+                <tr key={credit.id}>
+                  <td style={tdStyle}>{credit.createdAt}</td>
+                  <td style={tdStyle}>{customerName(credit.customerId)}</td>
+                  <td style={tdStyle}>{referenceNumber(credit)}</td>
+                  <td style={tdStyle}>{articleSummary(credit)}</td>
+                  <td style={tdStyle}>{credit.originalAmount}</td>
+                  <td style={tdStyle}>{credit.remainingBalance}</td>
+                  <td style={tdStyle}>{credit.dueDate ?? "—"}</td>
+                  <td style={tdStyle}>
+                    <span style={badgeStyle(credit.status === "settled" ? "ok" : overdue ? "danger" : "warning")}>
+                      {overdue ? t("credits.overdue") : STATUS_LABELS[credit.status] ?? credit.status}
+                    </span>
+                  </td>
+                  <td style={tdStyle}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      {credit.status !== "settled" &&
+                        (payingId === credit.id ? (
+                          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                            <input
+                              type="number"
+                              style={{ ...inputStyle, width: 90, marginTop: 0 }}
+                              value={amount}
+                              onChange={(e) => setAmount(e.target.value)}
+                            />
+                            <button
+                              style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                              onClick={() => handleSubmit(credit)}
+                              disabled={saving}
+                            >
+                              {t("credits.confirm")}
+                            </button>
+                            <button
+                              style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
+                              onClick={() => setPayingId(null)}
+                            >
+                              {t("credits.cancel")}
+                            </button>
+                          </div>
+                        ) : (
                           <button
                             style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                            onClick={() => handleSubmit(credit)}
-                            disabled={saving}
+                            onClick={() => startPayment(credit)}
                           >
-                            Valider
+                            {t("credits.recordPayment")}
                           </button>
-                          <button
-                            style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}
-                            onClick={() => setPayingId(null)}
-                          >
-                            Annuler
-                          </button>
-                        </div>
-                      ) : (
+                        ))}
+                      {overdue && phone && (
                         <button
-                          style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                          onClick={() => startPayment(credit)}
+                          style={{
+                            padding: "6px 12px",
+                            fontSize: 14,
+                            borderRadius: 8,
+                            border: "1px solid var(--color-border)",
+                            background: "transparent",
+                            color: "var(--color-text)",
+                            cursor: "pointer",
+                            whiteSpace: "nowrap",
+                          }}
+                          onClick={() => handleNotifyOverdue(credit)}
                         >
-                          Enregistrer un paiement
+                          {t("credits.notifyWhatsapp")}
                         </button>
-                      ))}
-                    {overdue && phone && (
-                      <button
-                        style={{
-                          padding: "6px 12px",
-                          fontSize: 14,
-                          borderRadius: 8,
-                          border: "1px solid var(--color-border)",
-                          background: "transparent",
-                          color: "var(--color-text)",
-                          cursor: "pointer",
-                          whiteSpace: "nowrap",
-                        }}
-                        onClick={() => handleNotifyOverdue(credit)}
-                      >
-                        Notifier sur WhatsApp
-                      </button>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {visibleCredits.length === 0 && (
+              <tr>
+                <td style={tdStyle} colSpan={9}>
+                  {t("credits.none")}
                 </td>
               </tr>
-            );
-          })}
-          {visibleCredits.length === 0 && (
-            <tr>
-              <td style={tdStyle} colSpan={9}>
-                Aucune créance.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+            )}
+          </tbody>
+        </table>
+      </div>
 
-      {error && <p style={{ color: "#f87171" }}>{error}</p>}
+      {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
     </main>
   );
 }

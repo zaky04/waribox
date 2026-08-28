@@ -1,3 +1,4 @@
+import { t } from "@gestion-boutique/i18n";
 import { EscPosBuilder } from "./escpos";
 import { rasterizeLogo } from "./logo";
 
@@ -30,13 +31,6 @@ export interface ReceiptData {
   paymentMethod: string;
   amountPaid: number;
 }
-
-const PAYMENT_LABELS: Record<string, string> = {
-  cash: "Espèces",
-  card: "Carte",
-  mobile_money: "Mobile Money",
-  credit: "Crédit",
-};
 
 // Points ESC/POS par caractère en Font A — ratio standard qui correspond aux
 // deux presets du secteur : 32 col -> 384 pts (58mm), 48 col -> 576 pts (80mm).
@@ -72,14 +66,14 @@ export async function buildReceipt(data: ReceiptData): Promise<Uint8Array> {
   builder.text(data.businessName ?? "WariBox").newline();
   builder.doubleHeight(false).bold(false);
   if (data.businessAddress) builder.text(data.businessAddress).newline();
-  if (data.businessPhone) builder.text(`Tél : ${data.businessPhone}`).newline();
+  if (data.businessPhone) builder.text(t("documents.common.phone", { phone: data.businessPhone })).newline();
   if (data.businessEmail) builder.text(data.businessEmail).newline();
 
-  builder.text(`Ticket ${data.saleNumber}`).newline();
+  builder.text(t("documents.common.ticketLabel", { number: data.saleNumber })).newline();
   builder.text(data.date).newline();
-  builder.text(`Caissier : ${data.cashierName}`).newline();
+  builder.text(t("documents.receipt.cashier", { name: data.cashierName })).newline();
   if (data.customerName) {
-    builder.text(`Client : ${data.customerName}`).newline();
+    builder.text(t("documents.common.customer", { name: data.customerName })).newline();
   }
 
   builder.align("left");
@@ -99,19 +93,24 @@ export async function buildReceipt(data: ReceiptData): Promise<Uint8Array> {
   }
 
   builder.text(separator).newline();
-  builder.text(`Sous-total : ${data.subtotal.toFixed(0)}`).newline();
+  builder.text(t("documents.common.subtotal", { amount: data.subtotal.toFixed(0) })).newline();
   if (data.discount > 0) {
-    builder.text(`Remise : -${data.discount.toFixed(0)}`).newline();
+    builder.text(t("documents.common.discount", { amount: data.discount.toFixed(0) })).newline();
   }
   if (data.tax > 0) {
-    builder.text(`dont TVA : ${data.tax.toFixed(0)}`).newline();
+    builder.text(t("documents.common.tax", { amount: data.tax.toFixed(0) })).newline();
   }
-  builder.bold(true).text(`TOTAL : ${data.total.toFixed(0)}`).newline().bold(false);
+  builder.bold(true).text(t("documents.common.total", { amount: data.total.toFixed(0) })).newline().bold(false);
   builder
-    .text(`Paiement (${PAYMENT_LABELS[data.paymentMethod] ?? data.paymentMethod}) : ${data.amountPaid.toFixed(0)}`)
+    .text(
+      t("documents.receipt.payment", {
+        method: t(`sales.paymentMethods.${data.paymentMethod}`, { defaultValue: data.paymentMethod }),
+        amount: data.amountPaid.toFixed(0),
+      }),
+    )
     .newline();
 
-  builder.align("center").newline(2).text("Merci de votre visite !").newline(3);
+  builder.align("center").newline(2).text(t("documents.receipt.thanks")).newline(3);
   builder.cut();
 
   return builder.build();

@@ -1,3 +1,5 @@
+import { t } from "@gestion-boutique/i18n";
+
 export const PERMISSIONS = [
   "view_margins",
   "manage_products",
@@ -37,9 +39,20 @@ export function hasPermission(permissions: PermissionSet, permission: Permission
 // rien n'empêchait jusqu'ici d'appeler la fonction directement (ex: console
 // du navigateur) pour contourner cette restriction purement visuelle.
 export class PermissionError extends Error {
-  constructor(message = "Action non autorisée pour ce rôle.") {
+  constructor(message = t("coreErrors.auth.permissionDenied")) {
     super(message);
     this.name = "PermissionError";
+  }
+}
+
+// Pour une primitive partagée par deux flux distincts qui ont chacun leur
+// propre permission naturelle (ex: recordCreditRepayment, invoquée à la fois
+// depuis Créances et depuis le suivi des tickets de service) — une seule des
+// deux permissions suffit, plutôt que d'exiger les deux ou de dupliquer la
+// fonction pour chaque appelant.
+export function requireAnyPermission(permissions: PermissionSet, allowed: Permission[]): void {
+  if (!allowed.some((permission) => hasPermission(permissions, permission))) {
+    throw new PermissionError();
   }
 }
 
@@ -144,3 +157,18 @@ export const DEFAULT_ROLES: Record<DefaultRoleKey, { name: string; permissions: 
     },
   },
 };
+
+const ROLE_NAME_TO_KEY: Record<string, DefaultRoleKey> = Object.fromEntries(
+  (Object.keys(DEFAULT_ROLES) as DefaultRoleKey[]).map((key) => [DEFAULT_ROLES[key].name, key]),
+);
+
+// `roles.name` reste stocké en français en base (voir ensureDefaultRoles) et
+// sert à des comparaisons d'égalité ailleurs (UsersPage.tsx) — donc jamais
+// traduit à la source. Cette fonction ne traduit que l'affichage, à l'appel,
+// pour les 5 rôles par défaut ; un rôle personnalisé (nom non reconnu) est
+// affiché tel quel, son nom étant une donnée saisie par l'utilisateur, pas du
+// texte d'interface.
+export function getRoleDisplayName(storedName: string): string {
+  const key = ROLE_NAME_TO_KEY[storedName];
+  return key ? t(`roles.${key}`) : storedName;
+}

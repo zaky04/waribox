@@ -15,6 +15,7 @@ import {
 import { schema } from "@gestion-boutique/database";
 import { buildQuotePdf } from "@gestion-boutique/printer";
 import { Fragment, useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
@@ -27,6 +28,7 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { saveGeneratedFile } from "../../lib/saveFile";
 import { useAuth } from "../auth/useAuth";
 
 type Product = typeof schema.products.$inferSelect;
@@ -42,40 +44,32 @@ interface CartLine {
   taxRate: number;
 }
 
-const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
-  { value: "cash", label: "Espèces" },
-  { value: "card", label: "Carte" },
-  { value: "mobile_money", label: "Mobile Money" },
-  { value: "credit", label: "Crédit" },
-];
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: "En attente",
-  accepted: "Accepté",
-  expired: "Expiré",
-  converted: "Converti",
-};
-
 function timestampForFilename(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
 }
 
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 export function QuotesPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
+  const { t } = useTranslation();
   const canManage = hasPermission(user?.permissions ?? {}, "manage_quotes");
   const canEdit = hasPermission(user?.permissions ?? {}, "edit_quotes");
+
+  const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
+    { value: "cash", label: t("sales.paymentMethods.cash") },
+    { value: "card", label: t("sales.paymentMethods.card") },
+    { value: "mobile_money", label: t("sales.paymentMethods.mobile_money") },
+    { value: "credit", label: t("sales.paymentMethods.credit") },
+  ];
+
+  const STATUS_LABELS: Record<string, string> = {
+    pending: t("quotes.status.pending"),
+    accepted: t("quotes.status.accepted"),
+    expired: t("quotes.status.expired"),
+    converted: t("quotes.status.converted"),
+  };
 
   const [products, setProducts] = useState<Product[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
@@ -174,7 +168,7 @@ export function QuotesPage() {
   const handleCreateQuote = async () => {
     setError(null);
     if (cart.length === 0) {
-      setError("Le devis doit contenir au moins un article.");
+      setError(t("quotes.errors.itemRequired"));
       return;
     }
     setSaving(true);
@@ -191,14 +185,14 @@ export function QuotesPage() {
         validUntil: validUntil || undefined,
         createdBy: user?.id,
         storeId: currentStoreId ?? undefined,
-      });
+      }, user?.permissions ?? {});
       setCart([]);
       setCustomerId("");
       setNewCustomerName("");
       setValidUntil("");
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible d'enregistrer le devis.");
+      setError(err instanceof Error ? err.message : t("quotes.errors.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -232,7 +226,7 @@ export function QuotesPage() {
       }, 0),
       total: quote.total,
     });
-    downloadBlob(blob, `devis-${quote.number}-${timestampForFilename()}.pdf`);
+    await saveGeneratedFile(blob, `devis-${quote.number}-${timestampForFilename()}.pdf`);
   };
 
   const toggleConvert = (quote: Quote) => {
@@ -257,11 +251,11 @@ export function QuotesPage() {
         amountPaid: convertAmountPaid === "" ? undefined : Number(convertAmountPaid),
         userId: user.id,
         storeId: currentStoreId,
-      });
+      }, user.permissions);
       setExpandedQuoteId(null);
       await refresh();
     } catch (err) {
-      setConvertError(err instanceof Error ? err.message : "Impossible de convertir ce devis en vente.");
+      setConvertError(err instanceof Error ? err.message : t("quotes.errors.convertFailed"));
     } finally {
       setConverting(false);
     }
@@ -269,18 +263,18 @@ export function QuotesPage() {
 
   const handleStatusChange = async (quote: Quote, status: "accepted" | "expired") => {
     if (!user) return;
-    await updateQuoteStatus(db, quote.id, status, user.id);
+    await updateQuoteStatus(db, quote.id, status, user.id, user.permissions);
     await refresh();
   };
 
   return (
     <main style={pageStyle}>
-      <h1>Devis</h1>
+      <h1>{t("quotes.title")}</h1>
 
       {canManage && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 24, marginTop: 24 }}>
+        <div className="cart-layout-grid">
           <div style={cardStyle}>
-            <strong>Ajouter des articles</strong>
+            <strong>{t("quotes.addItems")}</strong>
             <SearchableSelect
               value=""
               onChange={(id) => {
@@ -288,83 +282,85 @@ export function QuotesPage() {
                 if (product) addToCart(product);
               }}
               options={products.map((p) => ({ value: String(p.id), label: p.name }))}
-              emptyLabel="— Choisir un produit —"
-              placeholder="Rechercher un produit..."
+              emptyLabel={t("quotes.chooseProduct")}
+              placeholder={t("quotes.searchProductPlaceholder")}
             />
 
             {cart.length === 0 ? (
-              <p style={{ color: "var(--color-text-muted)" }}>Aucun article.</p>
+              <p style={{ color: "var(--color-text-muted)" }}>{t("quotes.emptyCart")}</p>
             ) : (
-              <table style={tableStyle}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>Article</th>
-                    <th style={thStyle}>Qté</th>
-                    <th style={thStyle}>Total</th>
-                    <th style={thStyle}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cart.map((line) => (
-                    <tr key={line.variantId}>
-                      <td style={tdStyle}>{line.productName}</td>
-                      <td style={tdStyle}>
-                        <input
-                          type="number"
-                          value={line.quantity}
-                          onChange={(e) => updateQuantity(line.variantId, Number(e.target.value))}
-                          style={{ ...inputStyle, width: 60, marginTop: 0 }}
-                        />
-                      </td>
-                      <td style={tdStyle}>{(line.quantity * line.unitPrice).toFixed(0)}</td>
-                      <td style={tdStyle}>
-                        <button
-                          onClick={() => removeLine(line.variantId)}
-                          style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer" }}
-                        >
-                          ✕
-                        </button>
-                      </td>
+              <div className="table-scroll">
+                <table style={tableStyle}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>{t("quotes.item")}</th>
+                      <th style={thStyle}>{t("quotes.quantity")}</th>
+                      <th style={thStyle}>{t("quotes.total")}</th>
+                      <th style={thStyle}></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {cart.map((line) => (
+                      <tr key={line.variantId}>
+                        <td style={tdStyle}>{line.productName}</td>
+                        <td style={tdStyle}>
+                          <input
+                            type="number"
+                            value={line.quantity}
+                            onChange={(e) => updateQuantity(line.variantId, Number(e.target.value))}
+                            style={{ ...inputStyle, width: 60, marginTop: 0 }}
+                          />
+                        </td>
+                        <td style={tdStyle}>{(line.quantity * line.unitPrice).toFixed(0)}</td>
+                        <td style={tdStyle}>
+                          <button
+                            onClick={() => removeLine(line.variantId)}
+                            style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
+                          >
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
 
           <div style={cardStyle}>
-            <strong>Client & validité</strong>
+            <strong>{t("quotes.customerAndValidity")}</strong>
             <div>
-              <div>Sous-total : {subtotal.toFixed(0)}</div>
-              <div>Taxe : {taxTotal.toFixed(0)}</div>
-              <div style={{ fontWeight: 700, fontSize: 18 }}>Total : {total.toFixed(0)}</div>
+              <div>{t("quotes.subtotal")} {subtotal.toFixed(0)}</div>
+              <div>{t("quotes.tax")} {taxTotal.toFixed(0)}</div>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>{t("quotes.totalLabel")} {total.toFixed(0)}</div>
             </div>
 
             <label>
-              Client déjà enregistré
+              {t("quotes.registeredCustomer")}
               <SearchableSelect
                 value={customerId}
                 onChange={setCustomerId}
                 options={customers.map((c) => ({ value: String(c.id), label: c.fullName }))}
-                emptyLabel="— Aucun / nouveau —"
-                placeholder="Rechercher un client..."
+                emptyLabel={t("quotes.noCustomerOption")}
+                placeholder={t("quotes.searchCustomerPlaceholder")}
               />
             </label>
 
             {!customerId && (
               <label>
-                Ou nom du client (optionnel)
+                {t("quotes.orCustomerName")}
                 <input
                   style={inputStyle}
                   value={newCustomerName}
                   onChange={(e) => setNewCustomerName(e.target.value)}
-                  placeholder="Nom du client"
+                  placeholder={t("quotes.customerNamePlaceholder")}
                 />
               </label>
             )}
 
             <label>
-              Valable jusqu'au (optionnel)
+              {t("quotes.validUntil")}
               <input
                 style={inputStyle}
                 type="date"
@@ -373,135 +369,137 @@ export function QuotesPage() {
               />
             </label>
 
-            {error && <p style={{ color: "#f87171" }}>{error}</p>}
+            {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
             <button style={primaryButtonStyle} onClick={handleCreateQuote} disabled={saving}>
-              {saving ? "Enregistrement..." : "Enregistrer le devis"}
+              {saving ? t("quotes.saving") : t("quotes.submit")}
             </button>
           </div>
         </div>
       )}
 
       <div style={cardStyle}>
-        <strong>Devis enregistrés</strong>
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={thStyle}>Devis</th>
-              <th style={thStyle}>Client</th>
-              <th style={thStyle}>Total</th>
-              <th style={thStyle}>Statut</th>
-              <th style={thStyle}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {quotes.map((quote) => {
-              const expanded = expandedQuoteId === quote.id;
-              return (
-                <Fragment key={quote.id}>
-                  <tr>
-                    <td style={tdStyle}>{quote.number}</td>
-                    <td style={tdStyle}>{customerName(quote.customerId)}</td>
-                    <td style={tdStyle}>{quote.total.toFixed(0)}</td>
-                    <td style={tdStyle}>
-                      <span style={badgeStyle(quote.status === "converted" || quote.status === "accepted" ? "ok" : "warning")}>
-                        {STATUS_LABELS[quote.status] ?? quote.status}
-                      </span>
-                    </td>
-                    <td style={tdStyle}>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button
-                          style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                          onClick={() => handleDownloadPdf(quote)}
-                        >
-                          PDF
-                        </button>
-                        {canEdit && quote.status === "pending" && (
-                          <>
-                            <button
-                              style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                              onClick={() => handleStatusChange(quote, "accepted")}
-                            >
-                              Accepter
-                            </button>
-                            <button
-                              style={{
-                                ...primaryButtonStyle,
-                                padding: "6px 12px",
-                                fontSize: 14,
-                                background: "transparent",
-                                border: "1px solid var(--color-border)",
-                                color: "var(--color-text)",
-                              }}
-                              onClick={() => handleStatusChange(quote, "expired")}
-                            >
-                              Marquer expiré
-                            </button>
-                          </>
-                        )}
-                        {canManage && quote.status !== "converted" && (
+        <strong>{t("quotes.savedQuotes")}</strong>
+        <div className="table-scroll">
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>{t("quotes.quoteColumn")}</th>
+                <th style={thStyle}>{t("quotes.customer")}</th>
+                <th style={thStyle}>{t("quotes.total")}</th>
+                <th style={thStyle}>{t("quotes.statusColumn")}</th>
+                <th style={thStyle}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {quotes.map((quote) => {
+                const expanded = expandedQuoteId === quote.id;
+                return (
+                  <Fragment key={quote.id}>
+                    <tr>
+                      <td style={tdStyle}>{quote.number}</td>
+                      <td style={tdStyle}>{customerName(quote.customerId)}</td>
+                      <td style={tdStyle}>{quote.total.toFixed(0)}</td>
+                      <td style={tdStyle}>
+                        <span style={badgeStyle(quote.status === "converted" || quote.status === "accepted" ? "ok" : "warning")}>
+                          {STATUS_LABELS[quote.status] ?? quote.status}
+                        </span>
+                      </td>
+                      <td style={tdStyle}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                           <button
                             style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                            onClick={() => toggleConvert(quote)}
+                            onClick={() => handleDownloadPdf(quote)}
                           >
-                            {expanded ? "Fermer" : "Convertir en vente"}
+                            {t("quotes.pdf")}
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  {expanded && (
-                    <tr>
-                      <td style={tdStyle} colSpan={5}>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                          <label>
-                            Méthode de paiement
-                            <select
-                              style={inputStyle}
-                              value={convertPaymentMethod}
-                              onChange={(e) => setConvertPaymentMethod(e.target.value as PaymentMethod)}
+                          {canEdit && quote.status === "pending" && (
+                            <>
+                              <button
+                                style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                                onClick={() => handleStatusChange(quote, "accepted")}
+                              >
+                                {t("quotes.accept")}
+                              </button>
+                              <button
+                                style={{
+                                  ...primaryButtonStyle,
+                                  padding: "6px 12px",
+                                  fontSize: 14,
+                                  background: "transparent",
+                                  border: "1px solid var(--color-border)",
+                                  color: "var(--color-text)",
+                                }}
+                                onClick={() => handleStatusChange(quote, "expired")}
+                              >
+                                {t("quotes.markExpired")}
+                              </button>
+                            </>
+                          )}
+                          {canManage && quote.status !== "converted" && (
+                            <button
+                              style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                              onClick={() => toggleConvert(quote)}
                             >
-                              {PAYMENT_METHODS.map((m) => (
-                                <option key={m.value} value={m.value}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            Montant payé (laisser vide = total)
-                            <input
-                              style={inputStyle}
-                              type="number"
-                              value={convertAmountPaid}
-                              onChange={(e) => setConvertAmountPaid(e.target.value)}
-                              placeholder={quote.total.toFixed(0)}
-                            />
-                          </label>
-                          {convertError && <p style={{ color: "#f87171" }}>{convertError}</p>}
-                          <button
-                            style={{ ...primaryButtonStyle, alignSelf: "flex-start" }}
-                            onClick={() => handleConvert(quote)}
-                            disabled={converting}
-                          >
-                            {converting ? "Conversion..." : "Confirmer la conversion"}
-                          </button>
+                              {expanded ? t("quotes.close") : t("quotes.convertToSale")}
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-            {quotes.length === 0 && (
-              <tr>
-                <td style={tdStyle} colSpan={5}>
-                  Aucun devis pour le moment.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                    {expanded && (
+                      <tr>
+                        <td style={tdStyle} colSpan={5}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                            <label>
+                              {t("quotes.paymentMethod")}
+                              <select
+                                style={inputStyle}
+                                value={convertPaymentMethod}
+                                onChange={(e) => setConvertPaymentMethod(e.target.value as PaymentMethod)}
+                              >
+                                {PAYMENT_METHODS.map((m) => (
+                                  <option key={m.value} value={m.value}>
+                                    {m.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              {t("quotes.amountPaid")}
+                              <input
+                                style={inputStyle}
+                                type="number"
+                                value={convertAmountPaid}
+                                onChange={(e) => setConvertAmountPaid(e.target.value)}
+                                placeholder={quote.total.toFixed(0)}
+                              />
+                            </label>
+                            {convertError && <p style={{ color: "var(--color-danger)" }}>{convertError}</p>}
+                            <button
+                              style={{ ...primaryButtonStyle, alignSelf: "flex-start" }}
+                              onClick={() => handleConvert(quote)}
+                              disabled={converting}
+                            >
+                              {converting ? t("quotes.converting") : t("quotes.confirmConversion")}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+              {quotes.length === 0 && (
+                <tr>
+                  <td style={tdStyle} colSpan={5}>
+                    {t("quotes.none")}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </main>
   );

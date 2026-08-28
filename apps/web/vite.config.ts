@@ -1,4 +1,4 @@
-import { cpSync } from "node:fs";
+import { cpSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +7,15 @@ import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
+
+// Numéro de version affiché dans Paramètres → Maintenance — une seule
+// source pour les trois plateformes (PWA/desktop/Android, un seul build web
+// partagé) : apps/desktop/package.json, déjà celui qui nomme les
+// installeurs livrés (WariBox_X.Y.Z...) et tauri.conf.json, donc le numéro
+// que l'utilisateur associe déjà à une version donnée de l'app.
+const desktopPackageJson = JSON.parse(
+  readFileSync(resolve(currentDir, "../desktop/package.json"), "utf-8"),
+) as { version: string };
 
 // sqlite-wasm est un bundle Emscripten qui localise son .wasm par chemin
 // relatif à sa PROPRE URL de script à l'exécution (moduleScript.src/import.meta.url).
@@ -81,6 +90,9 @@ export default defineConfig({
       },
     }),
   ],
+  define: {
+    __APP_VERSION__: JSON.stringify(desktopPackageJson.version),
+  },
   optimizeDeps: {
     exclude: ["@sqlite.org/sqlite-wasm"],
   },

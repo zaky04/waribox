@@ -61,10 +61,12 @@ function ensureBootstrapped(): Promise<void> {
         await callWorker("exec", { sql: statement });
       }
 
-      // Pas de runner de migration versionné dans ce projet (voir le
-      // commentaire en tête de bootstrap-sql.ts) — colonnes ajoutées après le
-      // premier lancement gérées ici, une par une, en avalant l'erreur si la
-      // colonne existe déjà.
+      // Legacy Phase 0, gelé — ne plus jamais ajouter d'entrée ici (voir
+      // MIGRATIONS ci-dessous pour toute nouvelle évolution de schéma).
+      // Conservé tel quel, avec son avalage d'erreur, car on ne sait pas si
+      // une base déjà déployée avant l'introduction de `__migrations` a déjà
+      // ces colonnes ou non — sans ce filet, une installation existante
+      // planterait ici sur "duplicate column".
       for (const statement of MIGRATION_SQL) {
         try {
           await callWorker("exec", { sql: statement });
@@ -72,9 +74,61 @@ function ensureBootstrapped(): Promise<void> {
           // colonne déjà présente (installation existante) — ignoré.
         }
       }
+
+      await runMigrations();
     })();
   }
   return bootstrapPromise;
+}
+
+// Phase 1 : chaque migration ne s'exécute qu'une seule fois (suivie dans
+// `__migrations`, créée par BOOTSTRAP_SQL), dans sa propre transaction, sans
+// avaler d'erreur — contrairement à MIGRATION_SQL ci-dessus, une vraie erreur
+// (faute de frappe SQL, contrainte violée...) remonte et bloque le
+// démarrage au lieu d'être silencieusement ignorée. Toute nouvelle évolution
+// de schéma doit être ajoutée ICI, jamais dans MIGRATION_SQL.
+export interface Migration {
+  id: number;
+  statements: string[];
+}
+
+export const MIGRATIONS: Migration[] = [
+  {
+    id: 1,
+    statements: ["ALTER TABLE stock_batches ADD COLUMN unit_cost REAL"],
+  },
+  {
+    id: 2,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN maintenance_code_failed_attempts INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN maintenance_code_locked_until TEXT",
+    ],
+  },
+];
+
+async function runMigrations(): Promise<void> {
+  const appliedResponse = await callWorker("exec", { sql: "SELECT id FROM __migrations" });
+  const applied = new Set((appliedResponse.resultRows ?? []).map((row) => Number(row[0])));
+
+  for (const migration of MIGRATIONS) {
+    if (applied.has(migration.id)) continue;
+
+    await callWorker("exec", { sql: "BEGIN IMMEDIATE" });
+    try {
+      for (const statement of migration.statements) {
+        await callWorker("exec", { sql: statement });
+      }
+      await callWorker("exec", { sql: "INSERT INTO __migrations (id) VALUES (?)", bind: [migration.id] });
+      await callWorker("exec", { sql: "COMMIT" });
+    } catch (err) {
+      try {
+        await callWorker("exec", { sql: "ROLLBACK" });
+      } catch {
+        // Connexion déjà dans un état anormal — l'erreur d'origine prime.
+      }
+      throw err;
+    }
+  }
 }
 
 export const MIGRATION_SQL: string[] = [

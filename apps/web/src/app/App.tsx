@@ -1,7 +1,10 @@
 import { getSettings, listStores } from "@gestion-boutique/core";
+import { i18next } from "@gestion-boutique/i18n";
 import { schema } from "@gestion-boutique/database";
 import { useEffect, useState } from "react";
+import { I18nextProvider } from "react-i18next";
 import { UpdateBanner } from "../components/UpdateBanner";
+import { useLanguageStore } from "../stores/language";
 import { BusinessHeader } from "./BusinessHeader";
 import { AccountingPage } from "../features/accounting/AccountingPage";
 import { AuthGate } from "../features/auth/AuthGate";
@@ -19,6 +22,7 @@ import { PromotionsPage } from "../features/promotions/PromotionsPage";
 import { PurchasesPage } from "../features/purchases/PurchasesPage";
 import { QuotesPage } from "../features/quotes/QuotesPage";
 import { ReportsPage } from "../features/reports/ReportsPage";
+import { SalesHistoryPage } from "../features/sales/SalesHistoryPage";
 import { SalesPage } from "../features/sales/SalesPage";
 import { ServiceOrdersPage } from "../features/serviceOrders/ServiceOrdersPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -88,13 +92,18 @@ function MainContent() {
 
   return (
     <>
-      <div style={{ position: "sticky", top: 0, zIndex: 10, background: "var(--color-bg)" }}>
+      {/* top en env(safe-area-inset-top) et pas 0 : un élément sticky se
+          bloque à sa propre valeur `top`, indépendamment du padding-top déjà
+          posé sur body (voir index.css) — avec top:0 il repasserait sous la
+          barre de statut Android dès le premier défilement. */}
+      <div style={{ position: "sticky", top: "env(safe-area-inset-top)", zIndex: 10, background: "var(--color-bg)" }}>
         <TopBar multiStoreEnabled={multiStoreEnabled} stores={stores} />
         <BusinessHeader businessName={businessName} logoDataUrl={logoDataUrl} />
         <Nav active={tab} onChange={setTab} enabledModules={enabledModules} />
       </div>
       {tab === "dashboard" && <DashboardPage />}
       {tab === "sales" && enabledModules.sales && <SalesPage />}
+      {tab === "sales_history" && enabledModules.sales && <SalesHistoryPage />}
       {tab === "quotes" && enabledModules.sales && <QuotesPage />}
       {tab === "service_orders" && enabledModules.service_orders && <ServiceOrdersPage />}
       {tab === "promotions" && enabledModules.promotions && <PromotionsPage />}
@@ -119,14 +128,19 @@ function MainContent() {
 // seulement après connexion — sinon le service worker ne s'enregistre jamais
 // tant qu'aucun compte n'est connecté (écran de connexion/setup non couvert).
 export function App() {
+  // Force le montage de useLanguageStore ici (une seule fois, au niveau
+  // racine) pour que setLanguage(langue sauvegardée) tourne avant le premier
+  // rendu de tout composant traduit — même schéma que useThemeStore.
+  useLanguageStore();
+
   return (
-    <>
+    <I18nextProvider i18n={i18next}>
       <UpdateBanner />
       <DatabaseProvider>
         <AuthGate>
           <MainContent />
         </AuthGate>
       </DatabaseProvider>
-    </>
+    </I18nextProvider>
   );
 }

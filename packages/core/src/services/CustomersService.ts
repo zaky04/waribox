@@ -2,6 +2,7 @@ import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { requirePermission, type PermissionSet } from "../domain/permissions";
 
 export async function listCustomers(db: Database) {
   return db.select().from(schema.customers);
@@ -15,8 +16,16 @@ export interface CreateCustomerInput {
   createdBy?: number;
 }
 
-export async function createCustomer(db: Database, input: CreateCustomerInput) {
-  const customer = await db
+// Primitive interne partagée par createCustomer (action explicite, gardée
+// par manage_customers) et findOrCreateCustomerByName*/ (raccourci "client de
+// passage" invoqué depuis les ventes/devis/tickets de service, déjà gardés
+// par leur propre permission — pas de double-garde ici, sinon un Caissier
+// sans manage_customers ne pourrait plus saisir de nouveau client au comptoir).
+async function insertCustomer(
+  db: Database,
+  input: { fullName: string; phone?: string; email?: string; address?: string },
+) {
+  return db
     .insert(schema.customers)
     .values({
       fullName: input.fullName,
@@ -26,6 +35,15 @@ export async function createCustomer(db: Database, input: CreateCustomerInput) {
     })
     .returning()
     .get();
+}
+
+export async function createCustomer(
+  db: Database,
+  input: CreateCustomerInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "manage_customers");
+  const customer = await insertCustomer(db, input);
 
   if (input.createdBy) {
     await logAction(db, {
@@ -48,7 +66,13 @@ export interface UpdateCustomerInput {
   createdBy?: number;
 }
 
-export async function updateCustomer(db: Database, id: number, input: UpdateCustomerInput) {
+export async function updateCustomer(
+  db: Database,
+  id: number,
+  input: UpdateCustomerInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "edit_customers");
   const customer = await db
     .update(schema.customers)
     .set({
@@ -84,7 +108,7 @@ export async function findOrCreateCustomerByName(db: Database, fullName: string)
     .where(eq(schema.customers.fullName, fullName))
     .get();
   if (existing) return existing;
-  return createCustomer(db, { fullName });
+  return insertCustomer(db, { fullName });
 }
 
 // Variante pour les tickets de service : le téléphone identifie plus
@@ -112,5 +136,5 @@ export async function findOrCreateCustomerByNameAndPhone(
     .get();
   if (existing) return existing;
 
-  return createCustomer(db, { fullName, phone: trimmedPhone });
+  return insertCustomer(db, { fullName, phone: trimmedPhone });
 }

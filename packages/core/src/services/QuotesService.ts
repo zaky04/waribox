@@ -1,7 +1,9 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { desc, eq, sql } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { createSale, type PaymentMethod } from "./SalesService";
 import { findOrCreateCustomerByName } from "./CustomersService";
 
@@ -35,9 +37,10 @@ export interface CreateQuoteInput {
   storeId?: number;
 }
 
-export async function createQuote(db: Database, input: CreateQuoteInput) {
+export async function createQuote(db: Database, input: CreateQuoteInput, actingPermissions: PermissionSet) {
+  requirePermission(actingPermissions, "manage_quotes");
   if (input.items.length === 0) {
-    throw new Error("Le devis doit contenir au moins un article.");
+    throw new Error(t("coreErrors.quotes.itemRequired"));
   }
 
   const trimmedName = input.newCustomerName?.trim();
@@ -95,7 +98,9 @@ export async function updateQuoteStatus(
   quoteId: number,
   status: "pending" | "accepted" | "expired",
   userId: number,
+  actingPermissions: PermissionSet,
 ) {
+  requirePermission(actingPermissions, "edit_quotes");
   const updated = await db
     .update(schema.quotes)
     .set({ status })
@@ -122,36 +127,46 @@ export interface ConvertQuoteToSaleInput {
   storeId: number;
 }
 
-export async function convertQuoteToSale(db: Database, quoteId: number, input: ConvertQuoteToSaleInput) {
+export async function convertQuoteToSale(
+  db: Database,
+  quoteId: number,
+  input: ConvertQuoteToSaleInput,
+  actingPermissions: PermissionSet,
+) {
+  requirePermission(actingPermissions, "manage_quotes");
   const quote = await db.select().from(schema.quotes).where(eq(schema.quotes.id, quoteId)).get();
   if (!quote) {
-    throw new Error("Devis introuvable.");
+    throw new Error(t("coreErrors.quotes.notFound"));
   }
   if (quote.status === "converted") {
-    throw new Error("Ce devis a déjà été converti en vente.");
+    throw new Error(t("coreErrors.quotes.alreadyConverted"));
   }
 
   const items = await listQuoteItems(db, quoteId);
   if (items.length === 0) {
-    throw new Error("Le devis ne contient aucun article.");
+    throw new Error(t("coreErrors.quotes.noItems"));
   }
 
-  const sale = await createSale(db, {
-    userId: input.userId,
-    customerId: quote.customerId,
-    saleMode: "form",
-    items: items.map((item) => ({
-      variantId: item.variantId,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      discount: item.discount,
-      taxRate: item.taxRate,
-    })),
-    paymentMethod: input.paymentMethod,
-    amountPaid: input.amountPaid,
-    surfaceLocationId: input.surfaceLocationId,
-    storeId: input.storeId,
-  });
+  const sale = await createSale(
+    db,
+    {
+      userId: input.userId,
+      customerId: quote.customerId,
+      saleMode: "form",
+      items: items.map((item) => ({
+        variantId: item.variantId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        discount: item.discount,
+        taxRate: item.taxRate,
+      })),
+      paymentMethod: input.paymentMethod,
+      amountPaid: input.amountPaid,
+      surfaceLocationId: input.surfaceLocationId,
+      storeId: input.storeId,
+    },
+    actingPermissions,
+  );
 
   await db
     .update(schema.quotes)

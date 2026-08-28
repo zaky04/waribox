@@ -1,0 +1,1 @@
+{"root":["./src/printerservice.ts","./src/escpos.ts","./src/index.ts","./src/labelspdf.ts","./src/logo.ts","./src/quotepdf.ts","./src/receipt.ts","./src/receiptpdf.ts","./src/serviceticket.ts","./src/transport.ts"],"version":"5.9.3"}

@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { cardStyle, inputStyle, pageStyle, primaryButtonStyle } from "../../components/sharedStyles";
 
 export function OpenCashSessionScreen({ onOpen }: { onOpen: (amount: number) => Promise<void> }) {
+  const { t } = useTranslation();
   const [amount, setAmount] = useState("0");
   const [loading, setLoading] = useState(false);
 
@@ -16,13 +18,11 @@ export function OpenCashSessionScreen({ onOpen }: { onOpen: (amount: number) => 
 
   return (
     <main style={pageStyle}>
-      <h1>Ouverture de caisse</h1>
-      <p style={{ color: "var(--color-text-muted)" }}>
-        Indique le montant en espèces présent dans le tiroir avant de commencer les ventes.
-      </p>
+      <h1>{t("sales.openSession.title")}</h1>
+      <p style={{ color: "var(--color-text-muted)" }}>{t("sales.openSession.hint")}</p>
       <div style={cardStyle}>
         <label>
-          Montant d'ouverture
+          {t("sales.openSession.openingAmount")}
           <input
             style={inputStyle}
             type="number"
@@ -31,7 +31,7 @@ export function OpenCashSessionScreen({ onOpen }: { onOpen: (amount: number) => 
           />
         </label>
         <button style={primaryButtonStyle} onClick={handleOpen} disabled={loading}>
-          {loading ? "Ouverture..." : "Ouvrir la caisse"}
+          {loading ? t("sales.openSession.opening") : t("sales.openSession.open")}
         </button>
       </div>
     </main>

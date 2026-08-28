@@ -20,6 +20,18 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
   --shadow-card-strong: 0 4px 12px rgba(0, 0, 0, 0.45), 0 16px 40px -16px rgba(56, 189, 248, 0.25);
 
+  /* Couleurs de statut (texte d'erreur/succès/avertissement, souvent posé
+     directement sur le fond de page) — valeurs pastel choisies pour le
+     thème sombre (contraste 6.5:1 à 12.7:1 contre --color-bg sombre,
+     largement au-dessus du minimum WCAG AA de 4.5:1). Ces mêmes valeurs
+     tombent à 1.3:1-2.6:1 en thème clair (quasi invisibles) — d'où la
+     redéfinition complète dans :root[data-theme="light"] ci-dessous,
+     plutôt qu'une seule teinte "à peu près correcte" pour les deux. */
+  --color-danger: #f87171;
+  --color-success: #86efac;
+  --color-warning: #fdba74;
+  --color-caution: #facc15;
+
   /* Halos décoratifs discrets en arrière-plan — profondeur sans gêner la
      lecture, fixés (pas de répétition ni de défilement). */
   --bg-glow: radial-gradient(circle at 12% -10%, rgba(56, 189, 248, 0.14), transparent 45%),
@@ -37,6 +49,16 @@
   --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 20px -10px rgba(15, 23, 42, 0.12);
   --shadow-card-strong: 0 4px 10px rgba(15, 23, 42, 0.06), 0 16px 32px -14px rgba(56, 189, 248, 0.2);
 
+  /* Contraste vérifié contre --color-bg clair (#f8fafc) : 6.18:1 / 5.20:1 /
+     6.04:1 / 4.71:1 — tous au-dessus du minimum WCAG AA (4.5:1). Le jaune
+     est le plus juste des quatre : c'est la teinte la plus difficile à
+     foncer tout en restant reconnaissable comme jaune plutôt que comme
+     brun sur un fond blanc, pas un raccourci pris ici. */
+  --color-danger: #b91c1c;
+  --color-success: #0e7a37;
+  --color-warning: #a3410f;
+  --color-caution: #a16207;
+
   --bg-glow: radial-gradient(circle at 12% -10%, rgba(56, 189, 248, 0.1), transparent 45%),
     radial-gradient(circle at 100% 0%, rgba(129, 140, 248, 0.08), transparent 40%);
 }
@@ -53,6 +75,16 @@ body {
   background-repeat: no-repeat;
   background-attachment: fixed;
   color: var(--color-text);
+  /* L'app Android (Tauri, gen/android/app/.../MainActivity.kt appelle
+     enableEdgeToEdge() — voir CLAUDE.md) dessine sous la barre de statut et
+     la barre de navigation système ; targetSdk 36 rend ce mode de plus en
+     plus imposé par Android lui-même, indépendamment de ce que l'app
+     demande — désactiver enableEdgeToEdge() ne serait donc pas durable.
+     `env(safe-area-inset-*)` (actif grâce à `viewport-fit=cover` dans
+     index.html) redonne cet espace ; vaut 0 sans zone système à éviter
+     (desktop, PWA non edge-to-edge), donc sans effet ailleurs. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Polish global — pas de className à ajouter par page : ces règles
@@ -109,4 +141,72 @@ table tbody tr:hover {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-muted);
+}
+
+/* Grille "liste + panier" (Ventes, Achats, Devis, Tickets de service) : une
+   colonne flexible + une colonne fixe de 380px sur desktop, empilées en une
+   seule colonne sous 720px — sinon la colonne fixe à elle seule dépasse la
+   largeur d'un téléphone. Une classe plutôt qu'un style inline car une media
+   query ne peut pas s'exprimer dans un objet CSSProperties. */
+.cart-layout-grid {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 24px;
+  margin-top: 24px;
+}
+@media (max-width: 720px) {
+  .cart-layout-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Nav (voir Nav.tsx) : deux rendus distincts pour le même menu, basculés
+   par media query plutôt que par redimensionnement JS. PC et tablette
+   (≥768px) : la ligne d'onglets retourne à la ligne automatiquement
+   (flexWrap: wrap, posé en inline sur l'élément — voir Nav.tsx) plutôt que
+   de défiler horizontalement — demande explicite du porteur du projet,
+   qui trouvait le défilement horizontal aussi difficile à manipuler que le
+   problème initial sur mobile. Téléphone (<768px, frontière classique
+   téléphone/tablette) : bouton menu + liste déroulante, un retour à la
+   ligne y prendrait 5-6 lignes de haut vu le nombre d'onglets (18-19).
+   Seuil volontairement différent de celui de `.cart-layout-grid` (720px),
+   qui règle un problème distinct (largeur de colonne panier). */
+.nav-full {
+  display: flex;
+}
+.nav-compact {
+  display: none;
+}
+@media (max-width: 767px) {
+  .nav-full {
+    display: none;
+  }
+  .nav-compact {
+    display: block;
+  }
+}
+
+/* Wrapper de tout ce qui défile horizontalement (mobile) : tableaux, mais
+   aussi la barre d'onglets Nav (voir journal 2026-08-17, "Audit et
+   correctifs responsive" puis son suivi) — le simple `overflow-x: auto`
+   posé sur chaque cas est fonctionnel mais peu visible sur un vrai
+   téléphone — rien n'indique qu'il reste du contenu à droite (colonnes
+   d'action, onglets suivants) tant qu'on n'a pas déjà commencé à toucher
+   l'écran. Ombres de bord en CSS pur (technique "scroll shadows", sans JS) :
+   un dégradé "couvercle" qui défile AVEC le contenu (background-attachment:
+   local) cache l'ombre correspondante tant qu'on est au bord ; l'ombre
+   elle-même reste fixe par rapport à la fenêtre (background-attachment:
+   scroll) et n'apparaît donc que quand il reste effectivement du contenu
+   caché de ce côté. */
+.table-scroll {
+  overflow-x: auto;
+  background:
+    linear-gradient(to right, var(--color-bg) 30%, rgba(0, 0, 0, 0)) left,
+    linear-gradient(to left, var(--color-bg) 30%, rgba(0, 0, 0, 0)) right,
+    linear-gradient(to right, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0)) left,
+    linear-gradient(to left, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0)) right;
+  background-repeat: no-repeat;
+  background-color: var(--color-bg);
+  background-size: 28px 100%, 28px 100%, 12px 100%, 12px 100%;
+  background-attachment: local, local, scroll, scroll;
 }

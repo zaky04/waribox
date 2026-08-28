@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { cardStyle, inputStyle } from "./sharedStyles";
 
 export interface FilterBarProps {
@@ -29,24 +30,25 @@ export function FilterBar({
   onReset,
   children,
 }: FilterBarProps) {
+  const { t } = useTranslation();
   return (
     <div style={{ ...cardStyle, flexDirection: "row", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
       {onFromChange && (
         <label>
-          Du
+          {t("common.filterBar.from")}
           <input style={inputStyle} type="date" value={from ?? ""} onChange={(e) => onFromChange(e.target.value)} />
         </label>
       )}
       {onToChange && (
         <label>
-          Au
+          {t("common.filterBar.to")}
           <input style={inputStyle} type="date" value={to ?? ""} onChange={(e) => onToChange(e.target.value)} />
         </label>
       )}
       {children}
       {onSearchChange && (
         <label style={{ flex: 1, minWidth: 200 }}>
-          Recherche
+          {t("common.filterBar.search")}
           <input
             style={inputStyle}
             value={search ?? ""}
@@ -61,7 +63,7 @@ export function FilterBar({
           onClick={onReset}
           style={{ ...inputStyle, width: "auto", cursor: "pointer", marginTop: 0 }}
         >
-          Réinitialiser
+          {t("common.filterBar.reset")}
         </button>
       )}
     </div>

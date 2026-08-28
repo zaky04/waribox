@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@gestion-boutique/database": "workspace:*",
+    "@gestion-boutique/i18n": "workspace:*",
     "drizzle-orm": "^0.38.0",
     "hash-wasm": "^4.11.0"
   },

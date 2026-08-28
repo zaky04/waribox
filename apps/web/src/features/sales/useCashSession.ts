@@ -28,13 +28,13 @@ export function useCashSession(storeId: number | null) {
 
   const open = async (openingAmount: number) => {
     if (!user || !storeId) return;
-    const created = await openSession(db, { userId: user.id, storeId, openingAmount });
+    const created = await openSession(db, { userId: user.id, storeId, openingAmount }, user.permissions);
     setSession(created);
   };
 
   const close = async (input: Omit<CloseSessionInput, "sessionId">) => {
-    if (!session) return;
-    await closeSession(db, { ...input, sessionId: session.id });
+    if (!session || !user) return;
+    await closeSession(db, { ...input, sessionId: session.id }, user.permissions);
     setSession(null);
   };
 

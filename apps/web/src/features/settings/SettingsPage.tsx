@@ -11,11 +11,13 @@ import {
 } from "@gestion-boutique/core";
 import { exportDatabaseFile, schema } from "@gestion-boutique/database";
 import {
+  isAndroidTauriRuntime,
   isFileSystemAccessSupported,
   loadFolderHandle,
   pickBackupFolder,
 } from "@gestion-boutique/sync";
 import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import {
   badgeStyle,
@@ -27,12 +29,13 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { saveGeneratedFile } from "../../lib/saveFile";
 import { useAuth } from "../auth/useAuth";
 import { StoresSection } from "../stores/StoresSection";
 import { runGoogleDriveBackup, runLocalBackup } from "./backupRunner";
 import { resizeImageToDataUrl } from "./imageUtils";
 import { SyscohadaAccountsSection } from "./SyscohadaAccountsSection";
-import { isTauriRuntime } from "./tauriRuntime";
+import { isDesktopTauriRuntime } from "./tauriRuntime";
 
 type Backup = typeof schema.backups.$inferSelect;
 
@@ -42,35 +45,42 @@ function timestampForFilename(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
 }
 
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+// Les commandes Tauri (openPath, etc.) rejettent souvent avec une simple
+// chaîne renvoyée par le côté Rust, pas un vrai `Error` JS — `instanceof
+// Error` seul avale alors ce message réel et affiche un texte de repli
+// générique inutile pour diagnostiquer un échec (ex. installeur déplacé/
+// supprimé par l'antivirus, permission refusée).
+function describeError(err: unknown, fallback: string): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string" && err.trim()) return err;
+  if (err && typeof err === "object" && "message" in err) {
+    const message = (err as { message: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return fallback;
 }
-
-const FREQUENCY_PRESETS = [
-  { value: "daily", label: "Quotidienne" },
-  { value: "weekly", label: "Hebdomadaire" },
-  { value: "monthly", label: "Mensuelle" },
-  { value: "off", label: "Désactivée" },
-];
-
-const DESTINATION_LABELS: Record<BackupDestination, string> = {
-  local: "Locale",
-  google_drive: "Google Drive",
-};
-
-const RECEIPT_PRESETS = [
-  { value: "32", label: "58 mm (32 caractères)" },
-  { value: "48", label: "80 mm (48 caractères)" },
-];
 
 export function SettingsPage() {
   const db = useDatabase();
   const { user } = useAuth();
+  const { t } = useTranslation();
+
+  const FREQUENCY_PRESETS = [
+    { value: "daily", label: t("settings.backups.frequencyDaily") },
+    { value: "weekly", label: t("settings.backups.frequencyWeekly") },
+    { value: "monthly", label: t("settings.backups.frequencyMonthly") },
+    { value: "off", label: t("settings.backups.frequencyOff") },
+  ];
+
+  const DESTINATION_LABELS: Record<BackupDestination, string> = {
+    local: t("settings.backups.destinationLocal"),
+    google_drive: "Google Drive",
+  };
+
+  const RECEIPT_PRESETS = [
+    { value: "32", label: t("settings.business.receipt58mm") },
+    { value: "48", label: t("settings.business.receipt80mm") },
+  ];
 
   const [loyaltyPointsRatio, setLoyaltyPointsRatio] = useState("0");
   const [loyaltyTierSilverThreshold, setLoyaltyTierSilverThreshold] = useState("5000");
@@ -198,7 +208,7 @@ export function SettingsPage() {
     setSaved(false);
     const ratio = Number(loyaltyPointsRatio);
     if (Number.isNaN(ratio) || ratio < 0) {
-      setError("Le taux doit être un nombre positif ou nul.");
+      setError(t("settings.errors.loyaltyRatio"));
       return;
     }
 
@@ -209,17 +219,17 @@ export function SettingsPage() {
     if (
       [silverThreshold, goldThreshold, silverMultiplier, goldMultiplier].some((n) => Number.isNaN(n) || n < 0)
     ) {
-      setError("Les seuils et multiplicateurs de palier doivent être des nombres positifs ou nuls.");
+      setError(t("settings.errors.loyaltyTiers"));
       return;
     }
     if (goldThreshold < silverThreshold) {
-      setError("Le seuil du palier Or doit être supérieur ou égal au seuil du palier Argent.");
+      setError(t("settings.errors.goldThreshold"));
       return;
     }
 
     const backupFrequency = frequencyPreset === "custom" ? customDays.trim() : frequencyPreset;
     if (frequencyPreset === "custom" && (!/^\d+$/.test(backupFrequency) || Number(backupFrequency) < 0)) {
-      setError("Le délai personnalisé doit être un nombre de jours entier positif.");
+      setError(t("settings.errors.customBackupDays"));
       return;
     }
 
@@ -228,19 +238,19 @@ export function SettingsPage() {
       receiptPreset === "custom" &&
       (!/^\d+$/.test(customColumns) || receiptColumns < 20 || receiptColumns > 64)
     ) {
-      setError("La largeur personnalisée du ticket doit être un nombre de caractères entre 20 et 64.");
+      setError(t("settings.errors.receiptColumns"));
       return;
     }
 
     const autoLockValue = Number(autoLockMinutes);
     if (!/^\d+$/.test(autoLockMinutes) || autoLockValue < 0) {
-      setError("Le délai de verrouillage automatique doit être un nombre de minutes positif ou nul.");
+      setError(t("settings.errors.autoLock"));
       return;
     }
 
     const taxRateValue = Number(defaultTaxRate);
     if (taxEnabled && (Number.isNaN(taxRateValue) || taxRateValue < 0 || taxRateValue >= 100)) {
-      setError("Le taux de TVA doit être un nombre entre 0 et 99.");
+      setError(t("settings.errors.taxRate"));
       return;
     }
 
@@ -282,7 +292,7 @@ export function SettingsPage() {
       );
       setSaved(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible d'enregistrer les paramètres.");
+      setError(describeError(err, t("settings.errors.genericSave")));
     } finally {
       setSaving(false);
     }
@@ -297,7 +307,7 @@ export function SettingsPage() {
       const dataUrl = await resizeImageToDataUrl(file);
       setLogoDataUrl(dataUrl);
     } catch (err) {
-      setLogoError(err instanceof Error ? err.message : "Impossible de charger cette image.");
+      setLogoError(describeError(err, t("settings.errors.logo")));
     }
   };
 
@@ -307,7 +317,7 @@ export function SettingsPage() {
       const handle = await pickBackupFolder();
       setFolderName(handle.name);
     } catch (err) {
-      setBackupError(err instanceof Error ? err.message : "Impossible de choisir un dossier.");
+      setBackupError(describeError(err, t("settings.errors.folder")));
     }
   };
 
@@ -318,7 +328,7 @@ export function SettingsPage() {
       await runLocalBackup(db);
       await refresh();
     } catch (err) {
-      setBackupError(err instanceof Error ? err.message : "Échec de la sauvegarde locale.");
+      setBackupError(describeError(err, t("settings.errors.localBackup")));
     } finally {
       setRunningLocal(false);
     }
@@ -329,11 +339,11 @@ export function SettingsPage() {
     setDownloadingBackup(true);
     try {
       const { bytes, filename } = await exportDatabaseFile();
-      downloadBlob(new Blob([new Uint8Array(bytes)]), filename);
+      await saveGeneratedFile(new Blob([new Uint8Array(bytes)]), filename);
       await recordBackup(db, { destination: "local", fileRef: filename, status: "success" });
       await refresh();
     } catch (err) {
-      setDownloadBackupError(err instanceof Error ? err.message : "Échec du téléchargement de la sauvegarde.");
+      setDownloadBackupError(describeError(err, t("settings.errors.downloadBackup")));
     } finally {
       setDownloadingBackup(false);
     }
@@ -342,7 +352,7 @@ export function SettingsPage() {
   const handleDriveBackupNow = async () => {
     setBackupError(null);
     if (!googleDriveClientId.trim()) {
-      setBackupError("Renseigne un Client ID Google avant de te connecter.");
+      setBackupError(t("settings.backups.clientIdRequired"));
       return;
     }
     setRunningDrive(true);
@@ -350,7 +360,7 @@ export function SettingsPage() {
       await runGoogleDriveBackup(db, googleDriveClientId.trim());
       await refresh();
     } catch (err) {
-      setBackupError(err instanceof Error ? err.message : "Échec de la sauvegarde Google Drive.");
+      setBackupError(describeError(err, t("settings.errors.driveBackup")));
     } finally {
       setRunningDrive(false);
     }
@@ -360,11 +370,7 @@ export function SettingsPage() {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    if (
-      !window.confirm(
-        "Cette action remplace TOUTES les données actuelles par celles de cette sauvegarde. Continuer ?",
-      )
-    ) {
+    if (!window.confirm(t("settings.backups.importConfirm"))) {
       return;
     }
     setImportError(null);
@@ -376,12 +382,12 @@ export function SettingsPage() {
       // Filet de sécurité : l'état d'avant l'import reste téléchargeable
       // immédiatement si la sauvegarde importée s'avère finalement inadaptée
       // une fois la page rechargée.
-      downloadBlob(new Blob([new Uint8Array(previousBytes)]), `avant-import-${timestampForFilename()}.sqlite3`);
-      setImportInfo("Import réussi — la base précédente a été téléchargée par sécurité. Rechargement...");
+      await saveGeneratedFile(new Blob([new Uint8Array(previousBytes)]), `avant-import-${timestampForFilename()}.sqlite3`);
+      setImportInfo(t("settings.backups.importSuccess"));
       await new Promise((resolve) => setTimeout(resolve, 1200));
       window.location.reload();
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : "Import impossible.");
+      setImportError(describeError(err, t("settings.errors.import")));
       setImporting(false);
     }
   };
@@ -403,7 +409,7 @@ export function SettingsPage() {
       setNewMaintenanceCode("");
       setMaintenanceCodeSaved(true);
     } catch (err) {
-      setMaintenanceCodeError(err instanceof Error ? err.message : "Impossible d'enregistrer le code.");
+      setMaintenanceCodeError(describeError(err, t("settings.errors.maintenanceCode")));
     } finally {
       setSavingMaintenanceCode(false);
     }
@@ -419,7 +425,7 @@ export function SettingsPage() {
       });
       if (typeof path === "string") setUpdateFilePath(path);
     } catch (err) {
-      setUpdateError(err instanceof Error ? err.message : "Impossible d'ouvrir le sélecteur de fichier.");
+      setUpdateError(describeError(err, t("settings.errors.updateFilePicker")));
     }
   };
 
@@ -428,20 +434,20 @@ export function SettingsPage() {
     setUpdateStep(null);
     setUpdateReadyToClose(false);
     if (!updateFilePath) {
-      setUpdateError("Choisis d'abord le fichier d'installation apporté.");
+      setUpdateError(t("settings.errors.updateNoFile"));
       return;
     }
     if (!updateCode.trim()) {
-      setUpdateError("Saisis le code de maintenance.");
+      setUpdateError(t("settings.errors.updateNoCode"));
       return;
     }
 
     setUpdating(true);
     try {
       const valid = await verifyMaintenanceCode(db, updateCode.trim());
-      if (!valid) throw new Error("Code de maintenance incorrect.");
+      if (!valid) throw new Error(t("settings.errors.updateWrongCode"));
 
-      setUpdateStep("Sauvegarde locale en cours...");
+      setUpdateStep(t("settings.updateStep.backingUp"));
       try {
         await runLocalBackup(db);
       } catch (backupErr) {
@@ -449,14 +455,14 @@ export function SettingsPage() {
         // permission expirée) ne doit plus bloquer une mise à jour urgente —
         // on avertit et on continue plutôt que d'interrompre tout le flux.
         setUpdateStep(
-          `Sauvegarde non effectuée (${
-            backupErr instanceof Error ? backupErr.message : "erreur inconnue"
-          }) — poursuite de l'installation.`,
+          t("settings.updateStep.backupSkipped", {
+            error: backupErr instanceof Error ? backupErr.message : t("settings.errors.backupSkippedUnknown"),
+          }),
         );
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
 
-      setUpdateStep("Lancement de l'installeur...");
+      setUpdateStep(t("settings.updateStep.launching"));
       const { openPath } = await import("@tauri-apps/plugin-opener");
       await openPath(updateFilePath);
 
@@ -468,15 +474,10 @@ export function SettingsPage() {
       // l'utilisateur n'ait pu réagir à cet écran, laissant croire que la
       // mise à jour "ne fait rien" — la fermeture est donc maintenant
       // déclenchée manuellement, une fois l'assistant réellement visible.
-      setUpdateStep(
-        "Une fenêtre d'installation devrait s'ouvrir. Si Windows affiche « Windows a protégé " +
-          "votre PC », c'est normal pour un installeur non signé : clique sur « Informations " +
-          "complémentaires » puis « Exécuter quand même ». Une fois l'assistant d'installation " +
-          "visible, clique ci-dessous pour fermer WariBox et laisser l'installation continuer.",
-      );
+      setUpdateStep(t("settings.updateStep.readyMessage"));
       setUpdateReadyToClose(true);
     } catch (err) {
-      setUpdateError(err instanceof Error ? err.message : "Mise à jour impossible.");
+      setUpdateError(describeError(err, t("settings.errors.updateFailed")));
       setUpdateStep(null);
     } finally {
       setUpdating(false);
@@ -490,12 +491,12 @@ export function SettingsPage() {
 
   return (
     <main style={pageStyle}>
-      <h1>Paramètres</h1>
+      <h1>{t("settings.title")}</h1>
 
       <div style={cardStyle}>
-        <strong>Entreprise</strong>
+        <strong>{t("settings.business.heading")}</strong>
         <label>
-          Nom de l'entreprise
+          {t("settings.business.name")}
           <input
             style={inputStyle}
             value={businessName}
@@ -505,15 +506,15 @@ export function SettingsPage() {
         </label>
 
         <label>
-          Adresse
+          {t("settings.business.address")}
           <input style={inputStyle} value={address} onChange={(e) => setAddress(e.target.value)} />
         </label>
         <label>
-          Téléphone
+          {t("settings.business.phone")}
           <input style={inputStyle} value={phone} onChange={(e) => setPhone(e.target.value)} />
         </label>
         <label>
-          Email
+          {t("settings.business.email")}
           <input
             type="email"
             style={inputStyle}
@@ -522,7 +523,7 @@ export function SettingsPage() {
           />
         </label>
         <label>
-          Indicatif pays WhatsApp
+          {t("settings.business.whatsappCountryCode")}
           <input
             style={inputStyle}
             value={whatsappCountryCode}
@@ -531,11 +532,10 @@ export function SettingsPage() {
           />
         </label>
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-          Utilisé pour compléter les numéros de téléphone locaux des clients lors de l'envoi d'une
-          notification WhatsApp (ex : ticket de service prêt).
+          {t("settings.business.whatsappCountryCodeHint")}
         </p>
         <label>
-          Téléphone à notifier (alertes stock bas)
+          {t("settings.business.lowStockAlertPhone")}
           <input
             style={inputStyle}
             value={lowStockAlertPhone}
@@ -544,17 +544,16 @@ export function SettingsPage() {
           />
         </label>
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-          Numéro du gérant/propriétaire à notifier par WhatsApp depuis Stock quand des produits passent
-          sous leur seuil d'alerte — laisser vide pour désactiver le bouton de notification.
+          {t("settings.business.lowStockAlertPhoneHint")}
         </p>
 
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input type="checkbox" checked={taxEnabled} onChange={(e) => setTaxEnabled(e.target.checked)} />
-          Appliquer la TVA
+          {t("settings.business.applyTax")}
         </label>
         {taxEnabled && (
           <label style={{ marginLeft: 24 }}>
-            Taux de TVA par défaut (%)
+            {t("settings.business.defaultTaxRate")}
             <input
               style={inputStyle}
               type="number"
@@ -566,19 +565,16 @@ export function SettingsPage() {
           </label>
         )}
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-          Les prix saisis (produits, lignes de vente) sont toujours des prix TTC — le taux ne les
-          augmente pas, il sert uniquement à afficher le montant de TVA inclus sur les reçus, devis et
-          tickets de service (ligne "dont TVA"). Un produit peut avoir son propre taux dans sa fiche,
-          sinon ce taux par défaut s'applique.
+          {t("settings.business.taxHint")}
         </p>
 
         <div>
-          <strong style={{ fontSize: 14 }}>Logo</strong>
+          <strong style={{ fontSize: 14 }}>{t("settings.business.logo")}</strong>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
             {logoDataUrl && (
               <img
                 src={logoDataUrl}
-                alt="Logo de l'entreprise"
+                alt={t("settings.business.logoAlt")}
                 style={{ width: 56, height: 56, objectFit: "contain", background: "#fff", borderRadius: 8 }}
               />
             )}
@@ -596,17 +592,17 @@ export function SettingsPage() {
                 }}
                 onClick={() => setLogoDataUrl(null)}
               >
-                Supprimer le logo
+                {t("settings.business.removeLogo")}
               </button>
             )}
           </div>
           {logoError && (
-            <p style={{ color: "#f87171", fontSize: 13 }}>{logoError}</p>
+            <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{logoError}</p>
           )}
         </div>
 
         <label>
-          Format du ticket de caisse
+          {t("settings.business.receiptFormat")}
           <select
             style={inputStyle}
             value={receiptPreset}
@@ -617,12 +613,12 @@ export function SettingsPage() {
                 {p.label}
               </option>
             ))}
-            <option value="custom">Personnalisé (nombre de caractères)</option>
+            <option value="custom">{t("settings.business.receiptCustom")}</option>
           </select>
         </label>
         {receiptPreset === "custom" && (
           <label>
-            Caractères par ligne
+            {t("settings.business.receiptCharsPerLine")}
             <input
               style={inputStyle}
               type="number"
@@ -637,14 +633,11 @@ export function SettingsPage() {
       </div>
 
       <div style={cardStyle}>
-        <strong>Modules actifs</strong>
-        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-          Détermine les onglets visibles dans le menu — un pressing n'a par exemple besoin que de
-          "Tickets de service", pas de Ventes/Produits/Stock.
-        </p>
+        <strong>{t("settings.modules.heading")}</strong>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.modules.hint")}</p>
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input type="checkbox" checked={enableSales} onChange={(e) => setEnableSales(e.target.checked)} />
-          Ventes au comptoir
+          {t("settings.modules.sales")}
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input
@@ -652,11 +645,11 @@ export function SettingsPage() {
             checked={enableProducts}
             onChange={(e) => setEnableProducts(e.target.checked)}
           />
-          Catalogue produits
+          {t("settings.modules.products")}
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input type="checkbox" checked={enableStock} onChange={(e) => setEnableStock(e.target.checked)} />
-          Gestion de stock
+          {t("settings.modules.stock")}
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input
@@ -664,7 +657,7 @@ export function SettingsPage() {
             checked={enableSuppliers}
             onChange={(e) => setEnableSuppliers(e.target.checked)}
           />
-          Fournisseurs
+          {t("settings.modules.suppliers")}
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input
@@ -672,7 +665,7 @@ export function SettingsPage() {
             checked={enablePurchases}
             onChange={(e) => setEnablePurchases(e.target.checked)}
           />
-          Achats
+          {t("settings.modules.purchases")}
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input
@@ -680,7 +673,7 @@ export function SettingsPage() {
             checked={enableServiceOrders}
             onChange={(e) => setEnableServiceOrders(e.target.checked)}
           />
-          Tickets de service (dépôt/retrait différé — pressing, cordonnerie, couture, réparation...)
+          {t("settings.modules.serviceOrders")}
         </label>
         {enableServiceOrders && (
           <label style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 24 }}>
@@ -689,7 +682,7 @@ export function SettingsPage() {
               checked={printPromisedDateOnTicket}
               onChange={(e) => setPrintPromisedDateOnTicket(e.target.checked)}
             />
-            Imprimer la date de retrait prévue sur le ticket
+            {t("settings.modules.printPromisedDate")}
           </label>
         )}
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -698,50 +691,42 @@ export function SettingsPage() {
             checked={enablePromotions}
             onChange={(e) => setEnablePromotions(e.target.checked)}
           />
-          Remises programmées (promotions appliquées automatiquement aux ventes)
+          {t("settings.modules.promotions")}
         </label>
       </div>
 
       <div style={cardStyle}>
-        <strong>Multi-boutique</strong>
+        <strong>{t("settings.multiStore.heading")}</strong>
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input
             type="checkbox"
             checked={multiStoreEnabled}
             onChange={(e) => setMultiStoreEnabled(e.target.checked)}
           />
-          Activer plusieurs boutiques (succursales)
+          {t("settings.multiStore.enable")}
         </label>
-        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-          Chaque boutique a son propre stock et ses propres ventes, dans la même base de données —
-          un sélecteur de boutique apparaît dans le menu du haut une fois activé et au moins deux
-          boutiques créées.
-        </p>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.multiStore.hint")}</p>
         {multiStoreEnabled && <StoresSection />}
       </div>
 
       <div style={cardStyle}>
-        <strong>Export comptable SYSCOHADA</strong>
+        <strong>{t("settings.syscohada.heading")}</strong>
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input
             type="checkbox"
             checked={enableSyscohada}
             onChange={(e) => setEnableSyscohada(e.target.checked)}
           />
-          Activer l&apos;onglet Export SYSCOHADA (Comptabilité)
+          {t("settings.syscohada.enable")}
         </label>
-        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-          Journaux et balance générale au format SYSCOHADA (OHADA, zone UEMOA/CFA), à destination d&apos;un
-          cabinet comptable. Base de départ non validée pour ce commerce précis — voir l&apos;avertissement
-          dans l&apos;onglet une fois activé.
-        </p>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.syscohada.hint")}</p>
         {enableSyscohada && <SyscohadaAccountsSection />}
       </div>
 
       <div style={cardStyle}>
-        <strong>Points de fidélité</strong>
+        <strong>{t("settings.loyalty.heading")}</strong>
         <label>
-          Points gagnés par unité de devise dépensée
+          {t("settings.loyalty.ratio")}
           <input
             style={inputStyle}
             type="number"
@@ -751,15 +736,12 @@ export function SettingsPage() {
             onChange={(e) => setLoyaltyPointsRatio(e.target.value)}
           />
         </label>
-        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-          Ex : 0.1 = 1 point gagné tous les 10 [devise] dépensés. La valeur de rachat d'un point est
-          l'inverse exact de ce taux. Mettre à 0 désactive le programme de fidélité.
-        </p>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.loyalty.ratioHint")}</p>
 
-        <strong style={{ marginTop: 16, display: "block" }}>Paliers (Bronze / Argent / Or)</strong>
+        <strong style={{ marginTop: 16, display: "block" }}>{t("settings.loyalty.tiers")}</strong>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <label>
-            Seuil Argent (points cumulés à vie)
+            {t("settings.loyalty.silverThreshold")}
             <input
               style={inputStyle}
               type="number"
@@ -769,7 +751,7 @@ export function SettingsPage() {
             />
           </label>
           <label>
-            Seuil Or (points cumulés à vie)
+            {t("settings.loyalty.goldThreshold")}
             <input
               style={inputStyle}
               type="number"
@@ -779,7 +761,7 @@ export function SettingsPage() {
             />
           </label>
           <label>
-            Multiplicateur Argent
+            {t("settings.loyalty.silverMultiplier")}
             <input
               style={inputStyle}
               type="number"
@@ -790,7 +772,7 @@ export function SettingsPage() {
             />
           </label>
           <label>
-            Multiplicateur Or
+            {t("settings.loyalty.goldMultiplier")}
             <input
               style={inputStyle}
               type="number"
@@ -801,17 +783,13 @@ export function SettingsPage() {
             />
           </label>
         </div>
-        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-          Bronze est le palier de base (multiplicateur 1×, sans seuil). Un client passe Argent/Or dès
-          que son cumul de points à vie (jamais réduit par un rachat) dépasse ces seuils, et gagne
-          alors ses points au taux ci-dessus multiplié par le multiplicateur de son palier.
-        </p>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.loyalty.tiersHint")}</p>
       </div>
 
       <div style={cardStyle}>
-        <strong>Sécurité</strong>
+        <strong>{t("settings.security.heading")}</strong>
         <label>
-          Verrouillage automatique après inactivité (minutes, 0 = désactivé)
+          {t("settings.security.autoLock")}
           <input
             style={inputStyle}
             type="number"
@@ -820,18 +798,14 @@ export function SettingsPage() {
             onChange={(e) => setAutoLockMinutes(e.target.value)}
           />
         </label>
-        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-          Retourne automatiquement à l'écran de code PIN après ce délai sans activité — utile pour un
-          poste laissé sans surveillance. Nécessite qu'un code PIN soit défini pour l'utilisateur, sinon
-          seule une reconnexion complète permet de reprendre la session.
-        </p>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.security.autoLockHint")}</p>
       </div>
 
       <div style={cardStyle}>
-        <strong>Sauvegardes</strong>
+        <strong>{t("settings.backups.heading")}</strong>
 
         <label>
-          Fréquence
+          {t("settings.backups.frequency")}
           <select
             style={inputStyle}
             value={frequencyPreset}
@@ -842,12 +816,12 @@ export function SettingsPage() {
                 {p.label}
               </option>
             ))}
-            <option value="custom">Personnalisée (nombre de jours)</option>
+            <option value="custom">{t("settings.backups.frequencyCustom")}</option>
           </select>
         </label>
         {frequencyPreset === "custom" && (
           <label>
-            Délai en jours
+            {t("settings.backups.customDays")}
             <input
               style={inputStyle}
               type="number"
@@ -859,18 +833,18 @@ export function SettingsPage() {
         )}
 
         <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
-          <strong style={{ fontSize: 14 }}>Sauvegarde locale</strong>
+          <strong style={{ fontSize: 14 }}>{t("settings.backups.localHeading")}</strong>
           {isFileSystemAccessSupported() ? (
             <>
               <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-                Dossier actuel : {folderName ?? "aucun dossier choisi"}
+                {t("settings.backups.currentFolder")} {folderName ?? t("settings.backups.noFolder")}
               </p>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
                   style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14 }}
                   onClick={handlePickFolder}
                 >
-                  Choisir un dossier
+                  {t("settings.backups.chooseFolder")}
                 </button>
                 <button
                   style={{
@@ -884,16 +858,24 @@ export function SettingsPage() {
                   onClick={handleLocalBackupNow}
                   disabled={runningLocal || !folderName}
                 >
-                  {runningLocal ? "Sauvegarde..." : "Sauvegarder maintenant"}
+                  {runningLocal ? t("settings.backups.backingUp") : t("settings.backups.backupNow")}
                 </button>
               </div>
             </>
+          ) : isAndroidTauriRuntime() ? (
+            <>
+              <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("settings.backups.androidAutoLocation")}</p>
+              <button
+                style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14 }}
+                onClick={handleLocalBackupNow}
+                disabled={runningLocal}
+              >
+                {runningLocal ? t("settings.backups.backingUp") : t("settings.backups.backupNow")}
+              </button>
+            </>
           ) : (
             <>
-              <p style={{ color: "#fdba74", fontSize: 13 }}>
-                Ce navigateur ne prend pas en charge la sauvegarde automatique dans un dossier. Tu peux
-                quand même télécharger une sauvegarde manuellement à tout moment.
-              </p>
+              <p style={{ color: "var(--color-warning)", fontSize: 13 }}>{t("settings.backups.noFsSupport")}</p>
               <button
                 style={{
                   ...primaryButtonStyle,
@@ -906,21 +888,18 @@ export function SettingsPage() {
                 onClick={handleManualDownloadBackup}
                 disabled={downloadingBackup}
               >
-                {downloadingBackup ? "Téléchargement..." : "Télécharger une sauvegarde maintenant"}
+                {downloadingBackup ? t("settings.backups.downloading") : t("settings.backups.downloadNow")}
               </button>
               {downloadBackupError && (
-                <p style={{ color: "#f87171", fontSize: 13 }}>{downloadBackupError}</p>
+                <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{downloadBackupError}</p>
               )}
             </>
           )}
         </div>
 
         <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
-          <strong style={{ fontSize: 14 }}>Importer une sauvegarde</strong>
-          <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-            Restaure les données depuis un fichier .sqlite3 (sauvegarde locale, Google Drive téléchargée,
-            ou export manuel).
-          </p>
+          <strong style={{ fontSize: 14 }}>{t("settings.backups.importHeading")}</strong>
+          <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("settings.backups.importHint")}</p>
           <label
             style={{
               ...primaryButtonStyle,
@@ -933,7 +912,7 @@ export function SettingsPage() {
               display: "inline-block",
             }}
           >
-            {importing ? "Import..." : "Importer une sauvegarde"}
+            {importing ? t("settings.backups.importing") : t("settings.backups.import")}
             <input
               type="file"
               accept=".sqlite3"
@@ -942,14 +921,14 @@ export function SettingsPage() {
               style={{ display: "none" }}
             />
           </label>
-          {importError && <p style={{ color: "#f87171", fontSize: 13 }}>{importError}</p>}
-          {importInfo && <p style={{ color: "#86efac", fontSize: 13 }}>{importInfo}</p>}
+          {importError && <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{importError}</p>}
+          {importInfo && <p style={{ color: "var(--color-success)", fontSize: 13 }}>{importInfo}</p>}
         </div>
 
         <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
-          <strong style={{ fontSize: 14 }}>Google Drive</strong>
+          <strong style={{ fontSize: 14 }}>{t("settings.backups.driveHeading")}</strong>
           <label>
-            Client ID Google
+            {t("settings.backups.driveClientId")}
             <input
               style={inputStyle}
               value={googleDriveClientId}
@@ -957,10 +936,7 @@ export function SettingsPage() {
               placeholder="xxxxxxxxxxxx.apps.googleusercontent.com"
             />
           </label>
-          <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-            Nécessite un Client ID OAuth créé dans Google Cloud Console (accès limité aux fichiers créés
-            par l'app).
-          </p>
+          <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("settings.backups.driveHint")}</p>
           <button
             style={{
               ...primaryButtonStyle,
@@ -973,55 +949,53 @@ export function SettingsPage() {
             onClick={handleDriveBackupNow}
             disabled={runningDrive}
           >
-            {runningDrive ? "Connexion..." : "Se connecter et sauvegarder maintenant"}
+            {runningDrive ? t("settings.backups.connecting") : t("settings.backups.connectAndBackup")}
           </button>
         </div>
 
-        {backupError && <p style={{ color: "#f87171" }}>{backupError}</p>}
+        {backupError && <p style={{ color: "var(--color-danger)" }}>{backupError}</p>}
 
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={thStyle}>Date</th>
-              <th style={thStyle}>Destination</th>
-              <th style={thStyle}>Statut</th>
-              <th style={thStyle}>Détail</th>
-            </tr>
-          </thead>
-          <tbody>
-            {backups.slice(0, 10).map((b) => (
-              <tr key={b.id}>
-                <td style={tdStyle}>{b.createdAt}</td>
-                <td style={tdStyle}>{DESTINATION_LABELS[b.destination as BackupDestination] ?? b.destination}</td>
-                <td style={tdStyle}>
-                  <span style={badgeStyle(b.status === "success" ? "ok" : "warning")}>
-                    {b.status === "success" ? "Réussie" : "Échec"}
-                  </span>
-                </td>
-                <td style={tdStyle}>{b.fileRef ?? "—"}</td>
-              </tr>
-            ))}
-            {backups.length === 0 && (
+        <div className="table-scroll">
+          <table style={tableStyle}>
+            <thead>
               <tr>
-                <td style={tdStyle} colSpan={4}>
-                  Aucune sauvegarde pour le moment.
-                </td>
+                <th style={thStyle}>{t("settings.backups.date")}</th>
+                <th style={thStyle}>{t("settings.backups.destination")}</th>
+                <th style={thStyle}>{t("settings.backups.status")}</th>
+                <th style={thStyle}>{t("settings.backups.detail")}</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {backups.slice(0, 10).map((b) => (
+                <tr key={b.id}>
+                  <td style={tdStyle}>{b.createdAt}</td>
+                  <td style={tdStyle}>{DESTINATION_LABELS[b.destination as BackupDestination] ?? b.destination}</td>
+                  <td style={tdStyle}>
+                    <span style={badgeStyle(b.status === "success" ? "ok" : "warning")}>
+                      {b.status === "success" ? t("settings.backups.success") : t("settings.backups.failure")}
+                    </span>
+                  </td>
+                  <td style={tdStyle}>{b.fileRef ?? "—"}</td>
+                </tr>
+              ))}
+              {backups.length === 0 && (
+                <tr>
+                  <td style={tdStyle} colSpan={4}>
+                    {t("settings.backups.none")}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div style={cardStyle}>
-        <strong>Maintenance</strong>
-        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
-          Code séparé des comptes utilisateurs, utilisé pour autoriser les actions de maintenance
-          (installation d'une mise à jour) — utile si l'installateur n'a pas le mot de passe Admin du
-          client.
-        </p>
+        <strong>{t("settings.maintenance.heading")}</strong>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.maintenance.hint")}</p>
         {maintenanceCodeSet && (
           <label>
-            Code de maintenance actuel
+            {t("settings.maintenance.currentCode")}
             <input
               style={inputStyle}
               type="password"
@@ -1031,46 +1005,33 @@ export function SettingsPage() {
           </label>
         )}
         <label>
-          {maintenanceCodeSet ? "Nouveau code" : "Définir le code de maintenance"}
+          {maintenanceCodeSet ? t("settings.maintenance.newCode") : t("settings.maintenance.setCode")}
           <input
             style={inputStyle}
             type="password"
             value={newMaintenanceCode}
             onChange={(e) => setNewMaintenanceCode(e.target.value)}
-            placeholder="Au moins 6 caractères"
+            placeholder={t("settings.maintenance.codePlaceholder")}
           />
         </label>
-        {maintenanceCodeError && <p style={{ color: "#f87171", fontSize: 13 }}>{maintenanceCodeError}</p>}
-        {maintenanceCodeSaved && <p style={{ color: "#86efac", fontSize: 13 }}>Code enregistré.</p>}
+        {maintenanceCodeError && <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{maintenanceCodeError}</p>}
+        {maintenanceCodeSaved && <p style={{ color: "var(--color-success)", fontSize: 13 }}>{t("settings.maintenance.codeSaved")}</p>}
         <button
           style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14, alignSelf: "flex-start" }}
           onClick={handleSaveMaintenanceCode}
           disabled={savingMaintenanceCode || !newMaintenanceCode}
         >
-          {savingMaintenanceCode ? "Enregistrement..." : "Enregistrer le code"}
+          {savingMaintenanceCode ? t("settings.maintenance.saving") : t("settings.maintenance.saveCode")}
         </button>
 
-        {isTauriRuntime() && (
+        {isDesktopTauriRuntime() && (
           <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
-            <strong style={{ fontSize: 14 }}>Installer une mise à jour</strong>
-            <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-              Choisis le fichier d'installation (.exe/.msi) apporté, saisis le code de maintenance —
-              l'app tente une sauvegarde locale automatique (si un dossier de sauvegarde est configuré
-              ci-dessus), puis lance l'installeur. La sauvegarde n'est pas bloquante : si elle échoue,
-              l'installation continue quand même avec un avertissement. WariBox ne se ferme plus
-              automatiquement : tu contrôles toi-même le moment de la fermeture, une fois l'installeur
-              visible à l'écran.
+            <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: "0 0 8px" }}>
+              {t("settings.maintenance.currentVersion", { version: __APP_VERSION__ })}
             </p>
-            <p style={{ color: "#facc15", fontSize: 13 }}>
-              L'installeur n'est pas signé numériquement. Si Windows affiche un écran bleu
-              &quot;Windows a protégé votre PC&quot; (SmartScreen), c'est normal — clique sur
-              &quot;Informations complémentaires&quot; puis &quot;Exécuter quand même&quot;. Si cet écran
-              apparaît en arrière-plan sans que tu le remarques et que WariBox se ferme avant, la mise à
-              jour semble ne rien faire : c'est exactement pour éviter ça que la fermeture est maintenant
-              manuelle. Préfère aussi le fichier <strong>.exe</strong> au <strong>.msi</strong> quand les
-              deux sont disponibles : il s'installe par utilisateur, sans invite d'autorisation Windows
-              (UAC) supplémentaire.
-            </p>
+            <strong style={{ fontSize: 14 }}>{t("settings.maintenance.updateHeading")}</strong>
+            <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("settings.maintenance.updateHint")}</p>
+            <p style={{ color: "var(--color-caution)", fontSize: 13 }}>{t("settings.maintenance.updateWarning")}</p>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <button
                 style={{
@@ -1084,12 +1045,12 @@ export function SettingsPage() {
                 onClick={handlePickUpdateFile}
                 disabled={updating}
               >
-                {updateFilePath ? "Changer de fichier" : "Choisir le fichier d'installation"}
+                {updateFilePath ? t("settings.maintenance.changeFile") : t("settings.maintenance.chooseFile")}
               </button>
               {updateFilePath && <span style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{updateFilePath}</span>}
             </div>
             <label>
-              Code de maintenance
+              {t("settings.maintenance.maintenanceCodeLabel")}
               <input
                 style={inputStyle}
                 type="password"
@@ -1098,7 +1059,7 @@ export function SettingsPage() {
               />
             </label>
             {updateStep && <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{updateStep}</p>}
-            {updateError && <p style={{ color: "#f87171", fontSize: 13 }}>{updateError}</p>}
+            {updateError && <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{updateError}</p>}
             {updateReadyToClose ? (
               <button
                 style={{
@@ -1110,27 +1071,27 @@ export function SettingsPage() {
                 }}
                 onClick={handleCloseForUpdate}
               >
-                L'installeur est ouvert — fermer WariBox maintenant
+                {t("settings.maintenance.closeNow")}
               </button>
             ) : (
               <button
                 style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14, alignSelf: "flex-start" }}
                 onClick={handleInstallUpdate}
                 disabled={updating || !maintenanceCodeSet}
-                title={!maintenanceCodeSet ? "Définis d'abord un code de maintenance" : undefined}
+                title={!maintenanceCodeSet ? t("settings.maintenance.defineCodeFirst") : undefined}
               >
-                {updating ? "Installation..." : "Lancer l'installeur"}
+                {updating ? t("settings.maintenance.installing") : t("settings.maintenance.launchInstaller")}
               </button>
             )}
           </div>
         )}
       </div>
 
-      {error && <p style={{ color: "#f87171" }}>{error}</p>}
-      {saved && <p style={{ color: "#86efac" }}>Enregistré.</p>}
+      {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
+      {saved && <p style={{ color: "var(--color-success)" }}>{t("settings.saved")}</p>}
 
       <button style={primaryButtonStyle} onClick={handleSubmit} disabled={saving}>
-        {saving ? "Enregistrement..." : "Enregistrer"}
+        {saving ? t("settings.saving") : t("settings.save")}
       </button>
     </main>
   );
