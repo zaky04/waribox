@@ -161,22 +161,23 @@ table tbody tr:hover {
 }
 
 /* Nav (voir Nav.tsx) : deux rendus distincts pour le même menu, basculés
-   par media query plutôt que par redimensionnement JS — une ligne défilable
-   horizontalement sur ordinateur, un bouton menu + liste déroulante sur
-   téléphone ET tablette (18-19 onglets ne tiennent jamais sur une tablette
-   sans défiler non plus — demande explicite de ne jamais faire défiler ce
-   menu en dessous d'un vrai écran d'ordinateur). Seuil à 1024px : bascule
-   tablette/ordinateur standard (ex. iPad classique 1024px en paysage passe
-   encore en mode tablette, un usage tactile au comptoir comme un
-   téléphone) — plus large que celui de `.cart-layout-grid` (720px), qui ne
-   règle qu'un problème différent (largeur de colonne panier). */
+   par media query plutôt que par redimensionnement JS. PC et tablette
+   (≥768px) : la ligne d'onglets retourne à la ligne automatiquement
+   (flexWrap: wrap, posé en inline sur l'élément — voir Nav.tsx) plutôt que
+   de défiler horizontalement — demande explicite du porteur du projet,
+   qui trouvait le défilement horizontal aussi difficile à manipuler que le
+   problème initial sur mobile. Téléphone (<768px, frontière classique
+   téléphone/tablette) : bouton menu + liste déroulante, un retour à la
+   ligne y prendrait 5-6 lignes de haut vu le nombre d'onglets (18-19).
+   Seuil volontairement différent de celui de `.cart-layout-grid` (720px),
+   qui règle un problème distinct (largeur de colonne panier). */
 .nav-full {
   display: flex;
 }
 .nav-compact {
   display: none;
 }
-@media (max-width: 1024px) {
+@media (max-width: 767px) {
   .nav-full {
     display: none;
   }

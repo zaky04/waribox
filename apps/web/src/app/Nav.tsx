@@ -112,13 +112,13 @@ export function Nav({ active, onChange, enabledModules }: NavProps) {
 
   return (
     <>
-      {/* Bureau/tablette : ligne défilable horizontalement, voir index.css
-          pour l'ombre de bord qui indique qu'il reste des onglets à droite. */}
+      {/* Bureau/tablette : retour à la ligne automatique, pas de défilement
+          horizontal (voir index.css pour le seuil de bascule avec le mode
+          téléphone ci-dessous). */}
       <nav
-        className="nav-full table-scroll"
+        className="nav-full"
         style={{
-          flexWrap: "nowrap",
-          WebkitOverflowScrolling: "touch",
+          flexWrap: "wrap",
           gap: 8,
           padding: "8px 16px",
           borderBottom: "1px solid var(--color-bg-elevated)",
