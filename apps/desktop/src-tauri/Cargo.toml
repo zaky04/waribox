@@ -1,6 +1,6 @@
 [package]
 name = "gestion-boutique-desktop"
-version = "0.1.3"
+version = "0.1.4"
 description = "Gestion Boutique — application desktop (POS offline-first)"
 edition = "2021"
 
