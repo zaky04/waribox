@@ -26,3 +26,7 @@ export * from "./services/StockService";
 export * from "./services/StoresService";
 export * from "./services/SuppliersService";
 export * from "./services/SyscohadaService";
+export * from "./sync/applyRemoteEvents";
+export * from "./sync/snapshot";
+export * from "./sync/syncEvents";
+export * from "./sync/syncStore";

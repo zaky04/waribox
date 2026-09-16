@@ -9,6 +9,7 @@ import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { earnPoints, pointsToDiscount, redeemPoints } from "./LoyaltyService";
 import { getSettings } from "./SettingsService";
 import { consumeStockFefo, getStockLevels } from "./StockService";
+import { buildSyncEvent, emitSyncEvent, type SaleCreatedEventPayload, type SyncStockMovementPayload } from "../sync/syncEvents";
 
 async function nextSaleNumber(db: Database): Promise<string> {
   const row = await db.select({ count: sql<number>`COUNT(*)` }).from(schema.sales).get();
@@ -73,7 +74,7 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
   // deux valider la même dernière unité de stock disponible avant qu'aucune
   // n'écrive, ou une erreur en cours de route laisserait une vente à moitié
   // enregistrée (ex : stock décrémenté sans paiement inséré).
-  return withTransaction(async () => {
+  const { sale, event } = await withTransaction(async () => {
     const levels = await getStockLevels(db);
     for (const item of input.items) {
       const available = levels
@@ -90,10 +91,29 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
     // a besoin du client résolu avant de calculer la réduction.
     const trimmedName = input.newCustomerName?.trim();
     let customerId = input.customerId ?? null;
+    // Voir CLAUDE.md, mode réseau Phase 2 : si cette vente crée un nouveau
+    // client de passage, l'événement de synchronisation doit porter sa
+    // propre identité (syncId) pour que les autres appareils sachent qu'il
+    // s'agit d'un client tout neuf, pas d'une référence à un client déjà
+    // connu — `findOrCreateCustomerByName` peut renvoyer un client déjà
+    // existant (même nom), auquel cas ce syncId candidat n'a jamais été
+    // utilisé et ne doit pas apparaître dans l'événement.
+    let newCustomer: { syncId: string; fullName: string } | undefined;
     if (!customerId && trimmedName) {
-      const customer = await findOrCreateCustomerByName(db, trimmedName);
+      const candidateSyncId = crypto.randomUUID();
+      const customer = await findOrCreateCustomerByName(db, trimmedName, candidateSyncId);
       customerId = customer.id;
+      if (customer.syncId === candidateSyncId) {
+        newCustomer = { syncId: candidateSyncId, fullName: customer.fullName };
+      }
     }
+    // Le client référencé (préexistant, donc déjà connu de tout appareil via
+    // l'instantané initial ou une synchronisation antérieure) — capturé
+    // maintenant pour l'événement, `newCustomer` couvre le cas contraire.
+    const existingCustomerSyncId =
+      !newCustomer && customerId
+        ? (await db.select({ syncId: schema.customers.syncId }).from(schema.customers).where(eq(schema.customers.id, customerId)).get())?.syncId ?? null
+        : null;
 
     const ratio = customerId ? (await getSettings(db)).loyaltyPointsRatio : 0;
 
@@ -127,10 +147,12 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
 
     const paymentStatus = amountPaid >= total ? "paid" : amountPaid > 0 ? "partial" : "credit";
     const number = await nextSaleNumber(db);
+    const saleSyncId = crypto.randomUUID();
 
     const sale = await db
       .insert(schema.sales)
       .values({
+        syncId: saleSyncId,
         number,
         customerId,
         userId: input.userId,
@@ -145,8 +167,17 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
       .returning()
       .get();
 
+    const itemEvents: SaleCreatedEventPayload["items"] = [];
+    // Une entrée par mouvement créé, avec son `batchId` LOCAL le temps de
+    // résoudre les syncId correspondants en une seule requête groupée à la
+    // fin (plutôt qu'une par mouvement) — jamais exposé tel quel dans
+    // l'événement final (voir la construction de `movementEvents` ci-dessous).
+    const rawMovements: Array<{ batchId: number | null; payload: Omit<SyncStockMovementPayload, "batchSyncId"> }> = [];
+
     for (const item of input.items) {
+      const itemSyncId = crypto.randomUUID();
       await db.insert(schema.saleItems).values({
+        syncId: itemSyncId,
         saleId: sale.id,
         variantId: item.variantId,
         quantity: item.quantity,
@@ -155,8 +186,17 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
         taxRate: item.taxRate ?? 0,
         total: computeItemTotal(item),
       });
+      itemEvents.push({
+        syncId: itemSyncId,
+        variantId: item.variantId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        discount: item.discount ?? 0,
+        taxRate: item.taxRate ?? 0,
+        total: computeItemTotal(item),
+      });
 
-      await consumeStockFefo(db, {
+      const movements = await consumeStockFefo(db, {
         variantId: item.variantId,
         locationId: input.surfaceLocationId,
         quantity: item.quantity,
@@ -165,10 +205,40 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
         referenceId: sale.id,
         userId: input.userId,
       });
+      for (const movement of movements) {
+        rawMovements.push({
+          batchId: movement.batchId,
+          payload: {
+            syncId: movement.syncId!,
+            variantId: movement.variantId,
+            locationId: movement.locationId,
+            quantityDelta: movement.quantityDelta,
+            movementType: movement.movementType,
+            referenceType: movement.referenceType,
+          },
+        });
+      }
     }
 
+    const referencedBatchIds = [...new Set(rawMovements.map((m) => m.batchId).filter((id): id is number => id != null))];
+    const batchSyncIdById = new Map<number, string | null>();
+    if (referencedBatchIds.length > 0) {
+      const batchRows = await db
+        .select({ id: schema.stockBatches.id, syncId: schema.stockBatches.syncId })
+        .from(schema.stockBatches)
+        .where(inArray(schema.stockBatches.id, referencedBatchIds));
+      for (const row of batchRows) batchSyncIdById.set(row.id, row.syncId);
+    }
+    const movementEvents: SyncStockMovementPayload[] = rawMovements.map((m) => ({
+      ...m.payload,
+      batchSyncId: m.batchId != null ? (batchSyncIdById.get(m.batchId) ?? null) : null,
+    }));
+
+    let paymentEvent: SaleCreatedEventPayload["payment"];
     if (amountPaid > 0) {
+      const paymentSyncId = crypto.randomUUID();
       await db.insert(schema.payments).values({
+        syncId: paymentSyncId,
         referenceType: "sale",
         referenceId: sale.id,
         method: input.paymentMethod,
@@ -176,10 +246,14 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
         receivedBy: input.userId,
         storeId: input.storeId,
       });
+      paymentEvent = { syncId: paymentSyncId, method: input.paymentMethod, amount: amountPaid, storeId: input.storeId };
     }
 
+    let creditEvent: SaleCreatedEventPayload["credit"];
     if (amountPaid < total) {
+      const creditSyncId = crypto.randomUUID();
       await db.insert(schema.customerCredits).values({
+        syncId: creditSyncId,
         customerId: customerId!,
         saleId: sale.id,
         storeId: input.storeId,
@@ -187,13 +261,20 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
         remainingBalance: total - amountPaid,
         status: "open",
       });
+      creditEvent = { syncId: creditSyncId, originalAmount: total - amountPaid, remainingBalance: total - amountPaid, storeId: input.storeId };
     }
 
+    let loyaltyRedeemEvent: SaleCreatedEventPayload["loyaltyRedeem"];
     if (input.redeemPoints && customerId) {
-      await redeemPoints(db, { customerId, points: input.redeemPoints, saleId: sale.id, ratio });
+      const redeemSyncId = crypto.randomUUID();
+      await redeemPoints(db, { customerId, points: input.redeemPoints, saleId: sale.id, ratio, syncId: redeemSyncId });
+      loyaltyRedeemEvent = { syncId: redeemSyncId, pointsDelta: -input.redeemPoints };
     }
+    let loyaltyEarnEvent: SaleCreatedEventPayload["loyaltyEarn"];
     if (customerId) {
-      await earnPoints(db, { customerId, amount: total, saleId: sale.id, ratio });
+      const earnSyncId = crypto.randomUUID();
+      const earned = await earnPoints(db, { customerId, amount: total, saleId: sale.id, ratio, syncId: earnSyncId });
+      if (earned) loyaltyEarnEvent = { syncId: earnSyncId, pointsDelta: earned.pointsDelta };
     }
 
     await logAction(db, {
@@ -204,8 +285,35 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
       metadata: { number: sale.number, total, paymentStatus },
     });
 
-    return sale;
+    const payload: SaleCreatedEventPayload = {
+      sale: {
+        syncId: saleSyncId,
+        number: sale.number,
+        customerSyncId: newCustomer?.syncId ?? existingCustomerSyncId,
+        userId: sale.userId,
+        storeId: sale.storeId,
+        saleMode: sale.saleMode,
+        subtotal: sale.subtotal,
+        discount: sale.discount,
+        taxTotal: sale.taxTotal,
+        total: sale.total,
+        paymentStatus: sale.paymentStatus,
+        createdAt: sale.createdAt,
+      },
+      newCustomer,
+      items: itemEvents,
+      stockMovements: movementEvents,
+      payment: paymentEvent,
+      credit: creditEvent,
+      loyaltyRedeem: loyaltyRedeemEvent,
+      loyaltyEarn: loyaltyEarnEvent,
+    };
+
+    return { sale, event: buildSyncEvent("sale.created", payload) };
   });
+
+  emitSyncEvent(event);
+  return sale;
 }
 
 export interface SaleFilters {

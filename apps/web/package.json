@@ -13,6 +13,7 @@
     "@gestion-boutique/core": "workspace:*",
     "@gestion-boutique/database": "workspace:*",
     "@gestion-boutique/i18n": "workspace:*",
+    "@gestion-boutique/network": "workspace:*",
     "@gestion-boutique/printer": "workspace:*",
     "@gestion-boutique/reports": "workspace:*",
     "@gestion-boutique/sync": "workspace:*",
@@ -24,6 +25,7 @@
     "@zxing/browser": "^0.2.1",
     "drizzle-orm": "^0.38.0",
     "i18next": "^24.2.0",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-i18next": "^15.2.0",
@@ -32,6 +34,7 @@
   "devDependencies": {
     "@gestion-boutique/config": "workspace:*",
     "@sqlite.org/sqlite-wasm": "^3.53.0-build1",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",

@@ -339,6 +339,58 @@
       "readyMessage": "An installation window should open. If Windows shows \"Windows protected your PC\", that's normal for an unsigned installer: click \"More info\" then \"Run anyway\". Once the installation wizard is visible, click below to close WariBox and let the installation continue."
     }
   },
+  "network": {
+    "heading": "Network mode",
+    "description": "Share this database with other devices on the same local network (Master/Worker), or stay in Solo mode — a single device, as today.",
+    "intro": "Choose a role for this device: Master (hosts the network) or Worker (joins a Master that's already running). No business data flows over the network yet at this stage.",
+    "deviceName": "This device's name",
+    "deviceNamePlaceholder": "E.g.: Manager's phone",
+    "defaultMasterName": "WariBox Master",
+    "defaultWorkerName": "WariBox Worker",
+    "becomeMaster": "Become Master (host)",
+    "joinNetwork": "Join a network",
+    "masterDesktopOnly": "The Master role is only available on the desktop app (PC).",
+    "leaveRole": "Leave this role (back to Solo)",
+    "master": {
+      "start": "Start the server",
+      "starting": "Starting...",
+      "stop": "Stop the server",
+      "qrAlt": "Pairing QR code",
+      "connectedWorkers": "Connected devices ({{count}})",
+      "workerName": "Device",
+      "noWorkers": "No device connected yet.",
+      "errors": {
+        "startFailed": "Could not start the local network server."
+      }
+    },
+    "worker": {
+      "status": "Status",
+      "statusLabels": {
+        "idle": "Not connected",
+        "connecting": "Connecting...",
+        "connected": "Connected",
+        "error": "Error",
+        "disconnected": "Disconnected"
+      },
+      "connecting": "Connecting to the Master...",
+      "scanQr": "Scan the Master's QR code",
+      "reconnect": "Reconnect",
+      "searchOnNetwork": "Search for the Master on the network",
+      "searching": "Searching...",
+      "host": "Master's IP address",
+      "port": "Port",
+      "token": "Pairing token",
+      "connect": "Connect",
+      "manualEntryError": "Address, port and token are required.",
+      "manualMasterName": "Master (entered manually)",
+      "errors": {
+        "connectionFailed": "Could not open the network connection.",
+        "timeout": "The Master did not respond in time.",
+        "rejected": "Connection rejected by the Master.",
+        "searchFailed": "Master not found on this network — rescan its QR code or enter its address manually."
+      }
+    }
+  },
   "storesSection": {
     "heading": "Stores",
     "description": "Each store has its own stock (Reserve/Sales floor) and its own sales — products, customers and suppliers stay shared across all stores.",

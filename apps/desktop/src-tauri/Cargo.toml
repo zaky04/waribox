@@ -16,6 +16,23 @@ tauri-plugin-fs = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# Mode réseau local (Master) — voir CLAUDE.md, section mode réseau : le
+# Master héberge un serveur WebSocket en clair (ws://, pas de TLS — un
+# Worker JS/WebView ne peut pas épingler un certificat auto-signé comme le
+# ferait un client natif), protégé par un jeton de pairage applicatif. tokio
+# est déjà une dépendance transitive de tauri (voir Cargo.lock) : la version
+# "1" ici réutilise la même résolution, pas une nouvelle version parallèle.
+tokio = { version = "1", features = ["net", "rt", "sync", "macros"] }
+tokio-tungstenite = "0.24"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+rand = "0.8"
+local-ip-address = "0.6"
+# Découverte automatique (annonce côté Master, recherche côté Worker) — voir
+# CLAUDE.md, mode réseau Phase 1b. Pure Rust, cross-platform, testé en
+# conditions réelles (annonce + résolution sur l'interface réseau réelle,
+# pas seulement compilé) avant d'être ajouté ici.
+mdns-sd = "0.11"
+
 # Écriture dans le stockage public Android (MediaStore) — voir CLAUDE.md,
 # journal sur l'écriture native Android. Uniquement Android : ce crate ne
 # supporte aucune autre plateforme (voir ses métadonnées Cargo).

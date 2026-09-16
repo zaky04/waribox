@@ -19,6 +19,8 @@ export const stockLocations = sqliteTable("stock_locations", {
 
 export const stockBatches = sqliteTable("stock_batches", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  // Voir CLAUDE.md, mode réseau Phase 2 — même rôle que sales.syncId.
+  syncId: text("sync_id"),
   variantId: integer("variant_id")
     .notNull()
     .references(() => productVariants.id),
@@ -40,6 +42,8 @@ export const stockBatches = sqliteTable("stock_batches", {
 // SUM(quantityDelta) GROUP BY variantId, locationId — jamais de colonne mutable.
 export const stockMovements = sqliteTable("stock_movements", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  // Voir CLAUDE.md, mode réseau Phase 2 — même rôle que sales.syncId.
+  syncId: text("sync_id"),
   variantId: integer("variant_id")
     .notNull()
     .references(() => productVariants.id),

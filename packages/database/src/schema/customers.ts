@@ -3,6 +3,12 @@ import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const customers = sqliteTable("customers", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  // Voir CLAUDE.md, mode réseau Phase 2 : renseigné uniquement pour un
+  // client de passage créé pendant une vente (offline-capable, voir
+  // SalesService.createSale) — un client créé depuis la page Clients reste
+  // sans syncId (cette création-là exige déjà d'être connecté au Master,
+  // voir la Phase 3 à venir).
+  syncId: text("sync_id"),
   fullName: text("full_name").notNull(),
   phone: text("phone"),
   email: text("email"),

@@ -104,6 +104,53 @@ export const MIGRATIONS: Migration[] = [
       "ALTER TABLE business_settings ADD COLUMN maintenance_code_locked_until TEXT",
     ],
   },
+  // Mode réseau Phase 2 (voir CLAUDE.md) : `sync_id` identifie une ligne
+  // indépendamment de l'id local auto-incrémenté (propre à chaque appareil,
+  // sans rapport entre eux) — c'est lui qui circule dans les événements de
+  // réplication entre Master et Workers. Index unique partiel (WHERE sync_id
+  // IS NOT NULL) : les lignes déjà existantes avant cette migration restent
+  // à NULL, jamais concernées par la contrainte d'unicité. `__sync_log`/
+  // `__sync_outbox`/`__sync_state` : voir packages/database/src/schema/sync.ts.
+  {
+    id: 3,
+    statements: [
+      "ALTER TABLE sales ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_sales_sync_id ON sales(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE sale_items ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_sale_items_sync_id ON sale_items(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE payments ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_payments_sync_id ON payments(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE stock_movements ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_stock_movements_sync_id ON stock_movements(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE stock_batches ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_stock_batches_sync_id ON stock_batches(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE customer_credits ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_customer_credits_sync_id ON customer_credits(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE loyalty_transactions ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_loyalty_transactions_sync_id ON loyalty_transactions(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE customers ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_customers_sync_id ON customers(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE expenses ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_expenses_sync_id ON expenses(sync_id) WHERE sync_id IS NOT NULL",
+      `CREATE TABLE __sync_log (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        origin_device_id TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE __sync_outbox (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        sent_at TEXT
+      )`,
+      `CREATE TABLE __sync_state (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )`,
+    ],
+  },
 ];
 
 async function runMigrations(): Promise<void> {

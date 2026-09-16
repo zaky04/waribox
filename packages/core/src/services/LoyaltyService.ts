@@ -44,8 +44,17 @@ export interface RedeemPointsInput {
   points: number;
   saleId?: number;
   ratio: number;
+  // Voir CLAUDE.md, mode réseau Phase 2 : identité universelle de la ligne
+  // loyalty_transactions créée ici, pour que SalesService puisse l'inclure
+  // dans l'événement de synchronisation "vente" — généré si omis (appel hors
+  // contexte de synchronisation, ex. tests).
+  syncId?: string;
 }
 
+// Renvoie la ligne loyalty_transactions créée (avec son syncId) plutôt que
+// le client mis à jour — aucun appelant existant n'utilisait la valeur de
+// retour, seul SalesService (Phase 2) en a besoin pour construire son
+// événement de synchronisation.
 export async function redeemPoints(db: Database, input: RedeemPointsInput) {
   const customer = await db
     .select()
@@ -63,19 +72,25 @@ export async function redeemPoints(db: Database, input: RedeemPointsInput) {
     throw new Error(t("coreErrors.common.insufficientLoyaltyPoints", { points: customer.loyaltyPoints }));
   }
 
-  await db.insert(schema.loyaltyTransactions).values({
-    customerId: input.customerId,
-    pointsDelta: -input.points,
-    reason: "redemption",
-    referenceId: input.saleId,
-  });
+  const transaction = await db
+    .insert(schema.loyaltyTransactions)
+    .values({
+      syncId: input.syncId ?? crypto.randomUUID(),
+      customerId: input.customerId,
+      pointsDelta: -input.points,
+      reason: "redemption",
+      referenceId: input.saleId,
+    })
+    .returning()
+    .get();
 
-  return db
+  await db
     .update(schema.customers)
     .set({ loyaltyPoints: customer.loyaltyPoints - input.points })
     .where(eq(schema.customers.id, input.customerId))
-    .returning()
-    .get();
+    .run();
+
+  return transaction;
 }
 
 export interface EarnPointsInput {
@@ -83,15 +98,20 @@ export interface EarnPointsInput {
   amount: number;
   saleId?: number;
   ratio: number;
+  // Voir le commentaire sur RedeemPointsInput.syncId.
+  syncId?: string;
 }
 
+// Renvoie la ligne loyalty_transactions créée, ou `undefined` si aucun point
+// n'a été attribué (client introuvable ou montant nul) — voir le commentaire
+// sur redeemPoints pour pourquoi le retour a changé.
 export async function earnPoints(db: Database, input: EarnPointsInput) {
   const customer = await db
     .select()
     .from(schema.customers)
     .where(eq(schema.customers.id, input.customerId))
     .get();
-  if (!customer) return;
+  if (!customer) return undefined;
 
   // Le palier appliqué est celui déjà acquis AVANT cet achat (sur le cumul à
   // vie existant) — un client doit déjà être Or pour bénéficier du bonus Or
@@ -110,14 +130,19 @@ export async function earnPoints(db: Database, input: EarnPointsInput) {
         : 1;
 
   const points = input.amount * input.ratio * multiplier;
-  if (points <= 0) return;
+  if (points <= 0) return undefined;
 
-  await db.insert(schema.loyaltyTransactions).values({
-    customerId: input.customerId,
-    pointsDelta: points,
-    reason: "purchase",
-    referenceId: input.saleId,
-  });
+  const transaction = await db
+    .insert(schema.loyaltyTransactions)
+    .values({
+      syncId: input.syncId ?? crypto.randomUUID(),
+      customerId: input.customerId,
+      pointsDelta: points,
+      reason: "purchase",
+      referenceId: input.saleId,
+    })
+    .returning()
+    .get();
 
   await db
     .update(schema.customers)
@@ -127,6 +152,8 @@ export async function earnPoints(db: Database, input: EarnPointsInput) {
     })
     .where(eq(schema.customers.id, input.customerId))
     .run();
+
+  return transaction;
 }
 
 export interface AdjustPointsInput {

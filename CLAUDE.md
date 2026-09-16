@@ -3005,6 +3005,493 @@ cas (mesure réelle au lieu d'une estimation, plus une marge de 10%), donc
 la correction devrait tenir indépendamment de la cause exacte, mais
 nécessite malgré tout une confirmation sur l'appareil réel.
 
+### 2026-09-04 — Mode réseau (Solo/Réseau local/Cloud) : fondation transport Master↔Worker (Phase 1)
+
+**Contexte** : nouveau chantier, inspiré d'une architecture développée en
+parallèle par le porteur du projet sur une autre app (Fougag, Flutter) —
+trois modes (Solo/Réseau local/Cloud), rôle Master (héberge)/Worker (se
+connecte) modifiable à chaud, pairage par QR. Avant de coder quoi que ce
+soit, une série de questions a permis d'acter les règles métier propres à
+WariBox (différentes de Fougag sur plusieurs points) :
+
+1. Le rôle **Master est toujours sur PC** (desktop Tauri), jamais Android/PWA.
+2. Un Worker déconnecté du Master **continue à fonctionner** (ventes,
+   mouvements de stock, dépenses — offline-first préservé) et se
+   resynchronisera au retour du réseau (mécanisme de sync **pas encore
+   construit**, voir Phase 2 ci-dessous) ; en revanche, **les modifications
+   de catalogue/paramètres/utilisateurs ne sont possibles que connecté au
+   Master** — pas d'édition hors-ligne de ces données, donc pas de conflit
+   à arbitrer dessus.
+3. Rôle réseau (Master/Worker) et permission utilisateur (Gérant/Vendeur/...)
+   sont indépendants : le gérant peut se connecter depuis un Worker (son
+   téléphone) avec son compte habituel.
+4. Un appareil qui a déjà des données Solo et rejoint un réseau **archive
+   (export) puis repart à zéro** côté réseau — pas de fusion automatique.
+   Réutilise le mécanisme de sauvegarde déjà existant (`packages/sync`),
+   pas un nouveau système de migration de données.
+5. **Sécurité réseau local différente de Fougag** : Fougag sécurise sa
+   connexion via TLS + certificat auto-signé épinglé par empreinte côté
+   client (possible en Dart, `dart:io` expose un hook de validation de
+   certificat overridable). Un Worker WariBox tourne en JS
+   (navigateur/WebView) — cette plateforme ne permet PAS à du code
+   applicatif de contourner la validation TLS standard, donc un `wss://`
+   avec certificat auto-signé serait simplement refusé par le navigateur.
+   Décision : **`ws://` en clair sur le réseau local, protégé par un jeton
+   de pairage secret** transmis via le QR, vérifié par le Master à la
+   connexion (avant tout autre traitement) — fonctionne identiquement sur
+   PWA/Tauri desktop/Tauri Android, sans code natif côté Worker.
+
+**Périmètre de cette Phase 1** : uniquement la fondation transport (rôle
+d'appareil, pairage QR, connexion Master↔Worker, écrans de statut).
+**Aucune donnée métier ne transite encore par le réseau** — pas de
+réplication ventes/stock, pas de mutation catalogue via RPC au Master.
+Même séquencement que Fougag, qui a lui-même construit son "Étape 3" comme
+pur transport avant d'y faire transiter la moindre donnée.
+
+**Fait** :
+- **[packages/network](packages/network)** (nouveau package, même patron
+  que `packages/sync` — pas de build, consommé comme source TS) :
+  `WsMessage`/`WsMessageTypes` (enveloppe type/payload/correlationId/
+  timestamp, types `hello`/`helloAck`/`ping`/`pong`/`error`/`disconnect` —
+  extensible sans rupture pour la suite) et `MasterPairingPayload`
+  (contenu du QR : masterId/masterName/host/port/token, `tryDecode` renvoie
+  `null` sur contenu invalide plutôt que de lever, un QR scanné peut être
+  n'importe quoi). 18 tests vitest.
+- **[apps/desktop/src-tauri/src/network.rs](apps/desktop/src-tauri/src/network.rs)**
+  (nouveau) : serveur WebSocket du Master sur `tokio`/`tokio-tungstenite`
+  (déjà des dépendances transitives de Tauri). Écoute TCP brute (`ws://`),
+  vérifie le jeton sur le tout premier message (`hello`) de chaque
+  connexion — fermée immédiatement si invalide, avant tout relais au
+  frontend. Chaque connexion/message est ensuite relayé tel quel au
+  frontend JS via un événement Tauri (`network:master-event`) —
+  **aucune logique métier en Rust**, juste de la plomberie réseau (matché
+  ligne à ligne sur ce que fait `MasterWebSocketServer` côté Fougag).
+  Commandes Tauri : `network_start_master`/`network_stop_master`/
+  `network_send_to_worker`/`network_broadcast`/`network_local_ip`.
+  Nouvelles dépendances Cargo : `tokio` (features explicites, déjà résolu
+  par Tauri), `tokio-tungstenite`, `futures-util`, `rand`,
+  `local-ip-address`. Aucune entrée de capacité ACL nécessaire (ce sont des
+  commandes de l'app, pas d'un plugin tiers — seul `android-fs` en avait
+  besoin).
+- **`apps/web/src/stores/deviceIdentity.ts`/`deviceRole.ts`** (nouveaux,
+  même patron que `language.ts`/`theme.ts`) : identité (`deviceId` généré
+  une seule fois et persisté — contrairement au tout premier jet de ce
+  mécanisme côté Fougag, qui régénérait un id à chaque montage d'écran,
+  corrigé plus tard dans son historique ; autant partir directement sur la
+  bonne version ici) et rôle réseau (`master`/`worker`/`null`=Solo), tous
+  deux en `localStorage` — pas une donnée métier, jamais en SQLite/répliqué,
+  exactement comme la langue ou le thème.
+- **`apps/web/src/features/network/`** (nouveau) : `useMasterServer`
+  (démarre le serveur Rust via `invoke`, écoute les événements, traite
+  `hello`→`helloAck`/`ping`→`pong` côté JS, maintient la liste des Workers
+  connectés) et `useWorkerConnection` (`WebSocket` sortant natif — aucune
+  dépendance native nécessaire côté Worker, contrairement au Master qui
+  doit écouter un socket ; machine d'état idle/connecting/connected/error/
+  disconnected avec timeout de handshake et reconnexion manuelle).
+  `NetworkSection.tsx` compose le tout, **réutilise
+  `BarcodeCameraScanner.tsx` telle quelle pour scanner le QR** (le
+  composant gère déjà `qr_code` dans ses formats reconnus, aucun nouveau
+  composant caméra nécessaire) + repli de saisie manuelle (host/port/jeton).
+  Nouvelle dépendance `qrcode` (génération, pas lecture) pour l'affichage
+  du QR côté Master. Intégré dans Paramètres (nouvelle carte, après
+  Multi-boutique).
+- Clés i18n `network.*` (fr/en) — le chantier bilinguisme reste intégral,
+  aucun texte en dur ajouté.
+
+**Vérifié** : `pnpm run build` (monorepo complet) et `pnpm run test` (38
+tests, dont les 18 nouveaux de `packages/network`) passent sans régression.
+`cargo check` puis un **build desktop release complet**
+(`pnpm run build:desktop`, MSI + NSIS produits) confirment que le nouveau
+module Rust compile proprement, pas seulement en mode debug. Dans le
+navigateur (web/PWA, seule plateforme testable dans cet environnement) :
+le bouton "Devenir Maître" est bien absent (masqué par
+`isDesktopTauriRuntime()`, déjà utilisé ailleurs dans le projet pour ce
+même genre de restriction), le rôle Worker s'affiche et fonctionne en FR
+et EN, et une tentative de connexion vers une adresse injoignable transite
+correctement par "Connexion en cours..." puis "Erreur" (confirme que la
+machine d'état de `useWorkerConnection` répond bien aux événements
+`onclose`/timeout réels d'un WebSocket, pas seulement en théorie). Aucune
+erreur console inattendue (seule celle, attendue, du WebSocket refusé).
+
+**Pas vérifiable dans cet environnement** : un vrai appariement Master
+(desktop réel) ↔ Worker (second appareil) bout en bout — nécessite de
+lancer l'exécutable buildé sur un vrai poste et un second appareil (PWA ou
+Android) pour scanner le QR en conditions réelles. À faire par le porteur
+du projet avant de considérer cette Phase 1 close.
+
+**Pas fait / laissé pour les phases suivantes (pas anticipé en détail pour
+ne pas figer des décisions avant d'avoir vu cette fondation tourner)** :
+- **Phase 2** : réplication des données append-only (ventes, mouvements de
+  stock, dépenses) entre Worker et Master — le point 2 ci-dessus
+  (fonctionnement hors-ligne d'un Worker) n'est pour l'instant vrai que
+  parce que chaque appareil garde sa propre base SQLite locale complète
+  (comme en Solo) ; encore aucun mécanisme ne fait réellement remonter/
+  redescendre ces données une fois reconnecté.
+- **Phase 3** : mutations catalogue/paramètres passées en RPC au Master
+  (le Worker envoie la demande, le Master l'exécute via `packages/core`
+  avec les permissions de l'utilisateur demandeur, puis redistribue le
+  résultat accepté à tous les Workers connectés) — voir point 2 ci-dessus.
+- **Import manuel côté Master** d'un export Solo (point 4 ci-dessus) — pas
+  encore construit, viendra avec la Phase 2/3 une fois qu'il y a une vraie
+  base réseau dans laquelle importer.
+- **mDNS/auto-découverte** : différé, le QR suffit et fonctionne
+  identiquement sur les 3 plateformes pour cette étape.
+- **Mode Cloud** : non commencé, comme Fougag qui l'a laissé
+  volontairement `Unimplemented` faute de contrat d'API serveur réel à
+  spécifier contre (WariBox n'a pas plus de backend cloud existant).
+- Persistance de l'état "serveur démarré" entre rechargements de page côté
+  Master (si l'utilisateur recharge l'onglet Paramètres pendant que le
+  serveur tourne, l'UI perd le lien vers le serveur Rust déjà actif côté
+  natif — pas testé, potentiel écart mineur à vérifier en Phase 2).
+
+### 2026-09-04 — Mode réseau, Phase 1b : découverte automatique du Master (mDNS + balayage réseau)
+
+**Contexte** : suite immédiate de la Phase 1 (fondation transport, voir
+entrée précédente) — question du porteur du projet : un Worker peut-il
+retrouver le Master tout seul sur le réseau, plutôt que de dépendre du QR
+à chaque fois ? Choix retenu après présentation des options (mDNS
+Tauri-only vs balayage réseau universel) : **les deux**, en complément
+l'un de l'autre.
+
+**Cadrage important, acté avant de coder** : ni le mDNS ni le balayage ne
+remplacent le QR pour le **tout premier appairage** — les deux ne font que
+retrouver une adresse IP, jamais le jeton secret. Leur vraie valeur est de
+**reconnecter automatiquement un Worker déjà apparié** dont le Master a
+changé d'adresse IP (redémarrage routeur, bail DHCP renouvelé...), sans
+repasser par le QR. Le jeton déjà connu reste utilisé pour valider tout
+candidat trouvé via le handshake `hello`/`helloAck` existant — la seule
+présence mDNS ou un port ouvert ne suffit jamais.
+
+**Recherche de faisabilité faite avant d'écrire le code métier** (pas
+supposée, comme le porteur du projet l'avait explicitement demandé pour un
+sujet précédent) : la crate `mdns-sd` (0.11.5) a été testée dans un projet
+Cargo isolé (scratchpad, jamais dans le dépôt) — annonce + résolution en
+conditions réelles sur l'interface Wi-Fi de la machine de développement.
+**Piège trouvé pendant ce test** : `127.0.0.1` ne fonctionne PAS comme
+adresse annoncée (aucune résolution mDNS), alors que la vraie IP
+d'interface (`local_ip_address::local_ip()`, déjà une dépendance depuis la
+Phase 1) fonctionne — sans ce test, ce piège serait passé inaperçu jusqu'à
+un test réel sur le terrain.
+
+**Fait** :
+- **Port fixe du Master** — `DEFAULT_MASTER_PORT` (51823) dans
+  [network.rs](apps/desktop/src-tauri/src/network.rs), exposé par la
+  nouvelle commande `network_default_port()` (source de vérité unique côté
+  Rust, lue par le JS) — nécessaire pour que le balayage réseau sache sur
+  quel port sonder chaque adresse (le port choisi par l'OS, `port: 0`
+  utilisé en Phase 1, ne s'y prêtait pas). Pas de repli automatique sur un
+  autre port si déjà occupé — cas rare sur le PC dédié d'un commerce,
+  l'erreur de bind remonte telle quelle.
+- **mDNS côté Master** (`network.rs`) : nouvelle dépendance Cargo
+  `mdns-sd = "0.11"`. `network_start_master` annonce désormais le service
+  (`_waribox._tcp.local.`, propriétés TXT `name`/`masterId`) une fois le
+  port lié ; `network_stop_master` désenregistre et arrête le daemon.
+  Best-effort : un échec d'annonce (interface indisponible...) n'empêche
+  jamais le serveur WebSocket de démarrer, le QR reste toujours la voie de
+  secours.
+- **mDNS côté Worker** — nouveau fichier
+  [discovery.rs](apps/desktop/src-tauri/src/discovery.rs) (Tauri
+  uniquement : desktop-worker ou Android, pas de rapport avec la
+  restriction "Master = desktop only", qui ne concerne que l'hébergement).
+  `network_start_discovery(targetMasterId)`/`network_stop_discovery` :
+  parcourt les résolutions mDNS, filtre sur la propriété TXT `masterId`
+  (jamais "un Master WariBox quelconque" — uniquement celui déjà apparié),
+  relaie au frontend via l'événement `network:discovery-event`.
+- **Balayage réseau** — nouveau fichier
+  [lanScan.ts](apps/web/src/features/network/lanScan.ts), pur JS/DOM,
+  fonctionne identiquement sur PWA/Tauri desktop/Tauri Android :
+  `detectLocalIPv4()` (technique standard des candidats ICE WebRTC, sans
+  serveur STUN), `probeHost()` (WebSocket jetable, valide via
+  hello/helloAck, n'affecte jamais l'état de `useWorkerConnection`),
+  `scanForMaster()` (sonde les 254 adresses du /24 détecté, par lots de 24).
+- **`useWorkerConnection`** : nouvelle fonction `searchForMaster()` —
+  lance mDNS (si Tauri) et le balayage en parallèle, le premier des deux à
+  valider un candidat gagne ; nouveaux états `searching`/`searchError`.
+  Utilisable seulement si `lastPayload` existe (un appareil jamais apparié
+  n'a pas de jeton à réutiliser).
+- **[NetworkSection.tsx](apps/web/src/features/network/NetworkSection.tsx)** :
+  bouton "Rechercher le Maître sur le réseau" dans la vue Worker (visible
+  uniquement si déjà apparié une fois), à côté de "Se reconnecter" (qui
+  retente juste la dernière adresse connue, sans balayage). Clés i18n
+  `network.worker.search*`/`errors.searchFailed` (fr/en).
+
+**Vérifié** : `pnpm run build` + `pnpm run test` (aucune régression) ;
+`cargo check` puis un **second build desktop release complet**
+(`pnpm run build:desktop`, MSI + NSIS produits, ~2min16 de compilation)
+confirment que `mdns-sd` et les nouveaux modules compilent proprement en
+production. Dans le navigateur (PWA, seule plateforme testable ici) :
+après une tentative de connexion manuelle échouée (donc `lastPayload`
+défini), le bouton "Rechercher..." apparaît bien, le déclenche correctement
+(mDNS ignoré car hors Tauri, balayage tenté), et affiche le message
+d'échec traduit ("Maître introuvable...") une fois épuisé — sans exception
+JS ni blocage de l'UI, le bouton redevient cliquable ensuite. Confirmé en
+FR et EN.
+
+**Pas vérifiable dans cet environnement** : le vrai scénario cible
+(Worker Tauri déjà apparié, Master change d'IP, "Rechercher..." le
+retrouve via mDNS ou balayage) nécessite deux appareils physiques sur le
+même réseau — même limite que la Phase 1. Le test de faisabilité mDNS
+(scratchpad) confirme que le mécanisme Rust fonctionne sur cette machine,
+mais pas le flux complet Worker→Master via l'appli elle-même.
+
+**Pas fait / laissé pour plus tard** :
+- Détection WebRTC de l'IP locale non fiable sur tous les navigateurs
+  (Firefox masque ces candidats depuis 2021) — traité comme un simple
+  "pas de suggestion" (bascule silencieuse sur mDNS seul si Tauri, sinon
+  échec propre), pas une régression à corriger.
+- Toujours pas de synchronisation de données métier (Phase 2, voir
+  entrée précédente) — cette Phase 1b ne fait qu'améliorer la
+  reconnexion, elle ne rapproche pas de la réplication ventes/stock.
+
+### 2026-09-04 — Mode réseau, Phase 2 : réplication des ventes, du stock et des dépenses
+
+**Contexte** : suite des Phases 1/1b (transport + découverte, voir entrées
+précédentes) — "engage la phase 2" demandé explicitement par le porteur du
+projet, avec le périmètre "Ventes + Stock + Dépenses ensemble" (les trois en
+une passe, plutôt que Ventes seule d'abord) suite à une question de cadrage.
+
+**Trois découvertes faites en lisant le code réel avant d'écrire quoi que ce
+soit**, qui ont changé le périmètre par rapport à une lecture superficielle
+(voir le plan détaillé, toujours dans `.claude/plans/` au moment d'écrire
+cette entrée) :
+1. Une vente touche 7 tables en une transaction (sales, sale_items,
+   stock_movements, payments, customer_credits, loyalty_transactions,
+   parfois customers) — la réplication devait se faire par "effet complet
+   d'une opération", pas table par table.
+2. `addManualStockEntry`/`recordStockLoss`/`transferStock`
+   ([StockService.ts](packages/core/src/services/StockService.ts)) et
+   `createExpense` ([ExpensesService.ts](packages/core/src/services/ExpensesService.ts))
+   n'utilisaient PAS `withTransaction` — gap déjà pressenti dans les pistes
+   du journal, comblé ici comme prérequis mécanique (pas juste une bonne
+   pratique) pour pouvoir répliquer leur résultat comme un tout atomique.
+3. Un Worker qui rejoint le réseau (décision Phase 1 : archive puis repart à
+   zéro) n'a aucun catalogue — sans un instantané initial (produits,
+   emplacements, boutiques, clients, fournisseurs, utilisateurs), rien à
+   référencer. Confirmé avec le porteur du projet : ajouté dans cette même
+   passe (téléchargement à sens unique, une seule fois à la connexion — pas
+   une synchronisation continue, qui reste la Phase 3/RPC catalogue).
+
+**Décision d'architecture rejetée puis remplacée, à ne pas retenter sans
+relire ce paragraphe** : la capture générique du SQL brut exécuté pendant
+une transaction a été envisagée (éviter d'écrire un événement par
+opération) puis explicitement écartée — elle demanderait de deviner, par
+coïncidence numérique, qu'un paramètre d'une requête référence
+l'identifiant généré par une requête précédente de la même transaction ; un
+faux positif corromprait silencieusement des données (ex : une quantité de
+vente qui vaudrait par hasard le même nombre que l'id d'une vente toute
+jeune). Remplacé par des événements **explicitement construits** à partir
+des lignes réellement créées (déjà obtenues via `.returning()` dans le
+code existant) — plus de code par opération, mais aucune ambiguïté.
+
+**Le problème central résolu — identifiants locaux incomparables entre
+appareils** : chaque appareil garde ses propres compteurs auto-incrémentés
+(la Phase 1 a déjà établi que ce n'est pas un proxy réseau, chaque appareil
+a sa base locale complète). Solution : colonne **`sync_id` (UUID)** ajoutée
+à `sales`/`sale_items`/`payments`/`stock_movements`/`stock_batches`/
+`customer_credits`/`loyalty_transactions`/`customers`/`expenses` — c'est
+elle qui voyage dans les événements, jamais l'id local brut ; un appareil
+qui reçoit un événement crée sa propre ligne (son propre id auto-incrémenté)
+mais lui attribue le même `sync_id`, et résout les références croisées en
+cherchant l'id local correspondant à ce `sync_id`. Tout ce qui est
+**catalogue** (variantId, locationId, storeId, userId) reste en revanche un
+id local brut, volontairement : ces tables n'ont qu'un seul écrivain (le
+Master, via l'instantané) tant que la Phase 3 n'existe pas, donc les ids
+correspondent déjà des deux côtés — pas de traduction nécessaire.
+
+**Fait** :
+- **Migration** (`id: 3` dans [client.ts](packages/database/src/client.ts)) :
+  `sync_id TEXT` + index unique partiel sur les 9 tables listées ci-dessus ;
+  3 nouvelles tables d'infrastructure
+  ([schema/sync.ts](packages/database/src/schema/sync.ts)) : `__sync_log`
+  (journal append-only faisant autorité, tenu par le Master, assigne le
+  `seq` de chaque événement), `__sync_outbox` (file d'attente persistée des
+  événements créés localement par un Worker, en attente d'envoi — survit à
+  un redémarrage de l'app), `__sync_state` (watermark `lastAppliedSeq` du
+  Worker).
+- **`packages/core/src/sync/`** (nouveau dossier) :
+  - `syncEvents.ts` — types des 5 événements (`sale.created`/
+    `stockEntry.created`/`stockLoss.created`/`stockTransfer.created`/
+    `expense.created`) + pub/sub minimal (`emitSyncEvent`/`onSyncEvent`),
+    sans dépendance réseau (apps/web s'abonne pour router vers le réseau —
+    même séparation des responsabilités que le reste du projet).
+  - `applyRemoteEvents.ts` — applique un événement reçu à la base locale,
+    idempotent (vérifie le `sync_id` racine avant d'écrire), **sans
+    vérification de permission** (la confiance vient du jeton de pairage
+    déjà validé à la connexion, pas d'une nouvelle autorisation par
+    événement — documenté explicitement dans le code, pas un oubli).
+  - `snapshot.ts` — `buildCatalogSnapshot`/`applyCatalogSnapshot` : instantané
+    du catalogue, ids recopiés tels quels côté Worker (vide d'abord les
+    tables cibles, écrasant les valeurs par défaut du bootstrap standard —
+    un Worker "reparti à zéro" a par exemple déjà sa propre "Boutique
+    principale" à remplacer, pas à cumuler).
+  - `syncStore.ts` — accès typé aux 3 tables d'infrastructure
+    (`appendToSyncLog`/`listSyncLogSince`/`getMaxSyncSeq`/`enqueueOutbox`/
+    `listPendingOutbox`/`markOutboxSent`/`getLastAppliedSeq`/`setLastAppliedSeq`).
+- **`createSale`** ([SalesService.ts](packages/core/src/services/SalesService.ts)) :
+  génère un `syncId` pour chaque ligne créée (vente, lignes, mouvements de
+  stock, paiement, créance, transactions de fidélité, nouveau client de
+  passage éventuel), construit l'événement complet, l'émet **après** le
+  commit de `withTransaction` (jamais depuis l'intérieur — un rollback
+  après émission laisserait un événement fantôme). Forme de retour
+  inchangée (`sale` toujours seul renvoyé) — aucun appelant existant à
+  modifier. `consumeStockFefo` renvoie maintenant les mouvements créés
+  (au lieu de `void`) pour que `createSale` puisse les inclure dans
+  l'événement. `redeemPoints`/`earnPoints`
+  ([LoyaltyService.ts](packages/core/src/services/LoyaltyService.ts))
+  renvoient maintenant la ligne `loyalty_transactions` créée (au lieu de
+  respectivement le client mis à jour et `void`) — aucun appelant existant
+  n'utilisait la valeur de retour, changement sans risque.
+- **Stock/Dépenses** : les 4 fonctions du point 2 ci-dessus enveloppées
+  dans `withTransaction` + construction/émission de leur événement, même
+  patron que `createSale`.
+- **`packages/network`** : 4 nouveaux types de message
+  (`sync`/`syncAck`/`snapshotRequest`/`snapshotResponse`) — **aucun
+  changement côté Rust**, le serveur relaie déjà n'importe quel message tel
+  quel (bénéfice direct du choix de conception de la Phase 1).
+- **`apps/web/src/features/network/useMasterServer.ts`** : à la réception
+  d'un `hello`, lit `lastSyncSeq` du Worker — envoie l'instantané complet
+  (jamais synchronisé) ou le rattrapage `__sync_log` postérieur (déjà
+  connu). À la réception d'un `sync` d'un Worker : applique l'événement,
+  l'ajoute à `__sync_log` (assigne son `seq`), `syncAck`, diffuse aux
+  autres Workers connectés. S'abonne aussi à `onSyncEvent` local (le PC
+  Master peut lui-même créer des ventes) pour les traiter identiquement.
+- **`useWorkerConnection.ts`** : envoie son `lastSyncSeq` dans `hello`
+  (absent = jamais synchronisé) ; vide sa file d'attente locale dès la
+  connexion établie ; s'abonne à `onSyncEvent` local pour mettre en file
+  puis envoyer immédiatement si déjà connecté ; applique les `sync`/
+  `snapshotResponse` reçus et avance son `lastAppliedSeq`.
+
+**Vérifié** : `pnpm run build` + `pnpm run test` (25 tests côté
+`packages/core`, dont les nouveaux tests purs de `syncEvents.ts` — la
+construction/pub-sub, seule partie testable en vitest sans harnais SQLite
+en mémoire, toujours absent de ce projet) ; `cargo check` (aucun changement
+Rust attendu, confirmé). **Vérification bout en bout dans le navigateur des
+5 opérations réécrites, en conditions réelles (pas juste le typecheck)** —
+important vu que ces fonctions sont au cœur de l'app pour TOUS les
+utilisateurs, pas seulement le mode réseau : création d'un produit → entrée
+de stock (20 unités, `addManualStockEntry`) → vente avec client de passage
+créé à la volée (`createSale`, VTE-2026-000001, stock 20→19) → dépense
+(`createExpense`) → transfert Surface→Réserve (`transferStock`, 5→14/19
+inchangé) → retrait pour péremption (`recordStockLoss`, 12/17). Chaque
+étape confirmée par la donnée réellement affichée (pas seulement l'absence
+d'erreur), aucune erreur console à aucune étape. Un premier passage de
+vérification UI a rencontré plusieurs faux échecs (clics simulés qui
+n'atteignaient pas le bon formulaire parmi plusieurs champs de recherche
+identiques, ou un simple `.click()` qui ne déclenchait pas le gestionnaire
+React) — corrigé en ciblant chaque formulaire par sa position DOM précise
+et en simulant la séquence complète mousedown/mouseup/click ; à garder en
+tête pour la prochaine vérification UI automatisée sur une page à
+formulaires multiples similaires.
+
+**Pas vérifiable dans cet environnement** : le scénario réseau complet
+(Worker s'apparie, reçoit l'instantané, crée une vente hors ligne,
+reconnecte, la vente apparaît sur le Master) nécessite deux appareils
+physiques — même limite que les Phases 1/1b. Seule la logique locale
+(construction/application d'événements, transactions, non-régression du
+fonctionnement Solo) a pu être vérifiée ici.
+
+**Pas fait / laissé de côté délibérément** :
+- Achats (`PurchasesService.createPurchase`) non inclus — pas nommé
+  explicitement dans le périmètre demandé (Ventes/Stock manuel/Dépenses),
+  `transferStock` si car il fait partie de "Stock".
+- Aucune synchronisation continue du catalogue après l'instantané initial
+  (Phase 3, RPC).
+- Aucune UI dédiée à l'état de synchronisation (ex. "3 ventes en attente
+  d'envoi") — uniquement la plomberie.
+- Client de passage créé pendant une vente hors ligne : traité comme
+  offline-capable (comme le reste de l'événement vente) plutôt que bloqué
+  derrière "connecté au Master" — un doublon de nom éventuel est
+  corrigible manuellement, jugé préférable à bloquer un geste de caisse
+  courant.
+
+### 2026-09-07 — Audit de sécurité du mode réseau (Phase 2) : 2 failles corrigées
+
+**Contexte** : demande explicite d'un check sécurité/fonctionnalités sur le
+chantier mode réseau (Phases 1/1b/2, jamais testé sur deux appareils
+physiques). Revue menée via `/security-review` (agents indépendants
+d'identification puis de filtrage des faux positifs, seuil de confiance
+≥8/10 pour retenir une trouvaille) sur le diff non commité — 4 pistes
+candidates identifiées, 2 confirmées à haute confiance, 2 écartées (jeton de
+pairage comparé en temps non-constant, serveur qui écoute sur `0.0.0.0` —
+toutes deux jugées non exploitables concrètement dans le modèle de menace de
+cette fonctionnalité : le jeton 128 bits cryptographiquement aléatoire reste
+la vraie frontière de sécurité dans les deux cas).
+
+**Faille 1 — événements de synchronisation appliqués sans aucune
+revalidation métier** ([applyRemoteEvents.ts](packages/core/src/sync/applyRemoteEvents.ts)) :
+une fois le jeton de pairage connu (Worker compromis, capture réseau — le
+canal est un `ws://` en clair par design), n'importe quel client WebSocket
+pouvait forger directement une trame `sync` **sans jamais passer par
+`createSale`/etc.** — `applyRemoteSyncEvent` ne vérifiait ni la cohérence
+des totaux, ni les bornes des points de fidélité (gain illimité,
+directement convertible en remise réelle via `pointsToDiscount`), ni le
+signe/la magnitude des mouvements de stock, ni même l'existence locale des
+`userId`/`storeId` référencés — un événement accepté côté Master est en plus
+rediffusé à tous les Workers connectés, propageant la corruption à tout le
+réseau. **Corrigé** : chaque fonction `apply*Created` revalide maintenant
+ses invariants avant d'écrire quoi que ce soit (voir le commentaire en tête
+de fichier) — total de vente recalculé à partir des lignes (même formules
+que `SalesService.computeSaleItemTotal`/`computeTaxAmount`, réutilisées
+directement plutôt que redupliquées), stock consommé par une vente comparé
+à la quantité réellement vendue, points de fidélité gagnés bornés par
+`total × ratio × multiplicateur_max × 3` (facteur 3 volontaire : tolère un
+`business_settings` local en retard sur le Master tant qu'il n'y a pas de
+sync continue du catalogue, Phase 3 — voir plus bas), points rachetés
+bornés par le solde actuel du client, existence locale de
+`userId`/`storeId`/`variantId`/`locationId` vérifiée, signe des mouvements
+de stock/transfert vérifié. Une revalidation qui échoue lève une erreur
+normale — comme le reste de la fonction tourne dans le `withTransaction`
+ouvert par l'appelant (`handleSync` côté Master/Worker), l'échec annule tout
+ce qui avait déjà été écrit pour cet événement, sans code de nettoyage
+manuel à ajouter. **Ce n'est pas une ré-autorisation métier complète**
+(impossible sans rejouer tout `createSale` côté récepteur, ce que le modèle
+"replay d'un fait déjà validé" évite délibérément, voir le commentaire
+existant) — l'objectif est qu'un événement forgé ne puisse plus créer de
+valeur (points, remise, stock) à partir de rien, pas de retrouver une
+authentification par événement.
+
+**Faille 2 — l'instantané catalogue transmettait `maintenanceCodeHash` à
+tout Worker fraîchement apparié** ([snapshot.ts](packages/core/src/sync/snapshot.ts)) :
+`buildCatalogSnapshot` faisait un `select()` complet sans filtre de colonne
+sur `users` et `business_settings`, donc l'instantané envoyé à tout
+nouveau Worker incluait aussi bien `passwordHash`/`pinHash` de **tous** les
+comptes (y compris Admin/Propriétaire) que `maintenanceCodeHash`. Question
+posée explicitement au porteur du projet avant de corriger, car il y a un
+vrai compromis : l'authentification reste locale/offline-first, donc un
+appareil a besoin du hash d'un compte pour que quelqu'un puisse s'y
+connecter avec ce compte — retirer `passwordHash`/`pinHash` casserait la
+fonctionnalité déjà actée en Phase 1 ("le gérant peut se connecter depuis
+un Worker avec son compte habituel", voir plus haut). Réponse retenue :
+**retirer uniquement `maintenanceCodeHash`** (+ ses 2 colonnes de
+verrouillage anti-brute-force associées, `maintenanceCodeFailedAttempts`/
+`maintenanceCodeLockedUntil`, inutiles sans le hash) — ce secret protège une
+action strictement desktop (`isDesktopTauriRuntime()`, installer une mise à
+jour), sans contrepartie fonctionnelle à perdre sur un Worker. Le risque
+résiduel de `passwordHash`/`pinHash` répliqués sur tout Worker apparié (un
+téléphone perdu/rooté exposerait les hash Argon2id de tous les comptes de
+l'entreprise, pas seulement du sien) reste donc assumé, comme les autres
+compromis déjà documentés de ce chantier (`ws://` en clair, pas de sync
+continue du catalogue...) — à revisiter si un jour un mécanisme de login
+distant (RPC vers le Master) remplace l'authentification locale sur les
+Workers.
+
+**Vérifié** : `pnpm run build` (monorepo complet) et `pnpm run test` (25
+tests `packages/core` + 18 `packages/network`) passent sans régression.
+Pas de changement Rust dans ce correctif. **Pas testé sur un vrai scénario
+réseau à deux appareils** — même limite que tout le chantier mode réseau
+depuis la Phase 1, non levée par ce correctif.
+
+**Pas fait / laissé de côté** :
+- Les 2 pistes écartées par la revue (comparaison de jeton non
+  constant-time, écoute `0.0.0.0` plutôt que la seule IP LAN) — jugées non
+  exploitables concrètement (le jeton 128 bits reste la vraie frontière de
+  sécurité dans les deux cas), mais restent des durcissements "gratuits" à
+  faible risque si quelqu'un veut les ajouter par la suite.
+- Aucune authentification par événement individuel (voir Faille 1 —
+  décision délibérée, pas un oubli).
+- `passwordHash`/`pinHash` toujours répliqués à tout Worker (voir Faille 2
+  — compromis assumé, décision explicite du porteur du projet).
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du
@@ -3046,3 +3533,22 @@ nécessite malgré tout une confirmation sur l'appareil réel.
    navigateur : toute page avec plusieurs boutons au texte identique
    ("Save"/"Enregistrer"/"Delete"/"Supprimer"...) doit être ciblée par un
    sélecteur plus précis qu'un simple filtre sur le texte.
+7. **Mode réseau (Solo/Réseau local/Cloud), Phase 3+** — voir journal
+   2026-09-04 : transport (rôle d'appareil, pairage QR, mDNS, balayage
+   réseau) et réplication ventes/mouvements de stock/dépenses (via
+   `sync_id` + `__sync_log`/`__sync_outbox`/`__sync_state`, instantané
+   initial du catalogue) sont posés. Reste à construire : **mutations
+   catalogue/paramètres en RPC au Master** (le Worker envoie sa demande,
+   le Master l'exécute avec les permissions du demandeur via les fonctions
+   `packages/core` existantes — celles-ci vérifient déjà les permissions,
+   donc pas de nouveau code d'autorisation, juste le tunnel RPC — puis
+   redistribue le résultat accepté à tous les Workers, probablement en le
+   faisant simplement transiter par le même mécanisme `__sync_log` que la
+   Phase 2 plutôt qu'un système séparé) ; import manuel d'un export Solo
+   côté Master (mentionné mais jamais construit) ; Achats
+   (`PurchasesService.createPurchase`) dans le même moule que Phase 2 si
+   besoin d'un jour ; à plus long terme, Mode Cloud (bloqué comme FNE,
+   faute d'un vrai contrat de serveur à spécifier contre). Nécessite
+   d'abord un test Master↔Worker réel sur deux appareils physiques (pas
+   vérifiable dans cet environnement, pour aucune des phases livrées à ce
+   jour) avant de considérer le chantier réseau réellement éprouvé.

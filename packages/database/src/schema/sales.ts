@@ -7,6 +7,12 @@ import { users } from "./users";
 
 export const sales = sqliteTable("sales", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  // Identité universelle indépendante de l'id local auto-incrémenté — voir
+  // CLAUDE.md, mode réseau Phase 2 : c'est elle qui circule dans les
+  // événements de synchronisation entre appareils, jamais l'id brut (deux
+  // appareils ont chacun leurs propres compteurs, sans rapport entre eux).
+  // NULL pour toute ligne créée avant l'introduction du mode réseau.
+  syncId: text("sync_id"),
   number: text("number").notNull().unique(), // ex: VTE-2026-000123
   customerId: integer("customer_id").references(() => customers.id),
   userId: integer("user_id")
@@ -28,6 +34,8 @@ export const sales = sqliteTable("sales", {
 
 export const saleItems = sqliteTable("sale_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  // Voir le commentaire sur sales.syncId.
+  syncId: text("sync_id"),
   saleId: integer("sale_id")
     .notNull()
     .references(() => sales.id),
@@ -43,6 +51,8 @@ export const saleItems = sqliteTable("sale_items", {
 
 export const payments = sqliteTable("payments", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  // Voir le commentaire sur sales.syncId.
+  syncId: text("sync_id"),
   referenceType: text("reference_type").notNull(), // 'sale' | 'purchase' | 'credit_repayment' | 'debt_payment'
   referenceId: integer("reference_id").notNull(),
   method: text("method").notNull(), // 'cash' | 'card' | 'mobile_money' | 'credit'

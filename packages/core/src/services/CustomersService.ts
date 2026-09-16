@@ -23,11 +23,17 @@ export interface CreateCustomerInput {
 // sans manage_customers ne pourrait plus saisir de nouveau client au comptoir).
 async function insertCustomer(
   db: Database,
-  input: { fullName: string; phone?: string; email?: string; address?: string },
+  input: { fullName: string; phone?: string; email?: string; address?: string; syncId?: string },
 ) {
   return db
     .insert(schema.customers)
     .values({
+      // Voir CLAUDE.md, mode réseau Phase 2 : TOUT client reçoit une identité
+      // universelle, y compris ceux créés depuis la page Clients — un client
+      // créé aujourd'hui peut être référencé demain par une vente répliquée
+      // depuis n'importe quel appareil, il faut donc toujours pouvoir le
+      // retrouver par sync_id, pas seulement les clients de passage.
+      syncId: input.syncId ?? crypto.randomUUID(),
       fullName: input.fullName,
       phone: input.phone,
       email: input.email,
@@ -101,14 +107,14 @@ export async function updateCustomer(
 // Réutilise un client existant portant exactement ce nom plutôt que d'en
 // recréer un — évite les doublons quand un même nom est soumis deux fois
 // (ex: nouvelle tentative après une vente refusée pour stock insuffisant).
-export async function findOrCreateCustomerByName(db: Database, fullName: string) {
+export async function findOrCreateCustomerByName(db: Database, fullName: string, syncId?: string) {
   const existing = await db
     .select()
     .from(schema.customers)
     .where(eq(schema.customers.fullName, fullName))
     .get();
   if (existing) return existing;
-  return insertCustomer(db, { fullName });
+  return insertCustomer(db, { fullName, syncId });
 }
 
 // Variante pour les tickets de service : le téléphone identifie plus

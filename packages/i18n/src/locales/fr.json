@@ -339,6 +339,58 @@
       "readyMessage": "Une fenêtre d'installation devrait s'ouvrir. Si Windows affiche « Windows a protégé votre PC », c'est normal pour un installeur non signé : clique sur « Informations complémentaires » puis « Exécuter quand même ». Une fois l'assistant d'installation visible, clique ci-dessous pour fermer WariBox et laisser l'installation continuer."
     }
   },
+  "network": {
+    "heading": "Mode réseau",
+    "description": "Partagez cette base avec d'autres appareils sur le même réseau local (Maître/Appareil relié), ou restez en mode Solo — un seul appareil, comme aujourd'hui.",
+    "intro": "Choisissez un rôle pour cet appareil : Maître (héberge le réseau) ou Appareil relié (rejoint un Maître déjà démarré). Aucune donnée métier ne transite encore par le réseau à ce stade.",
+    "deviceName": "Nom de cet appareil",
+    "deviceNamePlaceholder": "Ex. : Téléphone du gérant",
+    "defaultMasterName": "Maître WariBox",
+    "defaultWorkerName": "Appareil WariBox",
+    "becomeMaster": "Devenir Maître (héberger)",
+    "joinNetwork": "Rejoindre un réseau",
+    "masterDesktopOnly": "Le rôle Maître n'est disponible que sur l'application de bureau (PC).",
+    "leaveRole": "Quitter ce rôle (revenir en Solo)",
+    "master": {
+      "start": "Démarrer le serveur",
+      "starting": "Démarrage...",
+      "stop": "Arrêter le serveur",
+      "qrAlt": "QR code de pairage",
+      "connectedWorkers": "Appareils connectés ({{count}})",
+      "workerName": "Appareil",
+      "noWorkers": "Aucun appareil connecté pour le moment.",
+      "errors": {
+        "startFailed": "Impossible de démarrer le serveur réseau local."
+      }
+    },
+    "worker": {
+      "status": "État",
+      "statusLabels": {
+        "idle": "Non connecté",
+        "connecting": "Connexion en cours...",
+        "connected": "Connecté",
+        "error": "Erreur",
+        "disconnected": "Déconnecté"
+      },
+      "connecting": "Connexion au Maître en cours...",
+      "scanQr": "Scanner le QR du Maître",
+      "reconnect": "Se reconnecter",
+      "searchOnNetwork": "Rechercher le Maître sur le réseau",
+      "searching": "Recherche en cours...",
+      "host": "Adresse IP du Maître",
+      "port": "Port",
+      "token": "Jeton de pairage",
+      "connect": "Se connecter",
+      "manualEntryError": "Adresse, port et jeton sont requis.",
+      "manualMasterName": "Maître (saisi manuellement)",
+      "errors": {
+        "connectionFailed": "Impossible d'ouvrir la connexion réseau.",
+        "timeout": "Le Maître n'a pas répondu à temps.",
+        "rejected": "Connexion refusée par le Maître.",
+        "searchFailed": "Maître introuvable sur ce réseau — rescannez son QR ou saisissez son adresse manuellement."
+      }
+    }
+  },
   "storesSection": {
     "heading": "Boutiques",
     "description": "Chaque boutique a son propre stock (Réserve/Surface de vente) et ses propres ventes — les produits, clients et fournisseurs restent partagés entre toutes les boutiques.",

@@ -1,8 +1,9 @@
 import type { Database } from "@gestion-boutique/database";
-import { schema } from "@gestion-boutique/database";
+import { schema, withTransaction } from "@gestion-boutique/database";
 import { and, desc, eq, gte, like, lte, or } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
+import { buildSyncEvent, emitSyncEvent, type ExpenseCreatedEventPayload } from "../sync/syncEvents";
 
 // Suggestions pour un datalist en UI — la catégorie reste un champ texte
 // libre (pas de table de référence rigide) pour ne pas bloquer un gérant sur
@@ -43,38 +44,72 @@ export async function createExpense(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "manage_expenses");
-  const expense = await db
-    .insert(schema.expenses)
-    .values({
-      category: input.category,
+
+  // Enveloppé dans withTransaction (Phase 2, voir CLAUDE.md) — jusqu'ici
+  // cette fonction ne l'était pas ; prérequis pour répliquer dépense+
+  // paiement miroir comme un tout atomique.
+  const { expense, event } = await withTransaction(async () => {
+    const expenseSyncId = crypto.randomUUID();
+    const expense = await db
+      .insert(schema.expenses)
+      .values({
+        syncId: expenseSyncId,
+        category: input.category,
+        amount: input.amount,
+        expenseDate: input.expenseDate,
+        note: input.note,
+        paymentMethod: input.paymentMethod,
+        userId: input.userId,
+        storeId: input.storeId,
+      })
+      .returning()
+      .get();
+
+    const paymentSyncId = crypto.randomUUID();
+    const paymentCreatedAt = `${input.expenseDate} 12:00:00`;
+    await db.insert(schema.payments).values({
+      syncId: paymentSyncId,
+      referenceType: "expense",
+      referenceId: expense.id,
+      method: input.paymentMethod ?? "cash",
       amount: input.amount,
-      expenseDate: input.expenseDate,
-      note: input.note,
-      paymentMethod: input.paymentMethod,
-      userId: input.userId,
+      receivedBy: input.userId,
       storeId: input.storeId,
-    })
-    .returning()
-    .get();
+      createdAt: paymentCreatedAt,
+    });
 
-  await db.insert(schema.payments).values({
-    referenceType: "expense",
-    referenceId: expense.id,
-    method: input.paymentMethod ?? "cash",
-    amount: input.amount,
-    receivedBy: input.userId,
-    storeId: input.storeId,
-    createdAt: `${input.expenseDate} 12:00:00`,
+    await logAction(db, {
+      userId: input.userId ?? null,
+      action: "create_expense",
+      entity: "expense",
+      entityId: expense.id,
+      metadata: { category: expense.category, amount: expense.amount, expenseDate: expense.expenseDate },
+    });
+
+    const payload: ExpenseCreatedEventPayload = {
+      expense: {
+        syncId: expenseSyncId,
+        category: expense.category,
+        amount: expense.amount,
+        expenseDate: expense.expenseDate,
+        note: expense.note,
+        paymentMethod: expense.paymentMethod,
+        userId: expense.userId,
+        storeId: expense.storeId,
+      },
+      payment: {
+        syncId: paymentSyncId,
+        method: input.paymentMethod ?? "cash",
+        amount: input.amount,
+        storeId: input.storeId ?? null,
+        createdAt: paymentCreatedAt,
+      },
+    };
+
+    return { expense, event: buildSyncEvent("expense.created", payload) };
   });
 
-  await logAction(db, {
-    userId: input.userId ?? null,
-    action: "create_expense",
-    entity: "expense",
-    entityId: expense.id,
-    metadata: { category: expense.category, amount: expense.amount, expenseDate: expense.expenseDate },
-  });
-
+  emitSyncEvent(event);
   return expense;
 }
 

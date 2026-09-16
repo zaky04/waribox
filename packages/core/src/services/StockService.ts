@@ -1,8 +1,15 @@
 import type { Database } from "@gestion-boutique/database";
-import { schema } from "@gestion-boutique/database";
+import { schema, withTransaction } from "@gestion-boutique/database";
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { DEFAULT_LOCATIONS, type DefaultLocationKey } from "../domain/stock";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
+import {
+  buildSyncEvent,
+  emitSyncEvent,
+  type StockEntryCreatedEventPayload,
+  type StockLossCreatedEventPayload,
+  type StockTransferCreatedEventPayload,
+} from "../sync/syncEvents";
 
 // Idempotent : crée les emplacements par défaut (Réserve / Surface de vente)
 // d'une boutique s'ils n'existent pas encore, puis retourne leurs ids. Le
@@ -63,12 +70,16 @@ export interface RecordMovementInput {
   referenceId?: number;
   batchId?: number;
   userId?: number;
+  // Voir CLAUDE.md, mode réseau Phase 2 — généré si omis (appel hors
+  // contexte de synchronisation, ex. tests, achats).
+  syncId?: string;
 }
 
 export async function recordMovement(db: Database, input: RecordMovementInput) {
   return db
     .insert(schema.stockMovements)
     .values({
+      syncId: input.syncId ?? crypto.randomUUID(),
       variantId: input.variantId,
       locationId: input.locationId,
       quantityDelta: input.quantityDelta,
@@ -127,84 +138,147 @@ export async function transferStock(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "manage_stock");
-  const batches = await db
-    .select()
-    .from(schema.stockBatches)
-    .where(
-      and(
-        eq(schema.stockBatches.variantId, input.variantId),
-        eq(schema.stockBatches.locationId, input.fromLocationId),
-      ),
-    );
-  const remainingMap = await getBatchRemainingMap(db, batches.map((b) => b.id));
-  const withRemaining = batches
-    .map((batch) => ({ batch, remaining: remainingMap.get(batch.id) ?? 0 }))
-    .filter((b) => b.remaining > 0)
-    .sort((a, b) => {
-      if (!a.batch.expiryDate && !b.batch.expiryDate) return a.batch.id - b.batch.id;
-      if (!a.batch.expiryDate) return 1;
-      if (!b.batch.expiryDate) return -1;
-      return a.batch.expiryDate.localeCompare(b.batch.expiryDate);
-    });
 
-  let toTransfer = input.quantity;
-  for (const { batch, remaining } of withRemaining) {
-    if (toTransfer <= 0) break;
-    const take = Math.min(toTransfer, remaining);
-    if (take <= 0) continue;
+  // Enveloppé dans withTransaction (Phase 2, voir CLAUDE.md) — jusqu'ici
+  // cette fonction ne l'était pas (gap déjà noté dans les pistes), ce qui
+  // veut aussi dire que c'est un prérequis pour pouvoir répliquer son
+  // résultat comme un tout atomique.
+  const event = await withTransaction(async () => {
+    const batches = await db
+      .select()
+      .from(schema.stockBatches)
+      .where(
+        and(
+          eq(schema.stockBatches.variantId, input.variantId),
+          eq(schema.stockBatches.locationId, input.fromLocationId),
+        ),
+      );
+    const remainingMap = await getBatchRemainingMap(db, batches.map((b) => b.id));
+    const withRemaining = batches
+      .map((batch) => ({ batch, remaining: remainingMap.get(batch.id) ?? 0 }))
+      .filter((b) => b.remaining > 0)
+      .sort((a, b) => {
+        if (!a.batch.expiryDate && !b.batch.expiryDate) return a.batch.id - b.batch.id;
+        if (!a.batch.expiryDate) return 1;
+        if (!b.batch.expiryDate) return -1;
+        return a.batch.expiryDate.localeCompare(b.batch.expiryDate);
+      });
 
-    await recordMovement(db, {
-      variantId: input.variantId,
-      locationId: input.fromLocationId,
-      quantityDelta: -take,
-      movementType: "transfer",
-      batchId: batch.id,
-      userId: input.userId,
-    });
+    const legs: StockTransferCreatedEventPayload["legs"] = [];
 
-    // Nouveau lot par transfert plutôt que de chercher à en réutiliser un
-    // existant à destination — reste simple, et le nombre de lots créés
-    // demeure proportionnel aux mouvements réels.
-    const destBatch = await createBatch(db, {
-      variantId: input.variantId,
-      locationId: input.toLocationId,
-      lotNumber: batch.lotNumber ?? undefined,
-      expiryDate: batch.expiryDate ?? undefined,
-      quantity: take,
-      unitCost: batch.unitCost ?? undefined,
-    });
+    let toTransfer = input.quantity;
+    for (const { batch, remaining } of withRemaining) {
+      if (toTransfer <= 0) break;
+      const take = Math.min(toTransfer, remaining);
+      if (take <= 0) continue;
 
-    await recordMovement(db, {
-      variantId: input.variantId,
-      locationId: input.toLocationId,
-      quantityDelta: take,
-      movementType: "transfer",
-      batchId: destBatch.id,
-      userId: input.userId,
-    });
+      const sourceMovement = await recordMovement(db, {
+        variantId: input.variantId,
+        locationId: input.fromLocationId,
+        quantityDelta: -take,
+        movementType: "transfer",
+        batchId: batch.id,
+        userId: input.userId,
+      });
 
-    toTransfer -= take;
-  }
+      // Nouveau lot par transfert plutôt que de chercher à en réutiliser un
+      // existant à destination — reste simple, et le nombre de lots créés
+      // demeure proportionnel aux mouvements réels.
+      const destBatch = await createBatch(db, {
+        variantId: input.variantId,
+        locationId: input.toLocationId,
+        lotNumber: batch.lotNumber ?? undefined,
+        expiryDate: batch.expiryDate ?? undefined,
+        quantity: take,
+        unitCost: batch.unitCost ?? undefined,
+      });
 
-  // Reliquat sans lot (produit non suivi par lot, ou lots insuffisants) —
-  // comme avant l'introduction du suivi par lot, aucune rupture de
-  // compatibilité pour les produits qui n'en ont jamais eu.
-  if (toTransfer > 0) {
-    await recordMovement(db, {
-      variantId: input.variantId,
-      locationId: input.fromLocationId,
-      quantityDelta: -toTransfer,
-      movementType: "transfer",
-      userId: input.userId,
-    });
-    await recordMovement(db, {
-      variantId: input.variantId,
-      locationId: input.toLocationId,
-      quantityDelta: toTransfer,
-      movementType: "transfer",
-      userId: input.userId,
-    });
-  }
+      const destMovement = await recordMovement(db, {
+        variantId: input.variantId,
+        locationId: input.toLocationId,
+        quantityDelta: take,
+        movementType: "transfer",
+        batchId: destBatch.id,
+        userId: input.userId,
+      });
+
+      legs.push({
+        sourceMovement: {
+          syncId: sourceMovement.syncId!,
+          variantId: sourceMovement.variantId,
+          locationId: sourceMovement.locationId,
+          batchSyncId: batch.syncId,
+          quantityDelta: sourceMovement.quantityDelta,
+          movementType: sourceMovement.movementType,
+          referenceType: sourceMovement.referenceType,
+        },
+        destMovement: {
+          syncId: destMovement.syncId!,
+          variantId: destMovement.variantId,
+          locationId: destMovement.locationId,
+          batchSyncId: destBatch.syncId,
+          quantityDelta: destMovement.quantityDelta,
+          movementType: destMovement.movementType,
+          referenceType: destMovement.referenceType,
+        },
+        destBatch: {
+          syncId: destBatch.syncId!,
+          variantId: destBatch.variantId,
+          locationId: destBatch.locationId,
+          lotNumber: destBatch.lotNumber,
+          expiryDate: destBatch.expiryDate,
+          quantity: destBatch.quantity,
+          unitCost: destBatch.unitCost,
+        },
+      });
+
+      toTransfer -= take;
+    }
+
+    // Reliquat sans lot (produit non suivi par lot, ou lots insuffisants) —
+    // comme avant l'introduction du suivi par lot, aucune rupture de
+    // compatibilité pour les produits qui n'en ont jamais eu.
+    if (toTransfer > 0) {
+      const sourceMovement = await recordMovement(db, {
+        variantId: input.variantId,
+        locationId: input.fromLocationId,
+        quantityDelta: -toTransfer,
+        movementType: "transfer",
+        userId: input.userId,
+      });
+      const destMovement = await recordMovement(db, {
+        variantId: input.variantId,
+        locationId: input.toLocationId,
+        quantityDelta: toTransfer,
+        movementType: "transfer",
+        userId: input.userId,
+      });
+      legs.push({
+        sourceMovement: {
+          syncId: sourceMovement.syncId!,
+          variantId: sourceMovement.variantId,
+          locationId: sourceMovement.locationId,
+          batchSyncId: null,
+          quantityDelta: sourceMovement.quantityDelta,
+          movementType: sourceMovement.movementType,
+          referenceType: sourceMovement.referenceType,
+        },
+        destMovement: {
+          syncId: destMovement.syncId!,
+          variantId: destMovement.variantId,
+          locationId: destMovement.locationId,
+          batchSyncId: null,
+          quantityDelta: destMovement.quantityDelta,
+          movementType: destMovement.movementType,
+          referenceType: destMovement.referenceType,
+        },
+      });
+    }
+
+    return buildSyncEvent<StockTransferCreatedEventPayload>("stockTransfer.created", { legs });
+  });
+
+  emitSyncEvent(event);
 }
 
 export interface StockLevel {
@@ -323,10 +397,16 @@ export interface CreateBatchInput {
   // pour une entrée de stock manuelle (voir le commentaire sur la colonne
   // dans schema/stock.ts).
   unitCost?: number;
+  // Voir CLAUDE.md, mode réseau Phase 2 — généré si omis.
+  syncId?: string;
 }
 
 export async function createBatch(db: Database, input: CreateBatchInput) {
-  return db.insert(schema.stockBatches).values(input).returning().get();
+  return db
+    .insert(schema.stockBatches)
+    .values({ ...input, syncId: input.syncId ?? crypto.randomUUID() })
+    .returning()
+    .get();
 }
 
 export interface ManualStockEntryInput {
@@ -351,27 +431,55 @@ export async function addManualStockEntry(
 ) {
   requirePermission(actingPermissions, "manage_stock");
 
-  let batchId: number | undefined;
-  if (input.expiryDate) {
-    const batch = await createBatch(db, {
+  // Enveloppé dans withTransaction (Phase 2, voir CLAUDE.md) — prérequis
+  // pour répliquer lot+mouvement comme un seul événement atomique.
+  const event = await withTransaction(async () => {
+    let batchId: number | undefined;
+    let batchPayload: StockEntryCreatedEventPayload["batch"];
+    if (input.expiryDate) {
+      const batch = await createBatch(db, {
+        variantId: input.variantId,
+        locationId: input.locationId,
+        lotNumber: input.lotNumber,
+        expiryDate: input.expiryDate,
+        quantity: input.quantity,
+      });
+      batchId = batch.id;
+      batchPayload = {
+        syncId: batch.syncId!,
+        variantId: batch.variantId,
+        locationId: batch.locationId,
+        lotNumber: batch.lotNumber,
+        expiryDate: batch.expiryDate,
+        quantity: batch.quantity,
+      };
+    }
+
+    const movement = await recordMovement(db, {
       variantId: input.variantId,
       locationId: input.locationId,
-      lotNumber: input.lotNumber,
-      expiryDate: input.expiryDate,
-      quantity: input.quantity,
+      quantityDelta: input.quantity,
+      movementType: "adjustment",
+      referenceType: "manual",
+      batchId,
+      userId: input.userId,
     });
-    batchId = batch.id;
-  }
 
-  await recordMovement(db, {
-    variantId: input.variantId,
-    locationId: input.locationId,
-    quantityDelta: input.quantity,
-    movementType: "adjustment",
-    referenceType: "manual",
-    batchId,
-    userId: input.userId,
+    return buildSyncEvent<StockEntryCreatedEventPayload>("stockEntry.created", {
+      batch: batchPayload,
+      movement: {
+        syncId: movement.syncId!,
+        variantId: movement.variantId,
+        locationId: movement.locationId,
+        batchSyncId: batchPayload?.syncId ?? null,
+        quantityDelta: movement.quantityDelta,
+        movementType: movement.movementType,
+        referenceType: movement.referenceType,
+      },
+    });
   });
+
+  emitSyncEvent(event);
 }
 
 export interface RecordStockLossInput {
@@ -390,14 +498,34 @@ export async function recordStockLoss(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "manage_stock");
-  await recordMovement(db, {
-    variantId: input.variantId,
-    locationId: input.locationId,
-    quantityDelta: -input.quantity,
-    movementType: "loss",
-    referenceType: input.reason,
-    userId: input.userId,
+
+  // Enveloppé dans withTransaction (Phase 2, voir CLAUDE.md) — une seule
+  // écriture ici, mais la cohérence de convention avec les autres
+  // opérations réplicables importe plus que la brièveté.
+  const event = await withTransaction(async () => {
+    const movement = await recordMovement(db, {
+      variantId: input.variantId,
+      locationId: input.locationId,
+      quantityDelta: -input.quantity,
+      movementType: "loss",
+      referenceType: input.reason,
+      userId: input.userId,
+    });
+
+    return buildSyncEvent<StockLossCreatedEventPayload>("stockLoss.created", {
+      movement: {
+        syncId: movement.syncId!,
+        variantId: movement.variantId,
+        locationId: movement.locationId,
+        batchSyncId: null,
+        quantityDelta: movement.quantityDelta,
+        movementType: movement.movementType,
+        referenceType: movement.referenceType,
+      },
+    });
   });
+
+  emitSyncEvent(event);
 }
 
 // Utilisé par Journaux pour afficher le numéro de lot d'un mouvement de
@@ -448,7 +576,16 @@ export interface ConsumeStockInput {
 // reliquat éventuel (produit non suivi en péremption, ou lots insuffisants)
 // part sans batchId, comme avant l'introduction du suivi par lot — aucune
 // rupture de compatibilité pour les produits sans lot.
-export async function consumeStockFefo(db: Database, input: ConsumeStockInput): Promise<void> {
+//
+// Renvoie les mouvements créés (voir CLAUDE.md, mode réseau Phase 2) : une
+// vente peut consommer plusieurs lots pour une seule ligne, `createSale` a
+// besoin de tous les mouvements réellement produits pour construire son
+// événement de synchronisation.
+export async function consumeStockFefo(
+  db: Database,
+  input: ConsumeStockInput,
+): Promise<Array<typeof schema.stockMovements.$inferSelect>> {
+  const movements: Array<typeof schema.stockMovements.$inferSelect> = [];
   const batches = await db
     .select()
     .from(schema.stockBatches)
@@ -472,30 +609,36 @@ export async function consumeStockFefo(db: Database, input: ConsumeStockInput): 
     if (toConsume <= 0) break;
     const take = Math.min(toConsume, remaining);
     if (take <= 0) continue;
-    await recordMovement(db, {
-      variantId: input.variantId,
-      locationId: input.locationId,
-      quantityDelta: -take,
-      movementType: input.movementType,
-      referenceType: input.referenceType,
-      referenceId: input.referenceId,
-      batchId: batch.id,
-      userId: input.userId,
-    });
+    movements.push(
+      await recordMovement(db, {
+        variantId: input.variantId,
+        locationId: input.locationId,
+        quantityDelta: -take,
+        movementType: input.movementType,
+        referenceType: input.referenceType,
+        referenceId: input.referenceId,
+        batchId: batch.id,
+        userId: input.userId,
+      }),
+    );
     toConsume -= take;
   }
 
   if (toConsume > 0) {
-    await recordMovement(db, {
-      variantId: input.variantId,
-      locationId: input.locationId,
-      quantityDelta: -toConsume,
-      movementType: input.movementType,
-      referenceType: input.referenceType,
-      referenceId: input.referenceId,
-      userId: input.userId,
-    });
+    movements.push(
+      await recordMovement(db, {
+        variantId: input.variantId,
+        locationId: input.locationId,
+        quantityDelta: -toConsume,
+        movementType: input.movementType,
+        referenceType: input.referenceType,
+        referenceId: input.referenceId,
+        userId: input.userId,
+      }),
+    );
   }
+
+  return movements;
 }
 
 export interface ExpiringBatch {

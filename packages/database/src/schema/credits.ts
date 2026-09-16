@@ -7,6 +7,8 @@ import { stores } from "./stores";
 
 export const customerCredits = sqliteTable("customer_credits", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  // Voir CLAUDE.md, mode réseau Phase 2 — même rôle que sales.syncId.
+  syncId: text("sync_id"),
   customerId: integer("customer_id")
     .notNull()
     .references(() => customers.id),

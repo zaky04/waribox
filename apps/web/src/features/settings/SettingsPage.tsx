@@ -31,6 +31,7 @@ import {
 } from "../../components/sharedStyles";
 import { saveGeneratedFile } from "../../lib/saveFile";
 import { useAuth } from "../auth/useAuth";
+import { NetworkSection } from "../network/NetworkSection";
 import { StoresSection } from "../stores/StoresSection";
 import { runGoogleDriveBackup, runLocalBackup } from "./backupRunner";
 import { resizeImageToDataUrl } from "./imageUtils";
@@ -707,6 +708,10 @@ export function SettingsPage() {
         </label>
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.multiStore.hint")}</p>
         {multiStoreEnabled && <StoresSection />}
+      </div>
+
+      <div style={cardStyle}>
+        <NetworkSection />
       </div>
 
       <div style={cardStyle}>
