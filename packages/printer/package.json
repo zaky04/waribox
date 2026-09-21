@@ -8,7 +8,7 @@
   "dependencies": {
     "@gestion-boutique/i18n": "workspace:*",
     "jsbarcode": "^3.11.6",
-    "jspdf": "^2.5.2"
+    "jspdf": "^4.2.1"
   },
   "devDependencies": {
     "@gestion-boutique/config": "workspace:*",

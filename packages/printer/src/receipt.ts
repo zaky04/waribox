@@ -23,6 +23,11 @@ export interface ReceiptData {
   date: string;
   cashierName: string;
   customerName?: string;
+  // FNE (Facture Normalisée Électronique, Côte d'Ivoire) — voir CLAUDE.md.
+  // `fneStatus` absent = la FNE n'a jamais été activée pour cette vente,
+  // aucune ligne affichée. Voir packages/core/src/fne/.
+  fneStatus?: "pending" | "certified" | "failed";
+  fneReference?: string;
   lines: ReceiptLine[];
   subtotal: number;
   discount: number;
@@ -74,6 +79,13 @@ export async function buildReceipt(data: ReceiptData): Promise<Uint8Array> {
   builder.text(t("documents.receipt.cashier", { name: data.cashierName })).newline();
   if (data.customerName) {
     builder.text(t("documents.common.customer", { name: data.customerName })).newline();
+  }
+  if (data.fneStatus === "certified" && data.fneReference) {
+    builder.text(t("documents.receipt.fneCertified", { reference: data.fneReference })).newline();
+  } else if (data.fneStatus === "pending") {
+    builder.text(t("documents.receipt.fnePending")).newline();
+  } else if (data.fneStatus === "failed") {
+    builder.text(t("documents.receipt.fneFailed")).newline();
   }
 
   builder.align("left");

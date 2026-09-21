@@ -10,6 +10,8 @@ import { earnPoints, pointsToDiscount, redeemPoints } from "./LoyaltyService";
 import { getSettings } from "./SettingsService";
 import { consumeStockFefo, getStockLevels } from "./StockService";
 import { buildSyncEvent, emitSyncEvent, type SaleCreatedEventPayload, type SyncStockMovementPayload } from "../sync/syncEvents";
+import { enqueueFneCertification } from "../fne/fneQueue";
+import { emitFneQueued } from "../fne/fneEvents";
 
 async function nextSaleNumber(db: Database): Promise<string> {
   const row = await db.select({ count: sql<number>`COUNT(*)` }).from(schema.sales).get();
@@ -74,7 +76,7 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
   // deux valider la même dernière unité de stock disponible avant qu'aucune
   // n'écrive, ou une erreur en cours de route laisserait une vente à moitié
   // enregistrée (ex : stock décrémenté sans paiement inséré).
-  const { sale, event } = await withTransaction(async () => {
+  const { sale, event, fneEnabled } = await withTransaction(async () => {
     const levels = await getStockLevels(db);
     for (const item of input.items) {
       const available = levels
@@ -115,7 +117,8 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
         ? (await db.select({ syncId: schema.customers.syncId }).from(schema.customers).where(eq(schema.customers.id, customerId)).get())?.syncId ?? null
         : null;
 
-    const ratio = customerId ? (await getSettings(db)).loyaltyPointsRatio : 0;
+    const settings = await getSettings(db);
+    const ratio = customerId ? settings.loyaltyPointsRatio : 0;
 
     if (input.redeemPoints) {
       if (!customerId) {
@@ -309,10 +312,17 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
       loyaltyEarn: loyaltyEarnEvent,
     };
 
-    return { sale, event: buildSyncEvent("sale.created", payload) };
+    return { sale, event: buildSyncEvent("sale.created", payload), fneEnabled: settings.fneEnabled };
   });
 
   emitSyncEvent(event);
+  // Voir CLAUDE.md, FNE — mise en file d'attente, jamais bloquant pour la
+  // vente elle-même (déjà commitée et retournée à ce stade). La tentative de
+  // certification réelle est faite ailleurs (apps/web/src/features/fne).
+  if (fneEnabled) {
+    await enqueueFneCertification(db, sale.id);
+    emitFneQueued();
+  }
   return sale;
 }
 

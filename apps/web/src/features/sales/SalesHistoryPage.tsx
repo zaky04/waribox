@@ -153,6 +153,8 @@ export function SalesHistoryPage() {
         date: sale.createdAt,
         cashierName: userName(sale.userId),
         customerName: customerName(sale.customerId) ?? undefined,
+        fneStatus: (sale.fneStatus as ReceiptData["fneStatus"]) ?? undefined,
+        fneReference: sale.fneReference ?? undefined,
         lines: items.map((item) => ({
           label: variantLabel(item.variantId),
           quantity: item.quantity,

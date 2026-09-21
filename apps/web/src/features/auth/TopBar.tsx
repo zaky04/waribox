@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLanguageStore } from "../../stores/language";
 import { useThemeStore } from "../../stores/theme";
+import { IconMoon, IconSun } from "../../components/icons";
 import { StoreSwitcher } from "../stores/StoreSwitcher";
 import { ChangePasswordModal } from "./ChangePasswordModal";
 import { useAuth } from "./useAuth";
@@ -109,6 +110,9 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
           <button
             onClick={toggleTheme}
             style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
               background: "transparent",
               border: "1px solid var(--color-border)",
               color: "var(--color-text)",
@@ -117,6 +121,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
               cursor: "pointer",
             }}
           >
+            {theme === "dark" ? <IconMoon size={15} /> : <IconSun size={15} />}
             {theme === "dark" ? t("topbar.themeDark") : t("topbar.themeLight")}
           </button>
           <button

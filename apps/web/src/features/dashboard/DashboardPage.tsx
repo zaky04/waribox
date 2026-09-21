@@ -19,6 +19,15 @@ import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } 
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { badgeStyle, inputStyle, pageStyle } from "../../components/sharedStyles";
+import {
+  IconBag,
+  IconBox,
+  IconCoins,
+  IconCreditCard,
+  IconFileText,
+  IconHourglass,
+  IconShield,
+} from "../../components/icons";
 import { useAuth } from "../auth/useAuth";
 
 type ServiceOrder = typeof schema.serviceOrders.$inferSelect;
@@ -60,7 +69,7 @@ function KpiCard({
   value,
   children,
 }: {
-  icon: string;
+  icon: ReactNode;
   iconColor: string;
   title: string;
   value: ReactNode;
@@ -84,13 +93,11 @@ function KpiCard({
       <div
         style={{
           position: "absolute",
-          top: -30,
-          right: -30,
-          width: 100,
-          height: 100,
-          borderRadius: "50%",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 3,
           background: iconColor,
-          opacity: 0.12,
         }}
       />
       <div
@@ -99,10 +106,10 @@ function KpiCard({
           height: 44,
           borderRadius: "var(--radius-md)",
           background: iconColor,
+          color: "#fff",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: 22,
         }}
       >
         {icon}
@@ -244,7 +251,12 @@ export function DashboardPage() {
         }}
       >
         {canViewReports && (
-          <KpiCard icon="💰" iconColor="#0ea5e9" title={t("dashboard.todaySales")} value={todayRevenue.toFixed(0)}>
+          <KpiCard
+            icon={<IconCoins size={22} />}
+            iconColor="#0ea5e9"
+            title={t("dashboard.todaySales")}
+            value={todayRevenue.toFixed(0)}
+          >
             <span style={{ color: "var(--color-text-muted)" }}>
               {t("dashboard.saleCount", { count: todaySaleCount })}
             </span>
@@ -253,7 +265,7 @@ export function DashboardPage() {
 
         {canViewOwnSales && (
           <KpiCard
-            icon="🧾"
+            icon={<IconFileText size={22} />}
             iconColor="#22c55e"
             title={t("dashboard.mySalesToday")}
             value={myTodayRevenue.toFixed(0)}
@@ -265,7 +277,7 @@ export function DashboardPage() {
         )}
 
         {canViewStock && (
-          <KpiCard icon="📦" iconColor="#f59e0b" title={t("dashboard.lowStock")} value={lowStock.length}>
+          <KpiCard icon={<IconBox size={22} />} iconColor="#f59e0b" title={t("dashboard.lowStock")} value={lowStock.length}>
             <span style={badgeStyle(lowStock.length > 0 ? "warning" : "ok")}>
               {lowStock.length > 0 ? t("dashboard.lowStockWarning") : t("dashboard.lowStockOk")}
             </span>
@@ -274,7 +286,7 @@ export function DashboardPage() {
 
         {canViewStock && (
           <KpiCard
-            icon="⏳"
+            icon={<IconHourglass size={22} />}
             iconColor="#f97316"
             title={t("dashboard.expiringSoon", { days: EXPIRY_WARNING_DAYS })}
             value={expiringBatches.length}
@@ -286,11 +298,16 @@ export function DashboardPage() {
         )}
 
         {canViewServiceOrders && (
-          <KpiCard icon="🧺" iconColor="#818cf8" title={t("dashboard.readyOrders")} value={readyOrderCount} />
+          <KpiCard icon={<IconBag size={22} />} iconColor="#818cf8" title={t("dashboard.readyOrders")} value={readyOrderCount} />
         )}
 
         {canViewCredits && (
-          <KpiCard icon="💳" iconColor="#f43f5e" title={t("dashboard.overdueCredits")} value={overdueCredits.length}>
+          <KpiCard
+            icon={<IconCreditCard size={22} />}
+            iconColor="#f43f5e"
+            title={t("dashboard.overdueCredits")}
+            value={overdueCredits.length}
+          >
             <span style={badgeStyle(overdueCredits.length > 0 ? "warning" : "ok")}>
               {overdueCredits.length > 0 ? t("dashboard.overdueCreditsWarning") : t("dashboard.overdueCreditsNone")}
             </span>
@@ -299,7 +316,7 @@ export function DashboardPage() {
 
         {canManageBackups && (
           <KpiCard
-            icon="🛡️"
+            icon={<IconShield size={22} />}
             iconColor="#64748b"
             title={t("dashboard.backup")}
             value={lastBackupAt ? lastBackupAt.slice(0, 10) : t("dashboard.backupNever")}

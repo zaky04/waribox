@@ -25,6 +25,7 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { IconX } from "../../components/icons";
 import { saveGeneratedFile } from "../../lib/saveFile";
 import { useAuth } from "../auth/useAuth";
 
@@ -406,9 +407,9 @@ export function PurchasesPage() {
                       <td style={tdStyle}>
                         <button
                           onClick={() => removeLine(line.variantId)}
-                          style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
+                          style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer", display: "flex" }}
                         >
-                          ✕
+                          <IconX size={16} />
                         </button>
                       </td>
                     </tr>

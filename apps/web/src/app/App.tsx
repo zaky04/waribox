@@ -4,7 +4,9 @@ import { schema } from "@gestion-boutique/database";
 import { useEffect, useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { UpdateBanner } from "../components/UpdateBanner";
+import { applyAppearance } from "../lib/appearance";
 import { useLanguageStore } from "../stores/language";
+import { useThemeStore } from "../stores/theme";
 import { BusinessHeader } from "./BusinessHeader";
 import { AccountingPage } from "../features/accounting/AccountingPage";
 import { AuthGate } from "../features/auth/AuthGate";
@@ -27,6 +29,7 @@ import { SalesPage } from "../features/sales/SalesPage";
 import { ServiceOrdersPage } from "../features/serviceOrders/ServiceOrdersPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { useBackupScheduler } from "../features/settings/useBackupScheduler";
+import { useFneQueue } from "../features/fne/useFneQueue";
 import { StockPage } from "../features/stock/StockPage";
 import { SuppliersPage } from "../features/suppliers/SuppliersPage";
 import { UsersPage } from "../features/users/UsersPage";
@@ -55,7 +58,12 @@ function MainContent() {
   const [autoLockMinutes, setAutoLockMinutes] = useState(0);
   const [multiStoreEnabled, setMultiStoreEnabled] = useState(false);
   const [stores, setStores] = useState<Store[]>([]);
+  const [sectorType, setSectorType] = useState<string | null>(null);
+  const [appearanceAccentColor, setAppearanceAccentColor] = useState<string | null>(null);
+  const [appearanceShape, setAppearanceShape] = useState<string | null>(null);
+  const theme = useThemeStore((s) => s.theme);
   useBackupScheduler();
+  useFneQueue(db);
   useIdleLock(autoLockMinutes);
 
   // Repart sur Accueil à chaque changement d'identité (connexion normale,
@@ -87,8 +95,20 @@ function MainContent() {
       });
       setMultiStoreEnabled(settings.multiStoreEnabled);
       setStores(storeRows);
+      setSectorType(settings.sectorType ?? null);
+      setAppearanceAccentColor(settings.appearanceAccentColor ?? null);
+      setAppearanceShape(settings.appearanceShape ?? null);
     });
   }, [db, tab]);
+
+  // Séparé de l'effet ci-dessus (qui ne tourne qu'au changement d'onglet) :
+  // --color-accent-soft/--bg-glow ont une opacité différente en clair/sombre
+  // (voir lib/appearance.ts), donc cette application doit aussi se
+  // redéclencher quand `theme` change seul, sans attendre un changement
+  // d'onglet ni une relecture de business_settings.
+  useEffect(() => {
+    applyAppearance(appearanceAccentColor, appearanceShape, theme);
+  }, [appearanceAccentColor, appearanceShape, theme]);
 
   return (
     <>
@@ -99,7 +119,7 @@ function MainContent() {
       <div style={{ position: "sticky", top: "env(safe-area-inset-top)", zIndex: 10, background: "var(--color-bg)" }}>
         <TopBar multiStoreEnabled={multiStoreEnabled} stores={stores} />
         <BusinessHeader businessName={businessName} logoDataUrl={logoDataUrl} />
-        <Nav active={tab} onChange={setTab} enabledModules={enabledModules} />
+        <Nav active={tab} onChange={setTab} enabledModules={enabledModules} sectorType={sectorType} />
       </div>
       {tab === "dashboard" && <DashboardPage />}
       {tab === "sales" && enabledModules.sales && <SalesPage />}

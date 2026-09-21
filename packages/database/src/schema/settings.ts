@@ -101,4 +101,27 @@ export const businessSettings = sqliteTable("business_settings", {
   // remises programmées aux ventes — désactivé par défaut (même convention
   // que multiStoreEnabled/enableSyscohada).
   enablePromotions: integer("enable_promotions", { mode: "boolean" }).notNull().default(false),
+  // Facture Normalisée Électronique (Côte d'Ivoire, DGI) — voir CLAUDE.md.
+  // Coquille activable : reste false tant que le commerçant n'a pas obtenu
+  // un accès DGI et saisi une vraie clé API. fneApiKey stockée en clair,
+  // même convention que googleDriveClientId/maintenanceCodeHash ci-dessus.
+  fneEnabled: integer("fne_enabled", { mode: "boolean" }).notNull().default(false),
+  fneEnvironment: text("fne_environment").notNull().default("test"), // 'test' | 'prod'
+  fneApiKey: text("fne_api_key"),
+  // Fournie par la DGI à la validation du compte production — l'URL de test
+  // est une constante en dur côté code (voir packages/core/src/fne/fneTypes.ts),
+  // pas besoin de la stocker.
+  fneApiBaseUrl: text("fne_api_base_url"),
+  // Identifiants attribués par la DGI à l'inscription — sans rapport avec
+  // les stores/stockLocations internes de WariBox.
+  fneEstablishment: text("fne_establishment"),
+  fnePointOfSale: text("fne_point_of_sale"),
+  // Apparence (voir Paramètres → Apparence) — couleur d'accent et forme des
+  // coins, indépendantes de `sectorType` ci-dessus (qui ne pilote plus que
+  // l'icône/libellé de l'onglet "Produits", voir Nav.tsx). `null` = thème
+  // par défaut (valeurs de :root dans index.css), une valeur explicite
+  // écrase l'accent partout où l'app utilise déjà var(--color-accent)/
+  // var(--gradient-accent)/etc. (voir apps/web/src/lib/appearance.ts).
+  appearanceAccentColor: text("appearance_accent_color"),
+  appearanceShape: text("appearance_shape"), // 'rounded' (défaut) | 'square'
 });

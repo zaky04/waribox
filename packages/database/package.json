@@ -10,7 +10,7 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
-    "drizzle-orm": "^0.38.0",
+    "drizzle-orm": "^0.45.2",
     "@sqlite.org/sqlite-wasm": "^3.53.0-build1"
   },
   "devDependencies": {

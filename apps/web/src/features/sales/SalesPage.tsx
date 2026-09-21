@@ -26,6 +26,7 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { IconCamera, IconX } from "../../components/icons";
 import { openExternalUrl } from "../../lib/openExternalUrl";
 import { saveGeneratedFile } from "../../lib/saveFile";
 import { buildReceiptWhatsAppMessage, buildWhatsAppLink } from "../../lib/whatsapp";
@@ -340,6 +341,12 @@ export function SalesPage() {
         date: new Date().toLocaleString("fr-FR"),
         cashierName: user.fullName,
         customerName,
+        // "pending" plutôt qu'une relecture de `sale.fneStatus` (qui reste
+        // encore `null` à cet instant — la ligne n'est marquée "pending" par
+        // `enqueueFneCertification` qu'APRÈS le retour de `createSale`, voir
+        // CLAUDE.md) : on sait déjà ici, de façon fiable, si la FNE va
+        // s'appliquer à cette vente.
+        fneStatus: businessSettings?.fneEnabled ? "pending" : undefined,
         lines: cart.map((line) => ({
           label: line.productName,
           quantity: line.quantity,
@@ -532,6 +539,9 @@ export function SalesPage() {
                   <button
                     onClick={() => setShowCameraScanner(true)}
                     style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
                       padding: "4px 10px",
                       borderRadius: 6,
                       border: "1px solid var(--color-border)",
@@ -542,6 +552,7 @@ export function SalesPage() {
                       whiteSpace: "nowrap",
                     }}
                   >
+                    <IconCamera size={14} />
                     {t("sales.scanCamera")}
                   </button>
                 )}
@@ -672,9 +683,9 @@ export function SalesPage() {
                         <td style={tdStyle}>
                           <button
                             onClick={() => removeLine(line.variantId)}
-                            style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
+                            style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer", display: "flex" }}
                           >
-                            ✕
+                            <IconX size={16} />
                           </button>
                         </td>
                       </tr>

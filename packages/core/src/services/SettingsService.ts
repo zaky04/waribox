@@ -75,6 +75,16 @@ export interface UpdateSettingsInput {
   syscohadaDefaultExpenseAccountLabel?: string;
   lowStockAlertPhone?: string;
   enablePromotions?: boolean;
+  fneEnabled?: boolean;
+  fneEnvironment?: string;
+  fneApiKey?: string;
+  fneApiBaseUrl?: string;
+  fneEstablishment?: string;
+  fnePointOfSale?: string;
+  // `null` réinitialise explicitement au thème par défaut (même convention
+  // que `logoDataUrl` ci-dessus) — `undefined` laisse le champ inchangé.
+  appearanceAccentColor?: string | null;
+  appearanceShape?: string | null;
 }
 
 export async function updateSettings(db: Database, input: UpdateSettingsInput, actingPermissions: PermissionSet) {

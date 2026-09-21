@@ -38,6 +38,7 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { IconX } from "../../components/icons";
 import { useAuth } from "../auth/useAuth";
 import { PrinterPanel } from "../printer/PrinterPanel";
 import { usePrinter } from "../printer/usePrinter";
@@ -578,9 +579,9 @@ export function ServiceOrdersPage() {
                           <td style={tdStyle}>
                             <button
                               onClick={() => removeLine(line.key)}
-                              style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
+                              style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer", display: "flex" }}
                             >
-                              ✕
+                              <IconX size={16} />
                             </button>
                           </td>
                         </tr>

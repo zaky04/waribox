@@ -9,7 +9,9 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
+import { applyAppearance } from "../../lib/appearance";
 import { useSessionStore } from "../../stores/session";
+import { useThemeStore } from "../../stores/theme";
 import { LoginScreen } from "./LoginScreen";
 import { ModuleSetupScreen } from "./ModuleSetupScreen";
 import { PinLockScreen } from "./PinLockScreen";
@@ -25,6 +27,22 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
   const [bootstrapped, setBootstrapped] = useState(false);
   const [modulesConfigured, setModulesConfigured] = useState(false);
+  const theme = useThemeStore((s) => s.theme);
+
+  // Indépendant de `user`/`ready` ci-dessous — l'Apparence (voir Paramètres)
+  // doit aussi s'appliquer sur les écrans de connexion/configuration/PIN,
+  // pas seulement une fois connecté (MainContent la réapplique aussi, sans
+  // effet indésirable : même calcul, juste redondant à la transition).
+  useEffect(() => {
+    let cancelled = false;
+    getSettings(db).then((settings) => {
+      if (cancelled) return;
+      applyAppearance(settings.appearanceAccentColor ?? null, settings.appearanceShape ?? null, theme);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [db, theme]);
 
   useEffect(() => {
     // Ne revérifie que tant qu'aucune session n'est active — une fois connecté,

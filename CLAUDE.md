@@ -3492,6 +3492,481 @@ depuis la Phase 1, non levée par ce correctif.
 - `passwordHash`/`pinHash` toujours répliqués à tout Worker (voir Faille 2
   — compromis assumé, décision explicite du porteur du projet).
 
+### 2026-09-19 — Veille bugs/sécurité/fonctionnalités/concurrence + mise à jour des dépendances vulnérables
+
+**Contexte** : demande explicite d'une analyse "prochaines étapes" couvrant
+bugs, sécurité, fonctionnalités et concurrence, avec une vraie recherche web
+(pas de mémoire figée) — rapport complet publié en Artifact ("Prochaines
+étapes WariBox"). Suite immédiate : demande de mettre à jour les dépendances
+vulnérables identifiées par cette veille.
+
+**`pnpm audit --prod` (jamais lancé sur ce projet avant cette session)** :
+31 avis (2 critiques, 11 élevés, 15 modérés, 3 faibles), tous dans 3
+dépendances de rendu de documents figées depuis 2023 — `jspdf@2.5.2`,
+`xlsx@0.18.5` (+ `dompurify` transitif via `jspdf`), `drizzle-orm@0.38.4`.
+Vérifié par lecture du code réel qu'aucune n'était exploitable dans l'usage
+actuel (les chemins vulnérables — `doc.html()` de jsPDF, `sql.raw`/
+`sql.identifier` de Drizzle — ne sont appelés nulle part dans le projet),
+mais rester aussi loin en retard prive le projet des correctifs accumulés
+depuis, pas seulement ceux listés par l'audit.
+
+**Fait** :
+- `drizzle-orm` : `^0.38.0` → `^0.45.2` (le dist-tag `latest` réel — les
+  versions `1.0.0-beta`/`rc` visibles sur npm sont une série séparée non
+  encore stable, pas la cible) dans `packages/core`, `packages/database`,
+  `apps/web`.
+- `jspdf` : `^2.5.2` → `^4.2.1` dans `packages/printer`/`packages/reports` —
+  saut de deux versions majeures, mais confirmé sans rupture d'API pour un
+  usage navigateur (les seuls changements cassants documentés dans les
+  notes de version 3.0.0/4.0.0 concernent la dépréciation d'IE et une
+  restriction d'accès disque côté Node.js, aucun des deux ne concerne ce
+  projet — recherche faite avant de lancer la mise à jour, pas après coup).
+- `xlsx` : **volontairement pas touché** — SheetJS ne publie plus de
+  correctif sur npm depuis des années (dernier `0.18.5`), seulement sur son
+  propre CDN hors du registre standard ; aucune version npm plus récente
+  n'existe à installer. La faille annoncée (ReDoS) ne s'applique qu'au
+  **parsing** d'un fichier `.xlsx` — confirmé par `Grep` que
+  `packages/reports` n'appelle jamais `XLSX.read`/`XLSX.parse`, seulement
+  l'écriture (`buildWorkbookBlob`) — donc non exploitable ici tel quel.
+  Documenté explicitement plutôt que laissé en silence, pour qu'une future
+  session ne suppose pas un simple oubli.
+
+**Vérifié** : `pnpm install` puis `pnpm run build` (monorepo complet) et
+`pnpm run test` (43 tests) passent sans erreur ni régression de type. Audit
+relancé après coup : passé de 31 à **2 avis** (les 2 restants, tous les
+deux `xlsx`, ci-dessus expliqués). **Vérification navigateur réelle** —
+pas seulement le typecheck — vu que jsPDF change de 2 versions majeures :
+compte de test créé, export PDF du rapport Ventes intercepté
+(`URL.createObjectURL`) et décodé en octets bruts — blob `%PDF-1.3` valide
+de 3579 octets, texte "Rapport des ventes" confirmé lisible en clair dans
+le flux PDF généré, aucune erreur console. Confirme que `buildReportPdf`
+(le chemin commun à 7 des 9 rapports) fonctionne à l'identique après la
+mise à jour.
+
+**Pas fait / laissé de côté** :
+- `xlsx` reste sur la version vulnérable (ReDoS non exploitable en
+  écriture seule, voir ci-dessus) — à reconsidérer si `packages/reports`
+  gagne un jour une fonctionnalité de lecture/import Excel, qui
+  réactiverait le chemin de code concerné.
+- Pas de vérification navigateur de chaque document généré individuellement
+  (reçu ESC/POS, étiquettes, devis, export Excel) — seul le chemin PDF
+  partagé le plus utilisé (`buildReportPdf`) a été vérifié en conditions
+  réelles ; les autres partagent la même dépendance `jspdf` mise à jour et
+  n'ont subi aucune modification de code propre, risque jugé faible.
+- Le reste du rapport de veille (mode réseau jamais testé à 2 appareils,
+  isolation multi-boutique de la réplication, FNE, positionnement
+  concurrentiel) reste à traiter — voir l'Artifact "Prochaines étapes
+  WariBox" et la section *Prochaines pistes* ci-dessous.
+
+### 2026-09-19 — FNE : coquille complète activable depuis Paramètres, contrat HTTP déduit du SDK tiers vérifié contre le vrai bac à sable DGI
+
+**Contexte** : suite directe de la veille du même jour — demande explicite
+de construire la coquille FNE complète (activable depuis Paramètres) plutôt
+que d'attendre indéfiniment un accès DGI. Plan détaillé écrit et approuvé
+avant codage (voir `.claude/plans/` au moment d'écrire cette entrée) après
+lecture directe du code source du SDK PHP tiers non-officiel
+[PRODESTIC/fne-sdk-php](https://github.com/PRODESTIC/fne-sdk-php)
+(`HttpClient.php`, `InvoiceService.php`, `Utils/Constants.php`,
+`Models/Invoice.php`/`InvoiceItem.php`) — pas seulement son README,
+nettement plus précis : URL sandbox en dur
+(`http://54.247.95.108/ws`, en clair), endpoint
+`POST /external/invoices/sign` (vente et achat), auth `Authorization:
+Bearer <clé>`, forme JSON exacte de la requête/réponse.
+
+**Décisions actées avant de coder** (voir le plan pour le détail complet) :
+1. Seules les **ventes** sont certifiées — l'endpoint d'achat du SDK est
+   spécifiquement pour des bordereaux agricoles/coopératives, pas
+   `PurchasesService` générique.
+2. **Client de passage sans téléphone/email** (la FNE exige les deux, même
+   B2C) : repli sur le téléphone/email de l'**entreprise elle-même**
+   (`business_settings`, déjà toujours renseignés) plutôt qu'inventer une
+   donnée — pas de nouveau champ.
+3. **CORS/contenu mixte** : ajout de `tauri-plugin-http` (appel HTTP natif
+   Rust, cross-platform desktop+Android, pas de bloc `[target...]` dédié
+   contrairement à `android-fs`) utilisé quand `isTauriRuntime()`, repli
+   `fetch()` classique sinon — la section reste visible partout (pas de
+   restriction desktop-only), la fiabilité réelle dépend de la plateforme.
+4. **Offline-first préservé** : une vente se termine et s'imprime toujours
+   immédiatement, jamais bloquée par la certification — même principe que
+   `__sync_outbox` du mode réseau (Phase 2).
+5. Deux conversions documentées comme "best-effort, à ajuster" dans
+   `fnePayload.ts` : remise WariBox = montant absolu → FNE attend un
+   pourcentage 0-100 ; taux de TVA numérique → code FNE
+   (`TVA`/`TVAB`/`TVAC`/`TVAD`, mapping par seuil).
+
+**Fait** :
+- **Migration `id: 4`** : `business_settings` gagne `fne_enabled`/
+  `fne_environment`/`fne_api_key`/`fne_api_base_url`/`fne_establishment`/
+  `fne_point_of_sale` ; `sales` gagne `fne_status`/`fne_reference`/
+  `fne_ncc`/`fne_qr_token`/`fne_balance_sticker`/`fne_error`/
+  `fne_certified_at` (toutes nullables — une vente créée avant activation
+  garde `fne_status = NULL` pour toujours) ; nouvelle table `__fne_queue`
+  (même esprit que `__sync_outbox`, plus simple).
+- **`packages/core/src/fne/`** (logique pure, zéro réseau, même séparation
+  que `sync/`) : `fneTypes.ts` (contrat déduit), `fnePayload.ts`
+  (`buildFneInvoicePayload` + les 2 conversions documentées, réutilise le
+  libellé `syscohadaLabels.walkInCustomer` déjà existant pour le client de
+  passage), `fneQueue.ts` (accès `__fne_queue`, même patron que
+  `syncStore.ts`), `fneEvents.ts` (pub/sub minimal `emitFneQueued`/
+  `onFneQueued`, émis seulement après écriture DB confirmée — jamais de
+  course avec la ligne réellement insérée). `SalesService.createSale` :
+  seul ajout, une vérification `settings.fneEnabled` (settings déjà lu pour
+  la fidélité, juste plus jamais conditionné à l'existence d'un client) +
+  `enqueueFneCertification`/`emitFneQueued` après le commit.
+- **`apps/web/src/features/fne/`** (I/O réelle, même séparation que
+  `features/network/`) : `fneHttp.ts` (`certifyInvoice`, bascule
+  `@tauri-apps/plugin-http` vs `fetch` natif), `useFneQueue.ts` (monté une
+  fois dans `App.tsx`/`MainContent`, comme `useBackupScheduler` — traite la
+  file au montage, sur `onFneQueued`, sur l'évènement `online`, et toutes
+  les 5 min en filet de sécurité).
+- **Tauri** : `tauri-plugin-http = "2"` (Cargo.toml, dépendances communes),
+  `.plugin(tauri_plugin_http::init())` (lib.rs), permission `http:default`
+  avec portée large (`capabilities/default.json`, même raisonnement déjà
+  établi pour `opener:allow-open-path` — l'URL est saisie par l'utilisateur
+  lui-même, pas un contenu non fiable).
+- **Paramètres** : nouvelle section "Facturation électronique (FNE)",
+  même style que la section Google Drive (champ secret + bouton d'action) —
+  interrupteur, environnement Test/Production, clé API, Établissement/
+  Point de vente (identifiants DGI, texte libre), bouton **"Tester la
+  connexion"** (payload minimal factice, affiche le message renvoyé même en
+  cas d'échec — voir vérification ci-dessous), compteur de ventes en
+  attente + bouton "Réessayer maintenant" (déclenche `emitFneQueued()`).
+- **Reçus** (`ReceiptData`, `receipt.ts`/`receiptPdf.ts`) : ligne ajoutée
+  juste après le bloc client existant — "Facture certifiée FNE :
+  {référence}"/"En attente de certification FNE"/"Certification FNE en
+  attente (nouvelle tentative automatique)" selon le statut, rien si la FNE
+  n'a jamais été activée pour cette vente. `SalesPage.tsx` (reçu
+  immédiat, statut déduit de `businessSettings.fneEnabled` plutôt que
+  relu depuis `sale.fneStatus`, encore `null` à cet instant précis — voir
+  commentaire dans le code) et `SalesHistoryPage.tsx` (régénération,
+  statut relu depuis la ligne `sales` stockée) mis à jour.
+- **Pas de QR visuel** dans cette passe (texte de référence seulement) —
+  demanderait d'ajouter une dépendance QR à `packages/printer`, hors
+  périmètre, amélioration ultérieure possible.
+
+**Obstacle rencontré et résolu — compilation Rust bloquée par une politique
+Windows** : `cargo check` a échoué à deux reprises sur la nouvelle chaîne
+de dépendances de `tauri-plugin-http` (`rustls`, via `reqwest`) avec
+`Une stratégie de contrôle d'application a bloqué ce fichier. (os error
+4551)` — Smart App Control (ou équivalent) de Windows refusant d'exécuter
+le binaire de build-script fraîchement compilé. Pas quelque chose à
+contourner par le code — signalé explicitement au porteur du projet plutôt
+que de tenter un contournement, résolu de son côté (probablement une
+autorisation Windows), confirmé par un nouveau `cargo check` réussi
+ensuite.
+
+**Vérifié, de bout en bout, dans le navigateur — pas seulement le
+typecheck** :
+1. `pnpm run build` + `pnpm run test` (43 tests) passent.
+2. `cargo check` puis **build desktop release complet**
+   (`pnpm run build:desktop`, MSI + NSIS produits) — confirme que la
+   nouvelle chaîne de dépendances compile et que la permission
+   `http:default` est un identifiant ACL Tauri v2 valide (une syntaxe
+   fausse aurait fait échouer ce build avec une erreur de validation de
+   schéma, même précédent que `android-fs` en août).
+3. **Bouton "Tester la connexion" appelé contre le vrai bac à sable DGI**
+   (`http://54.247.95.108/ws`, PWA/navigateur, pas Tauri — donc via le repli
+   `fetch()` natif, pas le plugin) avec une fausse clé : réponse HTTP 401
+   réelle reçue et lisible côté JS (`"Le serveur FNE a répondu (bon
+   signe) : Invalid API Key"`) — preuve concrète, sans attendre un vrai
+   accès DGI, que l'URL/l'endpoint/le format d'authentification déduits du
+   SDK tiers sont corrects, et qu'aucun blocage CORS/contenu mixte ne s'est
+   produit depuis ce contexte (les deux origines `http://localhost:5173` et
+   `http://54.247.95.108` sont non sécurisées, donc pas de contenu mixte
+   ici ; le bac à sable DGI semble en plus envoyer des en-têtes CORS
+   permissifs, un point positif inattendu pour la fiabilité en PWA pure).
+4. **Scénario complet réel** : produit + 20 unités en stock → FNE activée
+   (clé factice) et enregistrée → vente anonyme au comptant
+   (VTE-2026-000001, aucun client — exerce exactement le repli
+   client-de-passage) → reçu PDF généré et décodé octet par octet
+   (`URL.createObjectURL` intercepté) : confirmé "En attente de
+   certification" + "FNE" présents juste après l'en-tête, avant le
+   séparateur — le texte de repli entreprise a bien été utilisé côté FNE
+   sans jamais apparaître sur le reçu (le reçu n'affiche le client que si
+   un nom est fourni, comportement inchangé). Compteur Paramètres confirmé
+   à **"1 vente en attente de certification — réessayer maintenant"**
+   (pluralisation `_one` correcte) : la file d'attente a bien tenté une
+   certification automatique en arrière-plan (`useFneQueue`, déclenché par
+   `onFneQueued` juste après la vente), reçu la même erreur 401 réelle, et
+   correctement laissé la ligne en file pour une nouvelle tentative
+   (échec réseau/serveur = retriable, pas un abandon). Aucune erreur
+   console inattendue à aucune étape (seules les 2 erreurs 401 attendues).
+
+**Pas fait / hors périmètre de cette passe** (voir le plan pour le détail) :
+- Pas de génération d'avoir (`/refund`) — `RefundsService.ts` non touché.
+- Pas de QR visuel sur les reçus (texte de référence seulement).
+- Achats (`PurchasesService`) non concernés.
+- Mapping taxe/remise non vérifié contre un vrai compte DGI (best-effort
+  documenté dans `fnePayload.ts`, changement localisé si à ajuster).
+- Interaction avec le mode réseau (un Worker qui certifierait ses propres
+  ventes) non testée — dépend du test à 2 appareils toujours en attente
+  pour tout le chantier réseau (voir piste 7 ci-dessous).
+- **La coquille est fonctionnelle et vérifiée contre le vrai bac à sable,
+  mais reste non testée avec une vraie clé API DGI** — le jour où le
+  porteur du projet obtient un accès réel, le bouton "Tester la connexion"
+  dira immédiatement si le contrat déduit tient tel quel ou nécessite un
+  ajustement (localisé à `fnePayload.ts`/`fneTypes.ts`).
+
+### 2026-09-20 — Refonte visuelle : icônes SVG + couleur par secteur d'activité (Phase 1)
+
+**Contexte** : retour explicite du porteur du projet — l'interface jugée
+"trop monotone, pas assez personnalisable" pour s'adapter à différentes
+activités (boutique, pharmacie, restaurant, pressing...). Après un premier
+avis honnête (l'interface est fonctionnelle mais visuellement neutre, tous
+les emoji comme icônes fonctionnelles n'aident pas), une maquette de
+concept a été publiée en Artifact (design non-codé) pour aligner la
+direction avant de toucher au vrai code — approuvée dans son principe, avec
+deux décisions de cadrage actées explicitement via question posée au
+porteur du projet avant de coder :
+1. **Le menu reste une barre du haut** (pas de passage à un sidebar — jugé
+   trop risqué pour cette passe, réécrirait toute la structure de page déjà
+   retravaillée sur plusieurs sessions pour bien fonctionner de 320px à
+   desktop, voir les nombreuses entrées responsive d'août ci-dessus).
+2. **Le secteur se choisit uniquement dans Paramètres**, pas à
+   l'onboarding — un compte existant sans secteur choisi garde le thème
+   actuel (bleu/indigo) sans aucun changement de comportement.
+
+**Ce qui a rendu cette passe peu risquée malgré son ampleur visuelle** :
+l'app utilisait déjà un système de variables CSS pour l'accent
+(`--color-accent`/`--color-accent-2`/`--gradient-accent`/
+`--color-accent-soft`/`--bg-glow`, voir [index.css](apps/web/src/app/index.css)),
+repris directement par `primaryButtonStyle`
+([sharedStyles.ts](apps/web/src/components/sharedStyles.ts)) et l'état actif
+de [Nav.tsx](apps/web/src/app/Nav.tsx) — surcharger ces variables par
+secteur (exactement comme `:root[data-theme="light"]` le fait déjà pour le
+thème clair) propage donc la couleur à tous les boutons/onglets actifs/
+anneaux de focus de l'app **sans toucher à leur code** — confirmé en
+vérification navigateur sur les pastilles de Nav, le bouton "Enregistrer"
+de Paramètres, et même les sous-onglets de Rapports (Ventes/Marges/...),
+qui n'ont eux non plus rien eu besoin d'être modifiés.
+
+**Fait** :
+- `business_settings.sectorType` existait déjà en base (colonne + support
+  dans `UpdateSettingsInput`, jamais exposé côté UI) — **aucune migration
+  nécessaire**.
+- Nouveau [sectorTypes.ts](apps/web/src/features/settings/sectorTypes.ts) :
+  liste curatée à 4 valeurs (`boutique`/`pharmacie`/`restaurant`/`pressing`)
+  + `isSectorType()`. Pas de 5e option "Autre" — une valeur vide/`null`
+  équivaut déjà à "pas de secteur" et garde le thème actuel.
+- [SettingsPage.tsx](apps/web/src/features/settings/SettingsPage.tsx) :
+  nouveau champ "Secteur d'activité" (`<select>`) dans la section
+  Entreprise. **Piège évité explicitement** : contrairement aux autres
+  champs texte de cette section (`businessName.trim() || undefined` — une
+  valeur vide ne touche pas le champ existant), `sectorType` est envoyé
+  **sans** ce filtre — "Aucun (thème par défaut)" (valeur `""`) doit
+  pouvoir écraser un secteur déjà choisi, pas être traité comme "champ non
+  renseigné, ignorer".
+- [index.css](apps/web/src/app/index.css) : 4 nouveaux blocs
+  `:root[data-sector="..."]` (ambre/terracotta boutique, sarcelle
+  pharmacie, rouge tomate restaurant, violet/prune pressing), chacun avec
+  son pendant `:root[data-theme="light"][data-sector="..."]` pour
+  `--color-accent-soft` (même split dark/light déjà appliqué à
+  `--color-danger`/etc.). `data-sector` appliqué dans l'effet déjà
+  existant de `MainContent` ([App.tsx](apps/web/src/app/App.tsx)) qui
+  charge déjà `getSettings(db)` à chaque changement d'onglet — même
+  mécanique que `data-theme` ([stores/theme.ts](apps/web/src/stores/theme.ts)),
+  mais lu depuis `business_settings` (donnée métier partagée entre
+  appareils) plutôt que `localStorage`. **Limite héritée du même patron
+  déjà connu pour les autres champs de cet effet** (voir StoreSwitcher,
+  journal du 2026-08-12) : l'accent ne se met à jour qu'au changement
+  d'onglet suivant la sauvegarde, pas instantanément sur la page
+  Paramètres elle-même — confirmé pendant la vérification, comportement
+  volontairement pas retouché (cohérent avec le reste de l'app).
+- Nouveau [icons.tsx](apps/web/src/components/icons.tsx) : 29 icônes trait
+  fin (`viewBox` 24×24, `stroke="currentColor"`, sans remplissage — la
+  couleur suit toujours l'élément parent) remplaçant les emoji utilisés
+  comme icônes fonctionnelles.
+- [Nav.tsx](apps/web/src/app/Nav.tsx) : `TABS` gagne `icon` (composant) et
+  `group?: "sales" | "relations" | "finance" | "system"` par entrée
+  (`dashboard` hors groupe ; `reports` rattaché à `finance` plutôt qu'un
+  groupe à lui seul, pour éviter un cluster orphelin d'un seul item dans le
+  menu mobile). `.nav-full` (barre du haut) affiche icône + texte par
+  pastille, sans séparateur de groupe (pour ne pas toucher au `flexWrap`
+  déjà calibré sur plusieurs sessions de vérification responsive).
+  `.nav-compact` (menu déroulant mobile, seuil 1024px — voir journal du
+  2026-08-17 "Nav mobile") affiche en plus un intitulé de section entre les
+  clusters. Nouvel onglet "Produits" adaptatif : icône ET libellé changent
+  selon `sectorType` (pilule/"Médicaments" pharmacie, fourchette/"Plats &
+  boissons" restaurant, cintre/"Services" pressing, boîte/"Produits" par
+  défaut) via une table `PRODUCTS_TAB_OVERRIDE` — `Nav` reçoit `sectorType`
+  en prop (déjà chargé dans `MainContent`, un seul passage supplémentaire).
+- [DashboardPage.tsx](apps/web/src/features/dashboard/DashboardPage.tsx) :
+  `KpiCard`'s prop `icon` passe de `string` (emoji) à `ReactNode` — 7
+  points d'appel mis à jour, **la couleur par carte (`iconColor`) reste
+  inchangée** (différenciation sémantique déjà utile, pas remplacée par
+  l'accent de secteur). Le cercle translucide décoratif remplacé par un
+  bandeau de 3px en haut de carte, même `iconColor` — changement local à
+  `KpiCard`, `cardStyle` partagé par 28 autres fichiers **non touché**.
+- Autres emoji fonctionnels remplacés (inventaire confirmé par
+  exploration) : [TopBar.tsx](apps/web/src/features/auth/TopBar.tsx)
+  (bouton thème, `IconMoon`/`IconSun`), [SalesPage.tsx](apps/web/src/features/sales/SalesPage.tsx)
+  (bouton scanner, `IconCamera`), 4 boutons "✕" de suppression de ligne
+  (SalesPage/ServiceOrdersPage/QuotesPage/PurchasesPage, `IconX`), hamburger
+  du menu mobile (`IconMenu`). `topbar.themeDark`/`themeLight`/
+  `sales.scanCamera` perdent leur préfixe emoji dans les deux langues.
+  **Hors périmètre, volontairement** : emoji décoratifs à l'intérieur de
+  messages traduits (WhatsApp, etc.) — pas des icônes d'interface.
+- i18n : `nav.groups.*` (4×2), `nav.productsPharmacie`/`productsRestaurant`/
+  `productsPressing` (×2), `settings.business.sectorType`/`sectorTypeHint`/
+  `sectorNone`/`sectorBoutique`/`sectorPharmacie`/`sectorRestaurant`/
+  `sectorPressing` (×2) — chantier bilinguisme FR/EN maintenu intégral.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : compte de test créé,
+zéro changement visuel confirmé sans secteur choisi (accent `#38bdf8`
+d'origine), puis les 4 secteurs activés un par un depuis Paramètres —
+accent confirmé propagé (pastille d'onglet actif, bouton "Enregistrer",
+sous-onglets de Rapports) après le changement d'onglet suivant la
+sauvegarde, sans rechargement de page ; icône ET libellé de l'onglet
+"Produits" confirmés adaptés pour les 3 secteurs qui le personnalisent
+(Médicaments/Plats & boissons/Services) ; retour à "Aucun" confirmé
+restaurer l'accent d'origine exactement. Bascule thème clair confirmée sur
+le secteur pharmacie : `--color-accent-soft` recalculé et lisible dans les
+deux thèmes. Responsive re-testé à 375px (menu compact avec groupes et
+icônes, accent violet sur la pastille active, aucun débordement horizontal
+— `scrollWidth` = 375) et 1280px (barre complète avec icônes, deux lignes,
+aucune régression du `flexWrap` déjà calibré). Icônes camera/croix
+confirmées visuellement sur la page Ventes (bouton "Scanner (caméra)",
+panier). Aucune erreur console à aucune étape. `pnpm run build` et les 43
+tests unitaires passent.
+
+**Pas fait / hors périmètre de cette passe** (voir le plan, conservé dans
+`.claude/plans/`, pour le détail complet) :
+- Pas de sidebar (décision actée ci-dessus) — resterait une passe séparée
+  si demandée après avoir vu ce premier résultat en conditions réelles.
+- Pas de sélection du secteur à l'onboarding (décision actée) — seulement
+  dans Paramètres.
+- Pas de nouvelle typographie (Manrope/Public Sans de la maquette de
+  concept) — la police système actuelle n'est pas touchée dans cette passe,
+  pour limiter le risque de régression visuelle sur les largeurs de colonne
+  de tableau déjà calibrées.
+- `cardStyle`/`badgeStyle` partagés (28 fichiers) non modifiés — seul le
+  style local de `KpiCard` (Dashboard) change.
+- Pas de test avec un vrai catalogue de produits par secteur (icônes/
+  couleurs uniquement, pas de contenu ou de disposition de page spécifique
+  au secteur au-delà de l'onglet "Produits") — hors périmètre de cette
+  Phase 1, à considérer si demandé après retour terrain.
+
+### 2026-09-20 — Apparence personnalisable : couleur libre + forme, découplée du secteur d'activité
+
+**Contexte** : suite immédiate de la Phase 1 (icônes + couleur par secteur,
+entrée précédente) — retour du porteur du projet après avoir testé : "je ne
+vois pas la partie apparence... je veux pouvoir changer l'apparence
+(couleur, forme, style) de toute l'appli". Le sélecteur de secteur ne
+proposait que 4 couleurs fixes, pas un vrai réglage d'apparence. Question
+de cadrage posée avant de coder : thèmes prédéfinis seuls, couleur libre
+seule, ou les deux — porteur du projet a choisi **les deux**.
+
+**Décision d'architecture** : plutôt que de garder deux mécanismes
+parallèles (blocs CSS statiques par secteur + un futur picker libre),
+remplacement complet du mécanisme de couleur de la Phase 1 par un seul
+système unifié — les "thèmes prédéfinis" ne sont que des boutons qui
+écrivent une couleur connue dans le même champ que le picker libre
+`<input type="color">`, pas une notion séparée. `sectorType` est
+**découplé de la couleur** : il ne pilote plus que l'icône/libellé de
+l'onglet "Produits" (déjà indépendant dans Nav.tsx depuis la Phase 1),
+tandis qu'une toute nouvelle section "Apparence" pilote couleur et forme.
+
+**Fait** :
+- **Migration `id: 5`** : `business_settings.appearanceAccentColor` (hex,
+  nullable) + `appearanceShape` (`"rounded"`/`"square"`, nullable) —
+  `null` = thème par défaut pour les deux.
+- **[index.css](apps/web/src/app/index.css)** : les 4 blocs
+  `:root[data-sector="..."]` de la Phase 1 **retirés** — une couleur libre
+  ne se prête plus à des blocs CSS statiques par valeur possible.
+- **[lib/color.ts](apps/web/src/lib/color.ts)** (nouveau) : conversion
+  hex↔HSL/RGB sans dépendance externe — `lighten()` (dérive
+  `--color-accent-2` depuis la seule couleur choisie par l'utilisateur) et
+  `toRgba()` (accent-soft/bg-glow).
+- **[lib/appearance.ts](apps/web/src/lib/appearance.ts)** (nouveau) :
+  `applyAppearance(accentColor, shape, theme)` — pose
+  `--color-accent`/`--color-accent-2`/`--gradient-accent`/
+  `--color-accent-soft`/`--bg-glow`/`--radius-md`/`--radius-lg` **en style
+  inline sur `<html>`** (l'emporte sur toute règle CSS, y compris
+  `:root[data-theme="light"]`, donc fonctionne dans les deux thèmes sans
+  bloc dédié) ou les retire (retour aux valeurs par défaut de index.css).
+  `theme` doit être repassé par l'appelant à chaque fois (pas lu en
+  interne) car l'opacité d'accent-soft/bg-glow diffère clair/sombre —
+  **appelé à deux endroits** : l'effet déjà existant de `MainContent`
+  ([App.tsx](apps/web/src/app/App.tsx), post-connexion) et un nouvel effet
+  dans [AuthGate.tsx](apps/web/src/features/auth/AuthGate.tsx) (indépendant
+  de `user`, donc actif dès l'écran de connexion/PIN/configuration — sans
+  lui, "toute l'appli" aurait exclu l'écran de connexion, repéré comme un
+  vrai trou avant de livrer).
+- **[appearancePresets.ts](apps/web/src/features/settings/appearancePresets.ts)** :
+  7 couleurs curatées (les 4 de la Phase 1 renommées Ambre/Sarcelle/Tomate/
+  Prune + 3 nouvelles Émeraude/Rose/Ardoise), plus `DEFAULT_ACCENT_COLOR`
+  pour la valeur de départ du `<input type="color">`.
+- **[SettingsPage.tsx](apps/web/src/features/settings/SettingsPage.tsx)** :
+  nouvelle carte "Apparence" (entre Entreprise et Modules actifs) — rangée
+  de pastilles cliquables (7 presets + "Par défaut" + un `<input
+  type="color">` habillé en pastille pour "Personnalisé"), 2 boutons
+  Arrondi/Carré. **Aperçu en direct** : chaque clic appelle aussi
+  `applyAppearance(...)` immédiatement (avant Enregistrer), contrairement
+  au secteur d'activité (qui n'apparaît qu'au changement d'onglet suivant
+  — limite déjà documentée, héritée du même effet `[db, tab]`) — repéré
+  comme nécessaire dès le départ : un réglage d'apparence sans aperçu
+  immédiat serait frustrant à utiliser. Un aller sans Enregistrer se
+  réinitialise normalement à la prochaine lecture des paramètres (même
+  comportement que tout champ non sauvegardé ailleurs dans l'app).
+  `settings.business.sectorTypeHint` (fr/en) mis à jour pour refléter le
+  découplage (ne mentionne plus la couleur).
+
+**Piège technique rencontré et résolu — verrous OPFS lors de la remise à
+zéro du compte de test** : la base de test du panneau navigateur intégré
+contenait un compte d'une session précédente ("krat") sans mot de passe
+connu. Une tentative de suppression du dossier `.gestion-boutique-vfs` via
+`navigator.storage.getDirectory()` **depuis la page de l'app elle-même**
+échoue silencieusement/partiellement : le worker SQLite de la page a des
+`SyncAccessHandle` ouverts sur les fichiers du pool, donc `removeEntry`
+soit lève `NoModificationAllowedError`, soit "réussit" sans réellement
+libérer le stockage (la donnée survit à un rechargement complet, y compris
+fermeture/réouverture d'onglet — un simple `navigate()`/fermeture d'onglet
+ne suffit pas si un nouvel onglet rouvre aussitôt l'app et réacquiert des
+handles avant la suppression). **Solution fiable** : naviguer vers une
+URL du même serveur Vite qui ne sert PAS `index.html` — un asset statique
+existant comme `http://localhost:5173/db-worker.js` (servi tel quel, pas
+de fallback SPA dessus) — cette page n'exécute aucun JS de l'app, donc
+aucun worker SQLite actif ; `navigator.storage.getDirectory()` y a accès
+au même stockage d'origine (même port/host) sans concurrence, et la
+suppression y est immédiate et définitive (vérifié par re-listage :
+dossier vide après coup). Pas un bug applicatif — une contrainte de l'API
+OPFS elle-même, mais un piège reproductible pour toute future remise à
+zéro d'un compte de test bloqué dans ce panneau.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : compte de test
+recréé après la remise à zéro OPFS ci-dessus, section Apparence localisée
+(7 pastilles + Par défaut + Personnalisé + Arrondi/Carré) ; clic sur
+"Tomate" → confirmé en direct via les variables CSS calculées
+(`--color-accent`/`--color-accent-2`/`--gradient-accent`/
+`--color-accent-soft`/`--bg-glow` tous corrects, y compris la teinte
+éclaircie dérivée pour `--color-accent-2`) **avant même d'enregistrer** ;
+clic sur "Carré" → `--radius-md`/`--radius-lg` passés à 6px/8px, confirmé
+sur un vrai `border-radius` calculé de carte Dashboard (8px, pas
+seulement la variable elle-même) ; Enregistrer → rechargement complet de
+la page (avant connexion) → confirmé que l'écran de connexion lui-même
+("Se connecter") affiche déjà le dégradé tomate et les coins carrés, sans
+être connecté ; reconnexion → confirmé propagé sur le Dashboard (pastilles
+KPI, cartes) ; "Par défaut" + "Arrondi" → confirmé retour exact aux
+valeurs d'origine (`#38bdf8`, aucun style inline restant sur `<html>`) ;
+Enregistrer → confirmé persistant après un nouveau cycle complet
+déconnexion/reconnexion. Aucune erreur console à aucune étape (y compris
+la migration `id: 5`, appliquée proprement sur une base neuve). `pnpm run
+build` et les 43 tests unitaires passent.
+
+**Pas fait / hors périmètre de cette passe** :
+- Pas de retouche des `borderRadius: 8`/`999` codés en dur hors de
+  `cardStyle`/`inputStyle`/`primaryButtonStyle`/`KpiCard` (ex. pastilles de
+  Nav, badges, modales) — ces trois styles partagés déjà branchés sur
+  `var(--radius-md/lg)` couvrent la quasi-totalité des cartes/boutons/
+  champs de l'app (la surface visuelle dominante), retoucher les dizaines
+  d'occurrences isolées restantes serait un balayage plus large et plus
+  risqué, non demandé explicitement.
+- `badgeStyle` (pastilles de statut, `borderRadius: 999`, forme "pilule"
+  intentionnelle) volontairement pas concerné par le réglage de forme —
+  une pilule n'a pas de version "carrée" cohérente.
+- Pas de nouvelle typographie ni de disposition par secteur (toujours hors
+  périmètre, voir entrée précédente).
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du
@@ -3502,10 +3977,14 @@ depuis la Phase 1, non levée par ce correctif.
    que par vérification manuelle dans le navigateur à chaque session.
 3. Si le besoin apparaît : distinguer les opérateurs mobile money (décision
    explicite de ne pas le faire pour l'instant, prise à la session précédente).
-4. **FNE Côte d'Ivoire** (voir journal 2026-08-13 ci-dessus) — obligation
-   légale, pas une feature optionnelle, si une part des utilisateurs est en
-   Côte d'Ivoire. Bloqué tant qu'aucun compte DGI/clé API n'est disponible
-   pour développer contre la vraie spec.
+4. **FNE Côte d'Ivoire** — ~~bloqué tant qu'aucun compte DGI/clé API n'est
+   disponible~~ **coquille complète construite et activable depuis
+   Paramètres le 2026-09-19** (voir journal) : contrat HTTP déduit du SDK
+   PHP tiers PRODESTIC/fne-sdk-php, vérifié en conditions réelles contre le
+   vrai bac à sable DGI (réponse HTTP authentique reçue). Reste seulement à
+   saisir une vraie clé API DGI le jour où le porteur du projet en obtient
+   une — le bouton "Tester la connexion" révélera immédiatement si le
+   contrat déduit tient tel quel ou nécessite un ajustement.
 5. ~~Bilinguisme FR/EN~~ — **chantier intégralement terminé** le 2026-08-17
    sur son périmètre initial ("Interface + documents", lancé le
    2026-08-15) : toutes les pages de l'app, tout l'écran de connexion, les
@@ -3552,3 +4031,14 @@ depuis la Phase 1, non levée par ce correctif.
    d'abord un test Master↔Worker réel sur deux appareils physiques (pas
    vérifiable dans cet environnement, pour aucune des phases livrées à ce
    jour) avant de considérer le chantier réseau réellement éprouvé.
+8. **Refonte visuelle, Phase 2+** — voir journal 2026-09-20 : icônes SVG +
+   couleur d'accent par secteur d'activité (boutique/pharmacie/restaurant/
+   pressing, choisi dans Paramètres) posées sur la structure de nav
+   existante (barre du haut). Volontairement laissé de côté dans cette
+   Phase 1, à reprendre seulement si demandé après retour terrain sur ce
+   premier résultat : passage à un sidebar, sélection du secteur à
+   l'onboarding, nouvelle typographie (Manrope/Public Sans, explorée dans
+   la maquette de concept mais jamais appliquée au vrai code), et toute
+   personnalisation allant au-delà de l'accent couleur + icône/libellé de
+   l'onglet "Produits" (ex. disposition de page ou contenu spécifique par
+   secteur).

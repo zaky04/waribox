@@ -151,6 +151,46 @@ export const MIGRATIONS: Migration[] = [
       )`,
     ],
   },
+  // FNE (Facture Normalisée Électronique, Côte d'Ivoire) — voir CLAUDE.md.
+  // Coquille de colonnes/table, désactivée par défaut (fne_enabled = 0) —
+  // aucun effet tant que le commerçant n'a pas saisi une vraie clé API dans
+  // Paramètres.
+  {
+    id: 4,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN fne_enabled INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN fne_environment TEXT NOT NULL DEFAULT 'test'",
+      "ALTER TABLE business_settings ADD COLUMN fne_api_key TEXT",
+      "ALTER TABLE business_settings ADD COLUMN fne_api_base_url TEXT",
+      "ALTER TABLE business_settings ADD COLUMN fne_establishment TEXT",
+      "ALTER TABLE business_settings ADD COLUMN fne_point_of_sale TEXT",
+      "ALTER TABLE sales ADD COLUMN fne_status TEXT",
+      "ALTER TABLE sales ADD COLUMN fne_reference TEXT",
+      "ALTER TABLE sales ADD COLUMN fne_ncc TEXT",
+      "ALTER TABLE sales ADD COLUMN fne_qr_token TEXT",
+      "ALTER TABLE sales ADD COLUMN fne_balance_sticker INTEGER",
+      "ALTER TABLE sales ADD COLUMN fne_error TEXT",
+      "ALTER TABLE sales ADD COLUMN fne_certified_at TEXT",
+      `CREATE TABLE __fne_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sale_id INTEGER NOT NULL,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        last_attempt_at TEXT,
+        last_error TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+    ],
+  },
+  // Apparence (voir Paramètres → Apparence, CLAUDE.md journal du 2026-09-20)
+  // — couleur d'accent et forme des coins personnalisables, indépendantes du
+  // secteur d'activité (qui ne pilote plus que l'icône/libellé "Produits").
+  {
+    id: 5,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN appearance_accent_color TEXT",
+      "ALTER TABLE business_settings ADD COLUMN appearance_shape TEXT",
+    ],
+  },
 ];
 
 async function runMigrations(): Promise<void> {

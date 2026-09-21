@@ -165,6 +165,13 @@ export function buildReceiptPdf(data: ReceiptData): Blob {
       align: "center",
     });
   }
+  if (data.fneStatus === "certified" && data.fneReference) {
+    pushWrapped(lines, measure, t("documents.receipt.fneCertified", { reference: data.fneReference }), maxWidthMm, { align: "center" });
+  } else if (data.fneStatus === "pending") {
+    pushWrapped(lines, measure, t("documents.receipt.fnePending"), maxWidthMm, { align: "center" });
+  } else if (data.fneStatus === "failed") {
+    pushWrapped(lines, measure, t("documents.receipt.fneFailed"), maxWidthMm, { align: "center" });
+  }
 
   lines.push({ text: separator });
   for (const line of data.lines) {

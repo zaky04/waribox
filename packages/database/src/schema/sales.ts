@@ -30,6 +30,16 @@ export const sales = sqliteTable("sales", {
   total: real("total").notNull(),
   paymentStatus: text("payment_status").notNull().default("paid"), // 'paid' | 'partial' | 'credit'
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  // Statut de certification FNE (Facture Normalisée Électronique, Côte
+  // d'Ivoire — voir CLAUDE.md) — NULL tant que la FNE n'a jamais été activée
+  // pour cette vente, jamais un faux "en attente". Voir packages/core/src/fne/.
+  fneStatus: text("fne_status"), // 'pending' | 'certified' | 'failed'
+  fneReference: text("fne_reference"), // numéro de facture normé renvoyé par la DGI
+  fneNcc: text("fne_ncc"),
+  fneQrToken: text("fne_qr_token"),
+  fneBalanceSticker: integer("fne_balance_sticker"),
+  fneError: text("fne_error"),
+  fneCertifiedAt: text("fne_certified_at"),
 });
 
 export const saleItems = sqliteTable("sale_items", {

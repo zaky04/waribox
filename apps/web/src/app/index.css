@@ -63,6 +63,21 @@
     radial-gradient(circle at 100% 0%, rgba(129, 140, 248, 0.08), transparent 40%);
 }
 
+/* Apparence personnalisable (voir Paramètres → Apparence,
+   `business_settings.appearanceAccentColor`/`appearanceShape`) — les blocs
+   CSS par secteur d'activité qui vivaient ici ont été retirés au profit
+   d'un mécanisme plus général : --color-accent/--color-accent-2/
+   --gradient-accent/--color-accent-soft/--bg-glow (et --radius-md/--radius-lg
+   pour la forme) sont surchargées directement en style inline sur <html>
+   par apps/web/src/lib/appearance.ts, à partir d'une couleur libre plutôt
+   que d'une liste fixe de secteurs — voir ce fichier pour le détail (un
+   style inline l'emporte sur n'importe quelle règle ci-dessus, y compris
+   :root[data-theme="light"], donc aucun bloc supplémentaire n'est
+   nécessaire ici pour que ça fonctionne dans les deux thèmes). Aucune
+   personnalisation choisie = ces propriétés inline sont absentes, donc les
+   valeurs de :root/:root[data-theme="light"] ci-dessus s'appliquent
+   normalement, sans changement visuel. */
+
 * {
   box-sizing: border-box;
 }

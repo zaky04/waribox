@@ -27,6 +27,9 @@
     "service_orders": "Tickets de service",
     "promotions": "Promotions",
     "products": "Produits",
+    "productsPharmacie": "Médicaments",
+    "productsRestaurant": "Plats & boissons",
+    "productsPressing": "Services",
     "stock": "Stock",
     "customers": "Clients",
     "suppliers": "Fournisseurs",
@@ -38,15 +41,21 @@
     "accounting": "Comptabilité",
     "settings": "Paramètres",
     "users": "Utilisateurs",
-    "journals": "Journaux"
+    "journals": "Journaux",
+    "groups": {
+      "sales": "Vente",
+      "relations": "Relations",
+      "finance": "Finances",
+      "system": "Système"
+    }
   },
   "topbar": {
     "impersonatingPrefix": "Connecté en tant que",
     "impersonatingSuffix": "— session ouverte par",
     "returnToSelf": "Revenir à mon compte",
     "myPassword": "Mon mot de passe",
-    "themeDark": "🌙 Sombre",
-    "themeLight": "☀️ Clair",
+    "themeDark": "Sombre",
+    "themeLight": "Clair",
     "lock": "Verrouiller",
     "logout": "Déconnexion",
     "language": "Langue"
@@ -89,7 +98,7 @@
     "sendWhatsapp": "Envoyer par WhatsApp",
     "searchProductPlaceholder": "Rechercher un produit...",
     "scanHint": "Scanne un code-barres à tout moment pour ajouter directement au panier.",
-    "scanCamera": "📷 Scanner (caméra)",
+    "scanCamera": "Scanner (caméra)",
     "scanner": {
       "permissionDenied": "Accès à la caméra refusé — autorise la caméra dans les paramètres du navigateur/de l'application.",
       "accessFailed": "Impossible d'accéder à la caméra sur cet appareil.",
@@ -183,6 +192,13 @@
     "business": {
       "heading": "Entreprise",
       "name": "Nom de l'entreprise",
+      "sectorType": "Secteur d'activité",
+      "sectorTypeHint": "Adapte l'icône et le libellé de l'onglet \"Produits\" à ton activité (ex : \"Médicaments\" pour une pharmacie) — n'affecte aucune donnée. Pour changer les couleurs de l'app, voir la section Apparence ci-dessous.",
+      "sectorNone": "Aucun (thème par défaut)",
+      "sectorBoutique": "Boutique / commerce général",
+      "sectorPharmacie": "Pharmacie",
+      "sectorRestaurant": "Restaurant / maquis",
+      "sectorPressing": "Pressing / service",
       "address": "Adresse",
       "phone": "Téléphone",
       "email": "Email",
@@ -201,6 +217,25 @@
       "receipt80mm": "80 mm (48 caractères)",
       "receiptCustom": "Personnalisé (nombre de caractères)",
       "receiptCharsPerLine": "Caractères par ligne"
+    },
+    "appearance": {
+      "heading": "Apparence",
+      "hint": "Personnalise la couleur et la forme de toute l'app (boutons, onglets actifs, cartes...) — visible immédiatement sur cette page, appliqué partout après Enregistrer.",
+      "accentColor": "Couleur d'accent",
+      "default": "Par défaut",
+      "custom": "Personnalisé",
+      "shape": "Forme des coins",
+      "shapeRounded": "Arrondi",
+      "shapeSquare": "Carré",
+      "presets": {
+        "amber": "Ambre",
+        "teal": "Sarcelle",
+        "tomato": "Tomate",
+        "plum": "Prune",
+        "emerald": "Émeraude",
+        "rose": "Rose",
+        "slate": "Ardoise"
+      }
     },
     "modules": {
       "heading": "Modules actifs",
@@ -306,6 +341,29 @@
       "closeNow": "L'installeur est ouvert — fermer WariBox maintenant",
       "defineCodeFirst": "Définis d'abord un code de maintenance"
     },
+    "fne": {
+      "heading": "Facturation électronique (FNE)",
+      "hint": "Côte d'Ivoire — obligatoire depuis le 1er décembre 2025. Coquille activable : reste sans effet tant qu'aucune clé API DGI n'est saisie ci-dessous. Une vente se termine toujours immédiatement, même si la certification échoue ou est hors ligne.",
+      "enable": "Activer la FNE",
+      "environment": "Environnement",
+      "environmentTest": "Test (bac à sable DGI)",
+      "environmentProd": "Production",
+      "baseUrl": "URL de production (fournie par la DGI)",
+      "apiKey": "Clé API",
+      "establishment": "Établissement (identifiant DGI)",
+      "pointOfSale": "Point de vente (identifiant DGI)",
+      "testUrlHint": "URL de test utilisée automatiquement :",
+      "prodUrlHint": "Saisis l'URL de production fournie par la DGI ci-dessus.",
+      "testConnection": "Tester la connexion",
+      "testing": "Test en cours...",
+      "testClientName": "Client test",
+      "testItemDescription": "Article test",
+      "testSuccess": "Connexion réussie — facture de test certifiée.",
+      "testFailure": "Connexion impossible.",
+      "testServerReached": "Le serveur FNE a répondu (bon signe) :",
+      "retryNow_one": "{{count}} vente en attente de certification — réessayer maintenant",
+      "retryNow_other": "{{count}} ventes en attente de certification — réessayer maintenant"
+    },
     "saved": "Enregistré.",
     "saving": "Enregistrement...",
     "save": "Enregistrer",
@@ -330,7 +388,8 @@
       "updateNoCode": "Saisis le code de maintenance.",
       "updateWrongCode": "Code de maintenance incorrect.",
       "updateFailed": "Mise à jour impossible.",
-      "backupSkippedUnknown": "erreur inconnue"
+      "backupSkippedUnknown": "erreur inconnue",
+      "fneMissingBaseUrl": "Saisis l'URL de production fournie par la DGI."
     },
     "updateStep": {
       "backingUp": "Sauvegarde locale en cours...",
@@ -1347,7 +1406,10 @@
     "receipt": {
       "cashier": "Caissier : {{name}}",
       "payment": "Paiement ({{method}}) : {{amount}}",
-      "thanks": "Merci de votre visite !"
+      "thanks": "Merci de votre visite !",
+      "fneCertified": "Facture certifiée FNE : {{reference}}",
+      "fnePending": "En attente de certification FNE",
+      "fneFailed": "Certification FNE en attente (nouvelle tentative automatique)"
     },
     "serviceTicket": {
       "title": "BON DE DEPOT",

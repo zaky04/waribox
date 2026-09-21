@@ -1,7 +1,10 @@
 import {
+  emitFneQueued,
+  FNE_TEST_BASE_URL,
   getSettings,
   hasMaintenanceCode,
   listBackups,
+  listPendingFneCertifications,
   recordBackup,
   restoreBackupFromFile,
   setMaintenanceCode,
@@ -19,6 +22,8 @@ import {
 import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
+import { SECTOR_OPTIONS } from "./sectorTypes";
+import { APPEARANCE_PRESETS, DEFAULT_ACCENT_COLOR } from "./appearancePresets";
 import {
   badgeStyle,
   cardStyle,
@@ -29,8 +34,11 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { applyAppearance } from "../../lib/appearance";
 import { saveGeneratedFile } from "../../lib/saveFile";
 import { useAuth } from "../auth/useAuth";
+import { useThemeStore } from "../../stores/theme";
+import { certifyInvoice, FneApiError, resolveFneBaseUrl } from "../fne/fneHttp";
 import { NetworkSection } from "../network/NetworkSection";
 import { StoresSection } from "../stores/StoresSection";
 import { runGoogleDriveBackup, runLocalBackup } from "./backupRunner";
@@ -65,6 +73,7 @@ export function SettingsPage() {
   const db = useDatabase();
   const { user } = useAuth();
   const { t } = useTranslation();
+  const theme = useThemeStore((s) => s.theme);
 
   const FREQUENCY_PRESETS = [
     { value: "daily", label: t("settings.backups.frequencyDaily") },
@@ -93,6 +102,10 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
 
   const [businessName, setBusinessName] = useState("");
+  const [sectorType, setSectorType] = useState("");
+  // null = thème par défaut (aucune personnalisation) — voir lib/appearance.ts.
+  const [appearanceAccentColor, setAppearanceAccentColor] = useState<string | null>(null);
+  const [appearanceShape, setAppearanceShape] = useState<string | null>(null);
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -115,6 +128,16 @@ export function SettingsPage() {
   const [multiStoreEnabled, setMultiStoreEnabled] = useState(false);
   const [enableSyscohada, setEnableSyscohada] = useState(false);
   const [autoLockMinutes, setAutoLockMinutes] = useState("0");
+
+  const [fneEnabled, setFneEnabled] = useState(false);
+  const [fneEnvironment, setFneEnvironment] = useState<"test" | "prod">("test");
+  const [fneApiKey, setFneApiKey] = useState("");
+  const [fneApiBaseUrl, setFneApiBaseUrl] = useState("");
+  const [fneEstablishment, setFneEstablishment] = useState("");
+  const [fnePointOfSale, setFnePointOfSale] = useState("");
+  const [fneTesting, setFneTesting] = useState(false);
+  const [fneTestResult, setFneTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [fnePendingCount, setFnePendingCount] = useState(0);
 
   const [frequencyPreset, setFrequencyPreset] = useState("weekly");
   const [customDays, setCustomDays] = useState("7");
@@ -163,6 +186,9 @@ export function SettingsPage() {
     setFolderName(handle?.name ?? null);
 
     setBusinessName(settings.businessName ?? "");
+    setSectorType(settings.sectorType ?? "");
+    setAppearanceAccentColor(settings.appearanceAccentColor ?? null);
+    setAppearanceShape(settings.appearanceShape ?? null);
     setAddress(settings.address ?? "");
     setPhone(settings.phone ?? "");
     setEmail(settings.email ?? "");
@@ -182,6 +208,14 @@ export function SettingsPage() {
     setMultiStoreEnabled(settings.multiStoreEnabled);
     setEnableSyscohada(settings.enableSyscohada);
     setAutoLockMinutes(String(settings.autoLockMinutes));
+
+    setFneEnabled(settings.fneEnabled);
+    setFneEnvironment(settings.fneEnvironment === "prod" ? "prod" : "test");
+    setFneApiKey(settings.fneApiKey ?? "");
+    setFneApiBaseUrl(settings.fneApiBaseUrl ?? "");
+    setFneEstablishment(settings.fneEstablishment ?? "");
+    setFnePointOfSale(settings.fnePointOfSale ?? "");
+    setFnePendingCount((await listPendingFneCertifications(db)).length);
 
     const isReceiptPreset = RECEIPT_PRESETS.some((p) => p.value === String(settings.receiptColumns));
     if (isReceiptPreset) {
@@ -268,6 +302,14 @@ export function SettingsPage() {
           backupFrequency,
           googleDriveClientId: googleDriveClientId.trim() || undefined,
           businessName: businessName.trim() || undefined,
+          // Pas de `|| undefined` ici, contrairement aux autres champs texte
+          // de cette section : une valeur vide est un choix valide ("Aucun
+          // (thème par défaut)", voir sectorTypes.ts) qui doit pouvoir
+          // écraser un secteur précédemment choisi, pas être ignorée comme
+          // un champ non renseigné.
+          sectorType: sectorType,
+          appearanceAccentColor,
+          appearanceShape,
           address: address.trim() || undefined,
           phone: phone.trim() || undefined,
           email: email.trim() || undefined,
@@ -288,6 +330,12 @@ export function SettingsPage() {
           multiStoreEnabled,
           enableSyscohada,
           autoLockMinutes: autoLockValue,
+          fneEnabled,
+          fneEnvironment,
+          fneApiKey: fneApiKey.trim() || undefined,
+          fneApiBaseUrl: fneApiBaseUrl.trim() || undefined,
+          fneEstablishment: fneEstablishment.trim() || undefined,
+          fnePointOfSale: fnePointOfSale.trim() || undefined,
         },
         user?.permissions ?? {},
       );
@@ -416,6 +464,62 @@ export function SettingsPage() {
     }
   };
 
+  // Teste la connexion avec les valeurs actuellement saisies (pas
+  // nécessairement enregistrées) — un payload minimal factice suffit :
+  // même une erreur 401 (mauvaise clé) renvoyée par le vrai serveur FNE
+  // prouve que l'URL/l'endpoint/le format d'authentification déduits du
+  // SDK tiers sont corrects (voir CLAUDE.md). Une erreur réseau/CORS,
+  // elle, indique un problème de plomberie plutôt que de clé.
+  const handleTestFneConnection = async () => {
+    setFneTestResult(null);
+    setFneTesting(true);
+    try {
+      const baseUrl = resolveFneBaseUrl(fneEnvironment, fneApiBaseUrl.trim() || null);
+      if (!baseUrl) {
+        setFneTestResult({ success: false, message: t("settings.errors.fneMissingBaseUrl") });
+        return;
+      }
+      await certifyInvoice(
+        {
+          invoiceType: "sale",
+          paymentMethod: "cash",
+          template: "B2C",
+          pointOfSale: fnePointOfSale.trim() || "TEST",
+          establishment: fneEstablishment.trim() || "TEST",
+          clientCompanyName: t("settings.fne.testClientName"),
+          clientPhone: "0000000000",
+          clientEmail: "test@example.com",
+          isRne: false,
+          items: [{ description: t("settings.fne.testItemDescription"), quantity: 1, amount: 100, taxes: ["TVA"] }],
+          foreignCurrency: "",
+          foreignCurrencyRate: 0,
+        },
+        { apiKey: fneApiKey.trim(), baseUrl },
+      );
+      setFneTestResult({ success: true, message: t("settings.fne.testSuccess") });
+    } catch (err) {
+      const message = err instanceof FneApiError ? err.message : describeError(err, t("settings.fne.testFailure"));
+      // Une vraie réponse HTTP du serveur (même une erreur) vaut mieux
+      // qu'un silence — voir le commentaire au-dessus de cette fonction.
+      const reachedServer = err instanceof FneApiError && err.statusCode !== null;
+      setFneTestResult({ success: false, message: reachedServer ? `${t("settings.fne.testServerReached")} ${message}` : message });
+    } finally {
+      setFneTesting(false);
+    }
+  };
+
+  // Relance immédiatement le traitement de la file d'attente (voir
+  // useFneQueue.ts, monté globalement dans App.tsx) plutôt que de dupliquer
+  // ici la logique de certification — cette page ne fait que déclencher
+  // l'événement déjà écouté par le hook, puis rafraîchit le compteur après
+  // un court délai pour lui laisser le temps de tourner.
+  const handleRetryFneNow = () => {
+    emitFneQueued();
+    setTimeout(() => {
+      void listPendingFneCertifications(db).then((rows) => setFnePendingCount(rows.length));
+    }, 2000);
+  };
+
   const handlePickUpdateFile = async () => {
     setUpdateError(null);
     try {
@@ -504,6 +608,21 @@ export function SettingsPage() {
             onChange={(e) => setBusinessName(e.target.value)}
             placeholder="WariBox"
           />
+        </label>
+
+        <label>
+          {t("settings.business.sectorType")}
+          <select style={inputStyle} value={sectorType} onChange={(e) => setSectorType(e.target.value)}>
+            <option value="">{t("settings.business.sectorNone")}</option>
+            {SECTOR_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {t(option.labelKey)}
+              </option>
+            ))}
+          </select>
+          <div style={{ fontSize: 12.5, color: "var(--color-text-muted)", marginTop: 4 }}>
+            {t("settings.business.sectorTypeHint")}
+          </div>
         </label>
 
         <label>
@@ -634,6 +753,139 @@ export function SettingsPage() {
       </div>
 
       <div style={cardStyle}>
+        <strong>{t("settings.appearance.heading")}</strong>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
+          {t("settings.appearance.hint")}
+        </p>
+
+        <div>
+          <strong style={{ fontSize: 14 }}>{t("settings.appearance.accentColor")}</strong>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
+            <button
+              type="button"
+              title={t("settings.appearance.default")}
+              onClick={() => {
+                setAppearanceAccentColor(null);
+                applyAppearance(null, appearanceShape, theme);
+              }}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: "50%",
+                cursor: "pointer",
+                background: "#0f172a",
+                border:
+                  appearanceAccentColor === null
+                    ? "3px solid var(--color-accent)"
+                    : "1px solid var(--color-border)",
+                position: "relative",
+              }}
+            >
+              <span
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#fff",
+                  fontSize: 16,
+                  lineHeight: 1,
+                }}
+              >
+                ×
+              </span>
+            </button>
+            {APPEARANCE_PRESETS.map((preset) => (
+              <button
+                key={preset.key}
+                type="button"
+                title={t(preset.labelKey)}
+                onClick={() => {
+                  setAppearanceAccentColor(preset.color);
+                  applyAppearance(preset.color, appearanceShape, theme);
+                }}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: "50%",
+                  cursor: "pointer",
+                  background: preset.color,
+                  border:
+                    appearanceAccentColor === preset.color
+                      ? "3px solid var(--color-text)"
+                      : "1px solid var(--color-border)",
+                }}
+              />
+            ))}
+            <label
+              title={t("settings.appearance.custom")}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: "50%",
+                cursor: "pointer",
+                overflow: "hidden",
+                border:
+                  appearanceAccentColor !== null &&
+                  !APPEARANCE_PRESETS.some((p) => p.color === appearanceAccentColor)
+                    ? "3px solid var(--color-text)"
+                    : "1px solid var(--color-border)",
+                display: "flex",
+              }}
+            >
+              <input
+                type="color"
+                value={appearanceAccentColor ?? DEFAULT_ACCENT_COLOR}
+                onChange={(e) => {
+                  setAppearanceAccentColor(e.target.value);
+                  applyAppearance(e.target.value, appearanceShape, theme);
+                }}
+                style={{
+                  width: 48,
+                  height: 48,
+                  marginLeft: -6,
+                  marginTop: -6,
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                }}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <strong style={{ fontSize: 14 }}>{t("settings.appearance.shape")}</strong>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+            {(["rounded", "square"] as const).map((shapeOption) => (
+              <button
+                key={shapeOption}
+                type="button"
+                onClick={() => {
+                  setAppearanceShape(shapeOption === "rounded" ? null : shapeOption);
+                  applyAppearance(appearanceAccentColor, shapeOption === "rounded" ? null : shapeOption, theme);
+                }}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: shapeOption === "rounded" ? "var(--radius-md)" : 4,
+                  border:
+                    (appearanceShape ?? "rounded") === shapeOption
+                      ? "2px solid var(--color-accent)"
+                      : "1px solid var(--color-border)",
+                  background: "var(--color-bg)",
+                  color: "var(--color-text)",
+                  cursor: "pointer",
+                }}
+              >
+                {shapeOption === "rounded" ? t("settings.appearance.shapeRounded") : t("settings.appearance.shapeSquare")}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={cardStyle}>
         <strong>{t("settings.modules.heading")}</strong>
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.modules.hint")}</p>
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -712,6 +964,80 @@ export function SettingsPage() {
 
       <div style={cardStyle}>
         <NetworkSection />
+      </div>
+
+      <div style={cardStyle}>
+        <strong>{t("settings.fne.heading")}</strong>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.fne.hint")}</p>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input type="checkbox" checked={fneEnabled} onChange={(e) => setFneEnabled(e.target.checked)} />
+          {t("settings.fne.enable")}
+        </label>
+        {fneEnabled && (
+          <>
+            <label>
+              {t("settings.fne.environment")}
+              <select
+                style={inputStyle}
+                value={fneEnvironment}
+                onChange={(e) => setFneEnvironment(e.target.value === "prod" ? "prod" : "test")}
+              >
+                <option value="test">{t("settings.fne.environmentTest")}</option>
+                <option value="prod">{t("settings.fne.environmentProd")}</option>
+              </select>
+            </label>
+            {fneEnvironment === "prod" && (
+              <label>
+                {t("settings.fne.baseUrl")}
+                <input
+                  style={inputStyle}
+                  value={fneApiBaseUrl}
+                  onChange={(e) => setFneApiBaseUrl(e.target.value)}
+                  placeholder="https://..."
+                />
+              </label>
+            )}
+            <label>
+              {t("settings.fne.apiKey")}
+              <input style={inputStyle} type="password" value={fneApiKey} onChange={(e) => setFneApiKey(e.target.value)} />
+            </label>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <label style={{ flex: 1, minWidth: 160 }}>
+                {t("settings.fne.establishment")}
+                <input style={inputStyle} value={fneEstablishment} onChange={(e) => setFneEstablishment(e.target.value)} />
+              </label>
+              <label style={{ flex: 1, minWidth: 160 }}>
+                {t("settings.fne.pointOfSale")}
+                <input style={inputStyle} value={fnePointOfSale} onChange={(e) => setFnePointOfSale(e.target.value)} />
+              </label>
+            </div>
+            <p style={{ color: "var(--color-text-muted)", fontSize: 12, margin: 0 }}>
+              {fneEnvironment === "test" ? `${t("settings.fne.testUrlHint")} ${FNE_TEST_BASE_URL}` : t("settings.fne.prodUrlHint")}
+            </p>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <button
+                style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)" }}
+                onClick={handleTestFneConnection}
+                disabled={fneTesting || !fneApiKey.trim()}
+              >
+                {fneTesting ? t("settings.fne.testing") : t("settings.fne.testConnection")}
+              </button>
+              {fnePendingCount > 0 && (
+                <button
+                  style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)" }}
+                  onClick={handleRetryFneNow}
+                >
+                  {t("settings.fne.retryNow", { count: fnePendingCount })}
+                </button>
+              )}
+            </div>
+            {fneTestResult && (
+              <p style={{ color: fneTestResult.success ? "var(--color-success)" : "var(--color-danger)", fontSize: 13 }}>
+                {fneTestResult.message}
+              </p>
+            )}
+          </>
+        )}
       </div>
 
       <div style={cardStyle}>

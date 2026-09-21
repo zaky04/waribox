@@ -13,6 +13,13 @@ tauri-plugin-opener = "2"
 tauri-plugin-process = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+# Appel HTTP natif (contourne CORS/contenu mixte du WebView) — nécessaire
+# pour la certification FNE (voir CLAUDE.md) : le bac à sable DGI est en
+# `http://` simple, qu'un `fetch()` classique dans une PWA servie en HTTPS
+# bloquerait (contenu mixte), sans garantie que le serveur DGI envoie de
+# toute façon les en-têtes CORS attendus d'un appel navigateur. Utile
+# desktop comme Android, pas de bloc `[target...]` dédié.
+tauri-plugin-http = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

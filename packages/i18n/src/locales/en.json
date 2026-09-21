@@ -27,6 +27,9 @@
     "service_orders": "Service Tickets",
     "promotions": "Promotions",
     "products": "Products",
+    "productsPharmacie": "Medicines",
+    "productsRestaurant": "Food & drinks",
+    "productsPressing": "Services",
     "stock": "Stock",
     "customers": "Customers",
     "suppliers": "Suppliers",
@@ -38,15 +41,21 @@
     "accounting": "Accounting",
     "settings": "Settings",
     "users": "Users",
-    "journals": "Logs"
+    "journals": "Logs",
+    "groups": {
+      "sales": "Sales",
+      "relations": "Relations",
+      "finance": "Finance",
+      "system": "System"
+    }
   },
   "topbar": {
     "impersonatingPrefix": "Signed in as",
     "impersonatingSuffix": "— session opened by",
     "returnToSelf": "Return to my account",
     "myPassword": "My password",
-    "themeDark": "🌙 Dark",
-    "themeLight": "☀️ Light",
+    "themeDark": "Dark",
+    "themeLight": "Light",
     "lock": "Lock",
     "logout": "Log out",
     "language": "Language"
@@ -89,7 +98,7 @@
     "sendWhatsapp": "Send via WhatsApp",
     "searchProductPlaceholder": "Search a product...",
     "scanHint": "Scan a barcode at any time to add it directly to the cart.",
-    "scanCamera": "📷 Scan (camera)",
+    "scanCamera": "Scan (camera)",
     "scanner": {
       "permissionDenied": "Camera access denied — allow the camera in your browser/app settings.",
       "accessFailed": "Could not access the camera on this device.",
@@ -183,6 +192,13 @@
     "business": {
       "heading": "Business",
       "name": "Business name",
+      "sectorType": "Business type",
+      "sectorTypeHint": "Adapts the icon and label of the \"Products\" tab to your business (e.g. \"Medicines\" for a pharmacy) — doesn't affect any data. To change the app's colors, see the Appearance section below.",
+      "sectorNone": "None (default theme)",
+      "sectorBoutique": "Shop / general store",
+      "sectorPharmacie": "Pharmacy",
+      "sectorRestaurant": "Restaurant",
+      "sectorPressing": "Dry cleaning / services",
       "address": "Address",
       "phone": "Phone",
       "email": "Email",
@@ -201,6 +217,25 @@
       "receipt80mm": "80 mm (48 characters)",
       "receiptCustom": "Custom (number of characters)",
       "receiptCharsPerLine": "Characters per line"
+    },
+    "appearance": {
+      "heading": "Appearance",
+      "hint": "Customize the color and shape of the whole app (buttons, active tabs, cards...) — visible right away on this page, applied everywhere after Save.",
+      "accentColor": "Accent color",
+      "default": "Default",
+      "custom": "Custom",
+      "shape": "Corner shape",
+      "shapeRounded": "Rounded",
+      "shapeSquare": "Square",
+      "presets": {
+        "amber": "Amber",
+        "teal": "Teal",
+        "tomato": "Tomato",
+        "plum": "Plum",
+        "emerald": "Emerald",
+        "rose": "Rose",
+        "slate": "Slate"
+      }
     },
     "modules": {
       "heading": "Active modules",
@@ -306,6 +341,29 @@
       "closeNow": "Installer is open — close WariBox now",
       "defineCodeFirst": "Set a maintenance code first"
     },
+    "fne": {
+      "heading": "Electronic invoicing (FNE)",
+      "hint": "Côte d'Ivoire — mandatory since December 1, 2025. Activatable shell: has no effect until a real DGI API key is entered below. A sale always completes immediately, even if certification fails or is offline.",
+      "enable": "Enable FNE",
+      "environment": "Environment",
+      "environmentTest": "Test (DGI sandbox)",
+      "environmentProd": "Production",
+      "baseUrl": "Production URL (provided by the DGI)",
+      "apiKey": "API key",
+      "establishment": "Establishment (DGI identifier)",
+      "pointOfSale": "Point of sale (DGI identifier)",
+      "testUrlHint": "Test URL used automatically:",
+      "prodUrlHint": "Enter the production URL provided by the DGI above.",
+      "testConnection": "Test connection",
+      "testing": "Testing...",
+      "testClientName": "Test client",
+      "testItemDescription": "Test item",
+      "testSuccess": "Connection successful — test invoice certified.",
+      "testFailure": "Connection failed.",
+      "testServerReached": "The FNE server responded (good sign):",
+      "retryNow_one": "{{count}} sale pending certification — retry now",
+      "retryNow_other": "{{count}} sales pending certification — retry now"
+    },
     "saved": "Saved.",
     "saving": "Saving...",
     "save": "Save",
@@ -330,7 +388,8 @@
       "updateNoCode": "Enter the maintenance code.",
       "updateWrongCode": "Incorrect maintenance code.",
       "updateFailed": "Update failed.",
-      "backupSkippedUnknown": "unknown error"
+      "backupSkippedUnknown": "unknown error",
+      "fneMissingBaseUrl": "Enter the production URL provided by the DGI."
     },
     "updateStep": {
       "backingUp": "Local backup in progress...",
@@ -1347,7 +1406,10 @@
     "receipt": {
       "cashier": "Cashier: {{name}}",
       "payment": "Payment ({{method}}): {{amount}}",
-      "thanks": "Thank you for your visit!"
+      "thanks": "Thank you for your visit!",
+      "fneCertified": "FNE certified invoice: {{reference}}",
+      "fnePending": "Awaiting FNE certification",
+      "fneFailed": "FNE certification pending (automatic retry)"
     },
     "serviceTicket": {
       "title": "DROP-OFF SLIP",
