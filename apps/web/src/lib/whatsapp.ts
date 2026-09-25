@@ -1,4 +1,4 @@
-import { t } from "@gestion-boutique/i18n";
+import { t, formatMoneyPlain, formatAmountPlain } from "@gestion-boutique/i18n";
 
 // Lien "cliquer pour envoyer" wa.me — n'exige aucun compte/API WhatsApp
 // Business, ouvre WhatsApp (app ou web) avec le message pré-rempli, un clic
@@ -40,16 +40,16 @@ export function buildReceiptWhatsAppMessage(data: WhatsAppReceiptData): string {
     t("whatsapp.receipt.header", { business, saleNumber: data.saleNumber }),
     data.date,
     "",
-    ...data.lines.map((line) => `${line.quantity} x ${line.label} — ${line.total.toFixed(0)}`),
+    ...data.lines.map((line) => `${line.quantity} x ${line.label} — ${formatAmountPlain(line.total)}`),
     "",
-    t("whatsapp.receipt.subtotal", { amount: data.subtotal.toFixed(0) }),
+    t("whatsapp.receipt.subtotal", { amount: formatAmountPlain(data.subtotal) }),
   ];
-  if (data.discount > 0) lines.push(t("whatsapp.receipt.discount", { amount: data.discount.toFixed(0) }));
-  lines.push(t("whatsapp.receipt.total", { amount: data.total.toFixed(0) }));
+  if (data.discount > 0) lines.push(t("whatsapp.receipt.discount", { amount: formatAmountPlain(data.discount) }));
+  lines.push(t("whatsapp.receipt.total", { amount: formatMoneyPlain(data.total) }));
   lines.push(
     t("whatsapp.receipt.paid", {
       method: t(`sales.paymentMethods.${data.paymentMethod}`, { defaultValue: data.paymentMethod }),
-      amount: data.amountPaid.toFixed(0),
+      amount: formatAmountPlain(data.amountPaid),
     }),
   );
   lines.push("", t("whatsapp.receipt.thanks"));

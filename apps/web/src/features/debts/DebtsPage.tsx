@@ -169,7 +169,7 @@ export function DebtsPage() {
                     (payingId === debt.id ? (
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                         <input
-                          type="number"
+                          type="number" step="any"
                           style={{ ...inputStyle, width: 90, marginTop: 0 }}
                           value={amount}
                           onChange={(e) => setAmount(e.target.value)}

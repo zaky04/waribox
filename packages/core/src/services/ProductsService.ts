@@ -120,6 +120,7 @@ export async function updateProduct(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "manage_products");
+  const before = await db.select().from(schema.products).where(eq(schema.products.id, productId)).get();
   const updates: Partial<typeof schema.products.$inferInsert> = {};
   if (input.name !== undefined) updates.name = input.name;
   if (input.categoryId !== undefined) updates.categoryId = input.categoryId;
@@ -146,7 +147,13 @@ export async function updateProduct(
       action: "update_product",
       entity: "product",
       entityId: productId,
-      metadata: { name: updated.name, salePrice: updated.salePrice },
+      // Uniquement les champs réellement modifiés, avec l'ancienne ET la nouvelle
+      // valeur : un changement de prix silencieux est un classique de fraude.
+      metadata: {
+        name: updated.name,
+        salePrice: updated.salePrice,
+        changes: diffFields(before, updated, ["name", "categoryId", "unit", "purchasePrice", "salePrice", "taxRate", "lowStockThreshold", "trackExpiry"]),
+      },
     });
   }
 
@@ -245,4 +252,17 @@ export async function ensureVariantBarcode(db: Database, variantId: number): Pro
     .run();
 
   return barcode;
+}
+
+// Champs qui diffèrent entre deux états d'une ligne : { champ: { from, to } }.
+export function diffFields<T extends Record<string, unknown>>(
+  before: T | undefined,
+  after: T,
+  fields: (keyof T & string)[],
+): Record<string, { from: unknown; to: unknown }> {
+  const out: Record<string, { from: unknown; to: unknown }> = {};
+  for (const f of fields) {
+    if (before && before[f] !== after[f]) out[f] = { from: before[f] ?? null, to: after[f] ?? null };
+  }
+  return out;
 }

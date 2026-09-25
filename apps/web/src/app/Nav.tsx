@@ -21,6 +21,8 @@ import {
   IconPercent,
   IconPill,
   IconSettings,
+  IconClipboard,
+  IconEye,
   IconShield,
   IconPalette,
   IconTicket,
@@ -41,12 +43,14 @@ export type NavTab =
   | "promotions"
   | "products"
   | "stock"
+  | "inventory"
   | "customers"
   | "suppliers"
   | "purchases"
   | "credits"
   | "debts"
   | "reports"
+  | "controls"
   | "expenses"
   | "accounting"
   | "settings"
@@ -76,6 +80,7 @@ const TABS: { key: NavTab; permission: Permission | null; moduleKey?: ModuleTab;
   { key: "promotions", permission: "manage_promotions", icon: IconPercent, group: "sales" },
   { key: "products", permission: "manage_products", icon: IconBox, group: "sales" },
   { key: "stock", permission: "manage_stock", icon: IconLayers, group: "sales" },
+  { key: "inventory", permission: "manage_stock", moduleKey: "stock", icon: IconClipboard, group: "sales" },
   { key: "customers", permission: "manage_customers", icon: IconUsers, group: "relations" },
   { key: "suppliers", permission: "manage_suppliers", icon: IconTruck, group: "relations" },
   { key: "purchases", permission: "manage_suppliers", icon: IconBag, group: "relations" },
@@ -84,6 +89,7 @@ const TABS: { key: NavTab; permission: Permission | null; moduleKey?: ModuleTab;
   { key: "expenses", permission: "manage_expenses", icon: IconWallet, group: "finance" },
   { key: "accounting", permission: "view_accounting", icon: IconCalculator, group: "finance" },
   { key: "reports", permission: "view_reports", icon: IconBarChart, group: "finance" },
+  { key: "controls", permission: "view_controls", icon: IconEye, group: "finance" },
   { key: "settings", permission: "manage_settings", icon: IconSettings, group: "system" },
   { key: "advanced", permission: "manage_settings", icon: IconShield, group: "system" },
   { key: "appearance", permission: "manage_settings", icon: IconPalette, group: "system" },

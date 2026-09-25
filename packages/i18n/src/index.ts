@@ -31,3 +31,5 @@ export function getLanguage(): Language {
 
 export const t = i18next.t.bind(i18next);
 export { i18next };
+
+export * from "./currency";

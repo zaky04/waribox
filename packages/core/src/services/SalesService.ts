@@ -1,3 +1,4 @@
+import { roundMoney } from "../domain/money";
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
@@ -6,6 +7,7 @@ import { withTransaction } from "@gestion-boutique/database";
 import { logAction } from "./AuditService";
 import { findOrCreateCustomerByName } from "./CustomersService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
+import { checkCreditApproval, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
 import { earnPoints, pointsToDiscount, redeemPoints } from "./LoyaltyService";
 import { getSettings } from "./SettingsService";
 import { consumeStockFefo, getStockLevels } from "./StockService";
@@ -42,6 +44,8 @@ export interface CreateSaleInput {
   amountPaid?: number;
   surfaceLocationId: number;
   storeId: number;
+  // Approbation d'un responsable pour une vente à crédit hors plafond.
+  approval?: ApprovalInput;
 }
 
 // Les prix saisis sont TTC (taxe déjà incluse, comme affiché en surface de
@@ -49,7 +53,7 @@ export interface CreateSaleInput {
 // sans rien ajouter. Le taux ne sert qu'à extraire la part de TVA contenue
 // dans ce montant pour l'affichage (voir computeTaxAmount).
 function computeItemTotal(item: SaleItemInput): number {
-  return item.quantity * item.unitPrice - (item.discount ?? 0);
+  return roundMoney(item.quantity * item.unitPrice - (item.discount ?? 0));
 }
 
 // Exporté sous un nom distinct de ServiceOrdersService.computeItemTotal
@@ -70,6 +74,8 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
   if (input.items.length === 0) {
     throw new Error(t("coreErrors.sales.itemRequired"));
   }
+  // Responsable vérifié hors transaction (voir RefundsService.createRefund).
+  const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
 
   // Toute la séquence lecture-validation-écriture est atomique (voir
   // withTransaction) : sans ça, deux ventes concurrentes pourraient toutes
@@ -130,22 +136,35 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
       }
     }
 
-    const subtotal = input.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    const subtotal = roundMoney(input.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0));
     const taxTotal = input.items.reduce((sum, item) => {
       const gross = item.quantity * item.unitPrice - (item.discount ?? 0);
       return sum + computeTaxAmount(gross, item.taxRate ?? 0);
     }, 0);
-    const itemsTotal = input.items.reduce((sum, item) => sum + computeItemTotal(item), 0);
+    const itemsTotal = roundMoney(input.items.reduce((sum, item) => sum + computeItemTotal(item), 0));
     const redemptionDiscount = input.redeemPoints ? pointsToDiscount(input.redeemPoints, ratio) : 0;
-    const discount = (input.discount ?? 0) + redemptionDiscount;
+    const discount = roundMoney((input.discount ?? 0) + redemptionDiscount);
     if (discount > itemsTotal) {
       throw new Error(t("coreErrors.sales.discountExceedsTotal"));
     }
-    const total = Math.max(0, itemsTotal - discount);
+    const total = roundMoney(Math.max(0, itemsTotal - discount));
 
-    const amountPaid = input.amountPaid ?? total;
+    const amountPaid = roundMoney(input.amountPaid ?? total);
     if (amountPaid < total && !customerId) {
       throw new Error(t("coreErrors.sales.customerIdRequiredCredit"));
+    }
+
+    // Plafond de crédit du client et seuil d'approbation : lève
+    // ApprovalRequiredError si la part à crédit les dépasse sans approbation.
+    let creditApprovedBy: number | null = null;
+    if (amountPaid < total) {
+      creditApprovedBy = await checkCreditApproval(db, {
+        customerId: customerId!,
+        creditAmount: roundMoney(total - amountPaid),
+        userId: input.userId,
+        actingPermissions,
+        verifiedApproverId,
+      });
     }
 
     const paymentStatus = amountPaid >= total ? "paid" : amountPaid > 0 ? "partial" : "credit";
@@ -260,11 +279,12 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
         customerId: customerId!,
         saleId: sale.id,
         storeId: input.storeId,
-        originalAmount: total - amountPaid,
-        remainingBalance: total - amountPaid,
+        originalAmount: roundMoney(total - amountPaid),
+        remainingBalance: roundMoney(total - amountPaid),
         status: "open",
+        approvedBy: creditApprovedBy ?? undefined,
       });
-      creditEvent = { syncId: creditSyncId, originalAmount: total - amountPaid, remainingBalance: total - amountPaid, storeId: input.storeId };
+      creditEvent = { syncId: creditSyncId, originalAmount: roundMoney(total - amountPaid), remainingBalance: roundMoney(total - amountPaid), storeId: input.storeId };
     }
 
     let loyaltyRedeemEvent: SaleCreatedEventPayload["loyaltyRedeem"];

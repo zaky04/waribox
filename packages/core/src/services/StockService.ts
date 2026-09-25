@@ -1,8 +1,11 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema, withTransaction } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { DEFAULT_LOCATIONS, type DefaultLocationKey } from "../domain/stock";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
+import { requireApproval, type ApprovalInput } from "./ApprovalService";
+import { logAction } from "./AuditService";
 import {
   buildSyncEvent,
   emitSyncEvent,
@@ -70,6 +73,9 @@ export interface RecordMovementInput {
   referenceId?: number;
   batchId?: number;
   userId?: number;
+  // Motif libre et responsable ayant approuvé (mouvements manuels).
+  note?: string;
+  approvedBy?: number;
   // Voir CLAUDE.md, mode réseau Phase 2 — généré si omis (appel hors
   // contexte de synchronisation, ex. tests, achats).
   syncId?: string;
@@ -88,9 +94,33 @@ export async function recordMovement(db: Database, input: RecordMovementInput) {
       referenceId: input.referenceId,
       batchId: input.batchId,
       createdBy: input.userId,
+      note: input.note,
+      approvedBy: input.approvedBy,
     })
     .returning()
     .get();
+}
+
+// Solde d'une variante à un emplacement (somme du grand livre).
+async function getLocationBalance(db: Database, variantId: number, locationId: number): Promise<number> {
+  const row = await db
+    .select({ total: sql<number>`COALESCE(SUM(${schema.stockMovements.quantityDelta}), 0)` })
+    .from(schema.stockMovements)
+    .where(and(eq(schema.stockMovements.variantId, variantId), eq(schema.stockMovements.locationId, locationId)))
+    .get();
+  return row?.total ?? 0;
+}
+
+// Valeur au coût d'un mouvement de stock (prix d'achat courant du produit) —
+// sert de base aux plafonds d'approbation.
+async function valueAtCost(db: Database, variantId: number, quantity: number): Promise<number> {
+  const row = await db
+    .select({ cost: schema.products.purchasePrice })
+    .from(schema.productVariants)
+    .innerJoin(schema.products, eq(schema.products.id, schema.productVariants.productId))
+    .where(eq(schema.productVariants.id, variantId))
+    .get();
+  return Math.abs(quantity) * (row?.cost ?? 0);
 }
 
 export interface StockMovementFilters {
@@ -138,6 +168,10 @@ export async function transferStock(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "manage_stock");
+  if (input.quantity <= 0) throw new Error(t("coreErrors.stock.quantityPositive"));
+  if (input.fromLocationId === input.toLocationId) throw new Error(t("coreErrors.stock.sameLocation"));
+  const available = await getLocationBalance(db, input.variantId, input.fromLocationId);
+  if (input.quantity > available) throw new Error(t("coreErrors.stock.insufficient", { available }));
 
   // Enveloppé dans withTransaction (Phase 2, voir CLAUDE.md) — jusqu'ici
   // cette fonction ne l'était pas (gap déjà noté dans les pistes), ce qui
@@ -279,6 +313,14 @@ export async function transferStock(
   });
 
   emitSyncEvent(event);
+
+  await logAction(db, {
+    userId: input.userId ?? null,
+    action: "stock_transfer",
+    entity: "stock",
+    entityId: input.variantId,
+    metadata: { variantId: input.variantId, from: input.fromLocationId, to: input.toLocationId, quantity: input.quantity },
+  });
 }
 
 export interface StockLevel {
@@ -416,6 +458,10 @@ export interface ManualStockEntryInput {
   lotNumber?: string;
   expiryDate?: string;
   userId?: number;
+  // Motif obligatoire : une entrée manuelle peut masquer un vol (stock gonflé
+  // pour compenser une sortie non déclarée).
+  note: string;
+  approval?: ApprovalInput;
 }
 
 // Entrée de stock manuelle (StockPage) — distincte des mouvements internes
@@ -430,6 +476,17 @@ export async function addManualStockEntry(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "manage_stock");
+  if (input.quantity <= 0) throw new Error(t("coreErrors.stock.quantityPositive"));
+  if (!input.note.trim()) throw new Error(t("coreErrors.stock.noteRequired"));
+  const value = await valueAtCost(db, input.variantId, input.quantity);
+  const approvedBy = await requireApproval(db, {
+    kind: "stock",
+    amount: value,
+    userId: input.userId,
+    actingPermissions,
+    approval: input.approval,
+  });
+  const balanceBefore = await getLocationBalance(db, input.variantId, input.locationId);
 
   // Enveloppé dans withTransaction (Phase 2, voir CLAUDE.md) — prérequis
   // pour répliquer lot+mouvement comme un seul événement atomique.
@@ -463,6 +520,8 @@ export async function addManualStockEntry(
       referenceType: "manual",
       batchId,
       userId: input.userId,
+      note: input.note.trim(),
+      approvedBy: approvedBy ?? undefined,
     });
 
     return buildSyncEvent<StockEntryCreatedEventPayload>("stockEntry.created", {
@@ -480,6 +539,23 @@ export async function addManualStockEntry(
   });
 
   emitSyncEvent(event);
+
+  await logAction(db, {
+    userId: input.userId ?? null,
+    action: "stock_entry",
+    entity: "stock",
+    entityId: input.variantId,
+    metadata: {
+      variantId: input.variantId,
+      locationId: input.locationId,
+      quantity: input.quantity,
+      before: balanceBefore,
+      after: balanceBefore + input.quantity,
+      value,
+      note: input.note.trim(),
+      approvedBy,
+    },
+  });
 }
 
 export interface RecordStockLossInput {
@@ -487,7 +563,10 @@ export interface RecordStockLossInput {
   locationId: number;
   quantity: number;
   reason: string;
+  // Détail libre complétant le motif (ex. "carton tombé du camion").
+  note?: string;
   userId?: number;
+  approval?: ApprovalInput;
 }
 
 // Retrait pour perte/péremption/casse/vol (StockPage) — même raisonnement
@@ -498,6 +577,17 @@ export async function recordStockLoss(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "manage_stock");
+  if (input.quantity <= 0) throw new Error(t("coreErrors.stock.quantityPositive"));
+  const balanceBefore = await getLocationBalance(db, input.variantId, input.locationId);
+  if (input.quantity > balanceBefore) throw new Error(t("coreErrors.stock.insufficient", { available: balanceBefore }));
+  const value = await valueAtCost(db, input.variantId, input.quantity);
+  const approvedBy = await requireApproval(db, {
+    kind: "stock",
+    amount: value,
+    userId: input.userId,
+    actingPermissions,
+    approval: input.approval,
+  });
 
   // Enveloppé dans withTransaction (Phase 2, voir CLAUDE.md) — une seule
   // écriture ici, mais la cohérence de convention avec les autres
@@ -510,6 +600,8 @@ export async function recordStockLoss(
       movementType: "loss",
       referenceType: input.reason,
       userId: input.userId,
+      note: input.note?.trim() || undefined,
+      approvedBy: approvedBy ?? undefined,
     });
 
     return buildSyncEvent<StockLossCreatedEventPayload>("stockLoss.created", {
@@ -526,6 +618,24 @@ export async function recordStockLoss(
   });
 
   emitSyncEvent(event);
+
+  await logAction(db, {
+    userId: input.userId ?? null,
+    action: "stock_loss",
+    entity: "stock",
+    entityId: input.variantId,
+    metadata: {
+      variantId: input.variantId,
+      locationId: input.locationId,
+      quantity: input.quantity,
+      before: balanceBefore,
+      after: balanceBefore - input.quantity,
+      value,
+      reason: input.reason,
+      note: input.note?.trim() || null,
+      approvedBy,
+    },
+  });
 }
 
 // Utilisé par Journaux pour afficher le numéro de lot d'un mouvement de
@@ -562,10 +672,12 @@ export interface ConsumeStockInput {
   variantId: number;
   locationId: number;
   quantity: number;
-  movementType: "sale";
+  movementType: "sale" | "adjustment";
   referenceType?: string;
   referenceId?: number;
   userId?: number;
+  note?: string;
+  approvedBy?: number;
 }
 
 // Décrémente le stock en respectant l'ordre FEFO (premier expiré, premier
@@ -619,6 +731,8 @@ export async function consumeStockFefo(
         referenceId: input.referenceId,
         batchId: batch.id,
         userId: input.userId,
+        note: input.note,
+        approvedBy: input.approvedBy,
       }),
     );
     toConsume -= take;
@@ -634,6 +748,8 @@ export async function consumeStockFefo(
         referenceType: input.referenceType,
         referenceId: input.referenceId,
         userId: input.userId,
+        note: input.note,
+        approvedBy: input.approvedBy,
       }),
     );
   }

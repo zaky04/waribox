@@ -48,7 +48,7 @@ import type {
 // Tolérance flottante sur les montants (arrondi, devises sans décimale) —
 // volontairement pas 0 : deux appareils qui recalculent le même montant à
 // partir des mêmes lignes peuvent différer de quelques centièmes.
-const AMOUNT_EPSILON = 0.5;
+const AMOUNT_EPSILON = 0.02;
 // Marge appliquée aux bornes de points de fidélité — tolère un ratio/
 // multiplicateur local en retard sur le Master (pas de sync continue des
 // paramètres avant la Phase 3) sans pour autant laisser passer un montant

@@ -17,6 +17,12 @@ export const purchases = sqliteTable("purchases", {
   storeId: integer("store_id").references(() => stores.id),
   status: text("status").notNull().default("received"), // 'ordered' | 'received' | 'cancelled'
   total: real("total").notNull(),
+  // Numéro de la facture/du bon du fournisseur, pour le rapprochement.
+  invoiceReference: text("invoice_reference"),
+  // Renseignés à la réception contrôlée (achats en deux temps, voir
+  // business_settings.requirePurchaseReceipt).
+  receivedAt: text("received_at"),
+  receivedBy: integer("received_by"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -30,6 +36,12 @@ export const purchaseItems = sqliteTable("purchase_items", {
     .references(() => productVariants.id),
   quantity: real("quantity").notNull(),
   unitCost: real("unit_cost").notNull(),
+  // Quantité réellement comptée à la réception (NULL tant que non reçue).
+  receivedQuantity: real("received_quantity"),
+  // Dernier coût connu de cette variante au moment de l'achat, et alerte si la
+  // hausse dépassait le seuil des paramètres.
+  previousUnitCost: real("previous_unit_cost"),
+  priceAlert: integer("price_alert", { mode: "boolean" }).notNull().default(false),
 });
 
 export const supplierDebts = sqliteTable("supplier_debts", {
@@ -54,5 +66,6 @@ export const supplierDebtPayments = sqliteTable("supplier_debt_payments", {
     .notNull()
     .references(() => supplierDebts.id),
   amount: real("amount").notNull(),
+  paidBy: integer("paid_by"),
   paidAt: text("paid_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

@@ -1,8 +1,3 @@
-// Montant entier avec séparateur de milliers insécable (142 500) — jamais de
-// retour à la ligne au milieu d'un nombre, et identique quelle que soit la
-// locale de l'appareil (contrairement à toLocaleString).
-export function formatAmount(n: number): string {
-  return Math.round(n)
-    .toString()
-    .replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-}
+// Formatage des montants selon la devise du commerce (Paramètres → Configuration) :
+// implémentation partagée dans @gestion-boutique/i18n, réexportée ici pour l'UI.
+export { formatAmount, formatMoney } from "@gestion-boutique/i18n";

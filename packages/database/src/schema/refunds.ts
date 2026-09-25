@@ -22,6 +22,7 @@ export const refunds = sqliteTable("refunds", {
   subtotal: real("subtotal").notNull(),
   taxTotal: real("tax_total").notNull().default(0),
   total: real("total").notNull(),
+  approvedBy: integer("approved_by"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 

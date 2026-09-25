@@ -22,6 +22,8 @@ export const customerCredits = sqliteTable("customer_credits", {
   remainingBalance: real("remaining_balance").notNull(),
   dueDate: text("due_date"),
   status: text("status").notNull().default("open"), // 'open' | 'partial' | 'settled'
+  // Responsable ayant approuvé cette créance quand elle dépassait le seuil.
+  approvedBy: integer("approved_by"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -32,5 +34,9 @@ export const creditRepayments = sqliteTable("credit_repayments", {
     .references(() => customerCredits.id),
   amount: real("amount").notNull(),
   method: text("method"),
+  // Qui a encaissé ce règlement, et dans quelle boutique — nécessaires pour le
+  // rapprocher du tiroir-caisse et le rattacher à une personne.
+  receivedBy: integer("received_by"),
+  storeId: integer("store_id"),
   paidAt: text("paid_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

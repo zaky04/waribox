@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { stores } from "./stores";
 
 export const roles = sqliteTable("roles", {
@@ -37,5 +37,14 @@ export const users = sqliteTable("users", {
   // qu'une tentative réussit ou que le délai est écoulé.
   failedAttempts: integer("failed_attempts").notNull().default(0),
   lockedUntil: text("locked_until"),
+  // Plafonds personnels (NULL = utiliser le seuil global des paramètres) —
+  // au-delà, l'action exige l'approbation d'un responsable.
+  // Droits particuliers de cet utilisateur, par-dessus ceux de son rôle :
+  // JSON { "manage_stock": true, "manage_refunds": false }. true accorde, false
+  // retire ; une permission absente suit le rôle. NULL = aucun droit particulier.
+  permissionOverrides: text("permission_overrides"),
+  limitRefund: real("limit_refund"),
+  limitStock: real("limit_stock"),
+  limitCredit: real("limit_credit"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

@@ -1,8 +1,13 @@
-import { formatAmount } from "../../lib/format";
+import { formatAmount, formatMoney } from "../../lib/format";
 import {
   createPurchase,
   ensureVariantBarcode,
   getLowStockProducts,
+  getPriceReferences,
+  getSettings,
+  listPurchaseItems,
+  priceIncreasePercent,
+  receivePurchase,
   getSalesVelocity,
   listAllVariants,
   listProducts,
@@ -83,6 +88,17 @@ export function PurchasesPage() {
   const [printingLabels, setPrintingLabels] = useState(false);
   const [labelsError, setLabelsError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [invoiceReference, setInvoiceReference] = useState("");
+  const [priceRefs, setPriceRefs] = useState<Map<number, number>>(new Map());
+  const [alertPercent, setAlertPercent] = useState(0);
+  const [twoStep, setTwoStep] = useState(false);
+  // Réception contrôlée d'un achat en attente (comptage en aveugle).
+  const [receiving, setReceiving] = useState<Purchase | null>(null);
+  const [receiveItems, setReceiveItems] = useState<Awaited<ReturnType<typeof listPurchaseItems>>>([]);
+  const [receivedInputs, setReceivedInputs] = useState<Record<number, string>>({});
+  const [receiveError, setReceiveError] = useState<string | null>(null);
+  const [receiveResult, setReceiveResult] = useState<string | null>(null);
+  const [receiveSaving, setReceiveSaving] = useState(false);
   const [lastPurchaseNumber, setLastPurchaseNumber] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -94,6 +110,9 @@ export function PurchasesPage() {
       getLowStockProducts(db, currentStoreId ?? undefined),
       getSalesVelocity(db, REORDER_WINDOW_DAYS, currentStoreId ?? undefined),
     ]);
+    const settings = await getSettings(db);
+    setAlertPercent(settings.priceAlertPercent);
+    setTwoStep(settings.requirePurchaseReceipt);
     setSuppliers(supplierRows);
     setProducts(productRows);
     setVariants(variantRows);
@@ -105,6 +124,54 @@ export function PurchasesPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Dernier coût connu des articles du panier : sert à signaler une hausse de prix.
+  useEffect(() => {
+    let cancelled = false;
+    void getPriceReferences(db, cart.map((l) => l.variantId)).then((refs) => {
+      if (!cancelled) setPriceRefs(refs);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [db, cart]);
+
+  const startReceive = async (purchase: Purchase) => {
+    setReceiving(purchase);
+    setReceiveError(null);
+    setReceiveResult(null);
+    const items = await listPurchaseItems(db, purchase.id);
+    setReceiveItems(items);
+    setReceivedInputs({});
+  };
+
+  const handleReceive = async () => {
+    if (!user || !receiving) return;
+    setReceiveError(null);
+    setReceiveSaving(true);
+    try {
+      const result = await receivePurchase(
+        db,
+        {
+          purchaseId: receiving.id,
+          userId: user.id,
+          lines: receiveItems.map((i) => ({ purchaseItemId: i.id, receivedQuantity: Number(receivedInputs[i.id] ?? "") })),
+        },
+        user.permissions,
+      );
+      setReceiveResult(
+        result.shortfallValue > 0
+          ? t("purchasesControls.shortfallResult", { amount: formatMoney(result.shortfallValue) })
+          : t("purchasesControls.receiptOk"),
+      );
+      setReceiving(null);
+      await refresh();
+    } catch (err) {
+      setReceiveError(err instanceof Error ? err.message : t("purchases.errors.saveFailed"));
+    } finally {
+      setReceiveSaving(false);
+    }
+  };
 
   const addToCart = (product: Product, quantity = 1) => {
     const variant = variants.find((v) => v.productId === product.id);
@@ -201,6 +268,7 @@ export function PurchasesPage() {
     try {
       const paidValue = amountPaid === "" ? total : Number(amountPaid);
       const purchase = await createPurchase(db, {
+        invoiceReference: invoiceReference.trim() || undefined,
         userId: user.id,
         supplierId: Number(supplierId),
         items: cart.map((line) => ({
@@ -215,6 +283,7 @@ export function PurchasesPage() {
       }, user.permissions);
 
       setLastPurchaseNumber(purchase.number);
+      setInvoiceReference("");
       setLastPurchaseLines(cart);
       setLabelsError(null);
       setCart([]);
@@ -398,11 +467,19 @@ export function PurchasesPage() {
                       </td>
                       <td style={tdStyle}>
                         <input
-                          type="number"
+                          type="number" step="any"
                           value={line.unitCost}
                           onChange={(e) => updateUnitCost(line.variantId, Number(e.target.value))}
                           style={{ ...inputStyle, width: 80, marginTop: 0 }}
                         />
+                        {alertPercent > 0 && priceIncreasePercent(priceRefs.get(line.variantId), line.unitCost) > alertPercent && (
+                          <div style={{ color: "var(--color-warning)", fontSize: 12, marginTop: 2 }}>
+                            {t("purchasesControls.priceAlert", {
+                              percent: Math.round(priceIncreasePercent(priceRefs.get(line.variantId), line.unitCost) * 10) / 10,
+                              previous: formatAmount(priceRefs.get(line.variantId) ?? 0),
+                            })}
+                          </div>
+                        )}
                       </td>
                       <td style={tdStyle}>{formatAmount(line.quantity * line.unitCost)}</td>
                       <td style={tdStyle}>
@@ -425,6 +502,11 @@ export function PurchasesPage() {
           </div>
 
           <label>
+            {t("purchasesControls.invoiceReference")}
+            <input style={inputStyle} value={invoiceReference} onChange={(e) => setInvoiceReference(e.target.value)} />
+          </label>
+
+          <label>
             {t("purchases.paymentMethod")}
             <select
               style={inputStyle}
@@ -443,7 +525,7 @@ export function PurchasesPage() {
             {t("purchases.amountPaid")}
             <input
               style={inputStyle}
-              type="number"
+              type="number" step="any"
               value={amountPaid}
               onChange={(e) => setAmountPaid(e.target.value)}
               placeholder={String(total)}
@@ -470,6 +552,44 @@ export function PurchasesPage() {
         </div>
       </div>
 
+      {receiveResult && <p style={{ color: "var(--color-text)", fontWeight: 600 }}>{receiveResult}</p>}
+      {receiving && (
+        <div style={cardStyle}>
+          <strong>{t("purchasesControls.receiveTitle", { number: receiving.number })}</strong>
+          <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("purchasesControls.receiveHint")}</p>
+          {receiveItems.map((item) => {
+            const variant = variants.find((v) => v.id === item.variantId);
+            const product = variant ? products.find((pr) => pr.id === variant.productId) : undefined;
+            return (
+              <label key={item.id}>
+                {product?.name ?? "?"} — {t("purchasesControls.receivedQty")}
+                <input
+                  style={inputStyle}
+                  type="number"
+                  step="any"
+                  min={0}
+                  value={receivedInputs[item.id] ?? ""}
+                  onChange={(e) => setReceivedInputs((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                />
+              </label>
+            );
+          })}
+          {receiveError && <p style={{ color: "var(--color-danger)", fontSize: 13, margin: 0 }}>{receiveError}</p>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              style={primaryButtonStyle}
+              onClick={handleReceive}
+              disabled={receiveSaving || receiveItems.some((i) => (receivedInputs[i.id] ?? "") === "")}
+            >
+              {t("purchasesControls.receiveSubmit")}
+            </button>
+            <button style={{ ...primaryButtonStyle, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)" }} onClick={() => setReceiving(null)}>
+              {t("approval.cancel")}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="table-scroll">
         <table style={tableStyle}>
           <thead>
@@ -478,20 +598,33 @@ export function PurchasesPage() {
               <th style={thStyle}>{t("purchases.date")}</th>
               <th style={thStyle}>{t("purchases.supplier")}</th>
               <th style={thStyle}>{t("purchases.total")}</th>
+              <th style={thStyle}>{t("purchasesControls.status")}</th>
             </tr>
           </thead>
           <tbody>
             {purchases.map((p) => (
               <tr key={p.id}>
-                <td style={tdStyle}>{p.number}</td>
+                <td style={tdStyle}>
+                  {p.number}
+                  {p.invoiceReference ? <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{p.invoiceReference}</div> : null}
+                </td>
                 <td style={tdStyle}>{p.createdAt}</td>
                 <td style={tdStyle}>{supplierName(p.supplierId)}</td>
                 <td style={tdStyle}>{formatAmount(p.total)}</td>
+                <td style={tdStyle}>
+                  {p.status === "ordered" ? (
+                    <button style={{ ...primaryButtonStyle, padding: "4px 12px" }} onClick={() => void startReceive(p)}>
+                      {t("purchasesControls.receive")}
+                    </button>
+                  ) : (
+                    t("purchasesControls.statusReceived")
+                  )}
+                </td>
               </tr>
             ))}
             {purchases.length === 0 && (
               <tr>
-                <td style={tdStyle} colSpan={4}>
+                <td style={tdStyle} colSpan={5}>
                   {t("purchases.none")}
                 </td>
               </tr>

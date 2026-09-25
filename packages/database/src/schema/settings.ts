@@ -126,4 +126,23 @@ export const businessSettings = sqliteTable("business_settings", {
   appearanceBackground: text("appearance_background"), // null (papier) | 'white' | 'grey' — thème clair seulement
   appearanceFont: text("appearance_font"), // null (Familjen Grotesk) | 'system' | 'serif'
   appearanceShape: text("appearance_shape"), // 'rounded' (défaut) | 'square'
+  // --- Contrôles de gestion (voir CLAUDE.md, journal du 2026-09-25) ---
+  // Seuils au-dessus desquels une action exige l'approbation d'un responsable
+  // (code PIN d'un utilisateur ayant la permission approve_actions). NULL =
+  // pas de contrôle ; 0 = toute action de ce type exige une approbation. Un
+  // plafond propre à l'utilisateur (users.limit*) prime sur ces valeurs.
+  approvalRefundThreshold: real("approval_refund_threshold"),
+  approvalStockThreshold: real("approval_stock_threshold"), // valeur au coût d'une perte / entrée manuelle
+  approvalCreditThreshold: real("approval_credit_threshold"),
+  // Écart de caisse (|compté - attendu|) à partir duquel une clôture est
+  // signalée. NULL = tout écart non nul est signalé.
+  cashVarianceThreshold: real("cash_variance_threshold"),
+  // Hausse de prix d'achat (en %, vs dernier coût connu) signalée à la saisie
+  // d'un achat. 0 = désactivé.
+  priceAlertPercent: real("price_alert_percent").notNull().default(10),
+  // Achats en deux temps : la facture fournisseur est saisie, le stock n'entre
+  // qu'à la réception contrôlée (quantités comptées).
+  requirePurchaseReceipt: integer("require_purchase_receipt", { mode: "boolean" }).notNull().default(false),
+  // Plafond de crédit par défaut d'un client (NULL/0 = illimité).
+  defaultCreditLimit: real("default_credit_limit"),
 });

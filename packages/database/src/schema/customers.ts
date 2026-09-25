@@ -19,5 +19,7 @@ export const customers = sqliteTable("customers", {
   // (Bronze/Argent/Or), qui doit refléter l'historique d'achat du client et
   // non son solde dépensable du moment (voir LoyaltyService.computeTier).
   lifetimeLoyaltyPoints: real("lifetime_loyalty_points").notNull().default(0),
+  // Plafond de crédit de ce client (NULL = plafond par défaut des paramètres).
+  creditLimit: real("credit_limit"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

@@ -2,7 +2,14 @@ import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
 import { eq } from "drizzle-orm";
-import { requirePermission, type PermissionSet } from "../domain/permissions";
+import {
+  applyOverrides,
+  assertCanChangePermissions,
+  parseOverrides,
+  requirePermission,
+  type PermissionOverrides,
+  type PermissionSet,
+} from "../domain/permissions";
 import { logAction } from "../services/AuditService";
 import { hashSecret, verifySecret } from "./hash";
 
@@ -18,6 +25,14 @@ export interface AuthenticatedUser {
   // Boutique à laquelle ce compte est cantonné (voir schema/users.ts) — nul
   // pour Admin/Propriétaire ou en mono-boutique.
   storeId: number | null;
+  // Plafonds personnels d'approbation (null = seuil global des paramètres).
+  limitRefund: number | null;
+  limitStock: number | null;
+  limitCredit: number | null;
+  // Vrai si un code PIN est défini (jamais le hash).
+  hasPin: boolean;
+  // Droits particuliers (par-dessus le rôle) ; `permissions` est déjà le résultat fusionné.
+  permissionOverrides: PermissionOverrides;
 }
 
 async function toAuthenticatedUser(
@@ -32,9 +47,14 @@ async function toAuthenticatedUser(
     email: user.email,
     roleId: user.roleId,
     roleName: role?.name ?? "",
-    permissions: role ? (JSON.parse(role.permissions) as PermissionSet) : {},
+    permissions: applyOverrides(role ? (JSON.parse(role.permissions) as PermissionSet) : {}, parseOverrides(user.permissionOverrides)),
     isActive: user.isActive,
     storeId: user.storeId,
+    limitRefund: user.limitRefund,
+    limitStock: user.limitStock,
+    limitCredit: user.limitCredit,
+    hasPin: !!user.pinHash,
+    permissionOverrides: parseOverrides(user.permissionOverrides),
   };
 }
 
@@ -84,6 +104,10 @@ export async function createUser(
     pin?: string;
     roleId: number;
     storeId?: number | null;
+    limitRefund?: number | null;
+    limitStock?: number | null;
+    limitCredit?: number | null;
+    permissionOverrides?: PermissionOverrides;
     createdBy?: number;
   },
   actingPermissions: PermissionSet,
@@ -91,8 +115,13 @@ export async function createUser(
   // Aucune vérification si la base ne contient encore aucun compte — c'est
   // le tout premier compte (Admin) créé par SetupAdminScreen, avant qu'une
   // session ne puisse exister.
-  if (await hasAnyUser(db)) {
+  const firstAccount = !(await hasAnyUser(db));
+  if (!firstAccount) {
     requirePermission(actingPermissions, "manage_users");
+    // Accorder un rôle ou des droits "de pouvoir" exige de les détenir soi-même.
+    const role = await db.select().from(schema.roles).where(eq(schema.roles.id, input.roleId)).get();
+    const rolePerms = role ? (JSON.parse(role.permissions) as PermissionSet) : {};
+    assertCanChangePermissions(actingPermissions, {}, applyOverrides(rolePerms, input.permissionOverrides ?? {}));
   }
 
   // Normalisé (espaces + casse) pour que "Admin" et "admin" désignent le même
@@ -119,6 +148,10 @@ export async function createUser(
       pinHash,
       roleId: input.roleId,
       storeId: input.storeId,
+      limitRefund: input.limitRefund,
+      limitStock: input.limitStock,
+      limitCredit: input.limitCredit,
+      permissionOverrides: input.permissionOverrides && Object.keys(input.permissionOverrides).length > 0 ? JSON.stringify(input.permissionOverrides) : null,
     })
     .returning()
     .get();
@@ -207,7 +240,13 @@ export async function verifyPin(db: Database, userId: number, pin: string): Prom
   return true;
 }
 
-export async function setPin(db: Database, userId: number, pin: string): Promise<void> {
+export async function setPin(
+  db: Database,
+  userId: number,
+  pin: string,
+  actingPermissions: PermissionSet,
+): Promise<void> {
+  requirePermission(actingPermissions, "manage_users");
   const pinHash = await hashSecret(pin);
   await db.update(schema.users).set({ pinHash }).where(eq(schema.users.id, userId)).run();
 }
@@ -277,6 +316,14 @@ export interface UpdateUserInput {
   email?: string;
   roleId?: number;
   storeId?: number | null;
+  limitRefund?: number | null;
+  limitStock?: number | null;
+  limitCredit?: number | null;
+  // Nouveau code PIN (4 chiffres) — nécessaire pour qu'un responsable puisse
+  // approuver des actions.
+  pin?: string;
+  // Droits particuliers (remplace l'ensemble ; {} ou null = aucun).
+  permissionOverrides?: PermissionOverrides | null;
   // Réinitialisation par l'Admin — contrairement à changeOwnPassword, ne
   // demande jamais l'ancien mot de passe (c'est justement l'intérêt : un
   // utilisateur qui l'a oublié).
@@ -300,6 +347,25 @@ export async function updateUser(
   if (input.email !== undefined) updates.email = input.email;
   if (input.roleId !== undefined) updates.roleId = input.roleId;
   if (input.storeId !== undefined) updates.storeId = input.storeId;
+  if (input.limitRefund !== undefined) updates.limitRefund = input.limitRefund;
+  if (input.limitStock !== undefined) updates.limitStock = input.limitStock;
+  if (input.limitCredit !== undefined) updates.limitCredit = input.limitCredit;
+  if (input.pin) updates.pinHash = await hashSecret(input.pin);
+  const before = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get();
+  if (input.permissionOverrides !== undefined) {
+    updates.permissionOverrides =
+      input.permissionOverrides && Object.keys(input.permissionOverrides).length > 0 ? JSON.stringify(input.permissionOverrides) : null;
+  }
+  if (before && (input.permissionOverrides !== undefined || input.roleId !== undefined)) {
+    const roleRows = await db.select().from(schema.roles);
+    const permsOf = (roleId: number, overridesRaw: string | null | undefined) => {
+      const r = roleRows.find((x) => x.id === roleId);
+      return applyOverrides(r ? (JSON.parse(r.permissions) as PermissionSet) : {}, parseOverrides(overridesRaw));
+    };
+    const beforePerms = permsOf(before.roleId, before.permissionOverrides);
+    const afterPerms = permsOf(input.roleId ?? before.roleId, updates.permissionOverrides !== undefined ? updates.permissionOverrides : before.permissionOverrides);
+    assertCanChangePermissions(actingPermissions, beforePerms, afterPerms);
+  }
 
   if (input.username !== undefined) {
     const username = input.username.trim().toLowerCase();
@@ -325,7 +391,18 @@ export async function updateUser(
       action: "update_user",
       entity: "user",
       entityId: userId,
-      metadata: { fullName: updated.fullName, roleId: updated.roleId, passwordReset: !!input.newPassword },
+      metadata: {
+        fullName: updated.fullName,
+        roleId: updated.roleId,
+        passwordReset: !!input.newPassword,
+        pinChanged: !!input.pin,
+        overrides: input.permissionOverrides !== undefined ? { from: before?.permissionOverrides ?? null, to: updated.permissionOverrides ?? null } : undefined,
+        // Changement de rôle ou de plafonds : ancienne et nouvelle valeur.
+        roleFrom: before && before.roleId !== updated.roleId ? before.roleId : undefined,
+        limits: before && (before.limitRefund !== updated.limitRefund || before.limitStock !== updated.limitStock || before.limitCredit !== updated.limitCredit)
+          ? { from: [before.limitRefund, before.limitStock, before.limitCredit], to: [updated.limitRefund, updated.limitStock, updated.limitCredit] }
+          : undefined,
+      },
     });
   }
 

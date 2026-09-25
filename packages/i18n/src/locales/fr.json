@@ -49,7 +49,9 @@
       "system": "Système"
     },
     "appearance": "Apparence",
-    "advanced": "Configuration avancée"
+    "advanced": "Configuration avancée",
+    "inventory": "Inventaire",
+    "controls": "Contrôles"
   },
   "topbar": {
     "impersonatingPrefix": "Connecté en tant que",
@@ -84,7 +86,7 @@
     "backupNever": "Jamais",
     "backupOverdue": "En retard — à faire dans Paramètres",
     "backupUpToDate": "À jour",
-    "vsYesterday": "par rapport à hier ({{amount}} F)",
+    "vsYesterday": "par rapport à hier ({{amount}})",
     "avgBasket": "Panier moyen",
     "salesLabel": "Ventes",
     "peakHour": "{{hour}} h : le coup de feu",
@@ -175,7 +177,14 @@
       "difference": "Écart :",
       "closing": "Fermeture...",
       "confirm": "Confirmer la fermeture",
-      "cancel": "Annuler"
+      "cancel": "Annuler",
+      "blindHint": "Compte les espèces du tiroir et saisis le total. Le montant attendu ne s'affiche qu'après la clôture.",
+      "resultTitle": "Caisse fermée — résultat du comptage",
+      "expectedLabel": "Montant attendu",
+      "countedLabel": "Montant compté",
+      "alertHint": "Cet écart dépasse le seuil : il est signalé au responsable dans « Contrôles ».",
+      "dismiss": "OK",
+      "error": "La clôture a échoué."
     },
     "paymentMethods": {
       "cash": "Espèces",
@@ -237,7 +246,19 @@
       "receipt58mm": "58 mm (32 caractères)",
       "receipt80mm": "80 mm (48 caractères)",
       "receiptCustom": "Personnalisé (nombre de caractères)",
-      "receiptCharsPerLine": "Caractères par ligne"
+      "receiptCharsPerLine": "Caractères par ligne",
+      "currency": "Devise",
+      "currencyHint": "Change l'affichage des montants (symbole, décimales) partout : écrans, tickets, rapports. Les montants déjà enregistrés ne sont pas convertis.",
+      "currencyVatHint": "TVA courante dans ce pays : environ {{rate}} % (à vérifier avec ton comptable).",
+      "currencyNames": {
+        "XOF": "Franc CFA (UEMOA)",
+        "XAF": "Franc CFA (CEMAC)",
+        "NGN": "Naira nigérian",
+        "GHS": "Cedi ghanéen",
+        "EUR": "Euro",
+        "USD": "Dollar américain",
+        "GBP": "Livre sterling"
+      }
     },
     "appearance": {
       "heading": "Apparence",
@@ -599,7 +620,16 @@
       "change_maintenance_code": "Code de maintenance changé",
       "create_expense": "Dépense enregistrée",
       "update_expense": "Dépense modifiée",
-      "delete_expense": "Dépense supprimée"
+      "delete_expense": "Dépense supprimée",
+      "stock_entry": "Entrée de stock manuelle",
+      "stock_loss": "Perte de stock",
+      "stock_transfer": "Transfert de stock",
+      "stock_count_start": "Inventaire démarré",
+      "stock_count_close": "Inventaire clôturé",
+      "receive_purchase": "Achat réceptionné",
+      "approval_failed": "Approbation refusée",
+      "create_role": "Rôle créé",
+      "update_role": "Rôle modifié"
     },
     "sales": {
       "searchPlaceholder": "Numéro de vente...",
@@ -660,14 +690,15 @@
       "remaining": "Restant",
       "quantityToRefund": "Qté à rembourser",
       "restock": "Remettre en stock",
-      "reason": "Motif (optionnel)",
+      "reason": "Motif",
       "method": "Méthode de remboursement",
       "totalToRefund": "Total à rembourser :",
       "errorQuantityRequired": "Indique une quantité à rembourser pour au moins un article.",
       "errorGeneric": "Impossible d'enregistrer le remboursement.",
       "saving": "Enregistrement...",
       "submit": "Rembourser",
-      "cancel": "Annuler"
+      "cancel": "Annuler",
+      "errorReasonRequired": "Le motif du remboursement est obligatoire."
     },
     "refundHistoryModal": {
       "title": "Remboursements — vente {{number}}",
@@ -700,7 +731,9 @@
       "lotNumber": "Numéro de lot (optionnel)",
       "expiryDate": "Date de péremption",
       "saving": "Enregistrement...",
-      "submit": "Ajouter au stock"
+      "submit": "Ajouter au stock",
+      "note": "Motif",
+      "notePlaceholder": "Ex. : stock initial, retour fournisseur…"
     },
     "transfer": {
       "heading": "Transfert Réserve ↔ Surface de vente",
@@ -714,7 +747,9 @@
       "hint": "Retire du stock un produit périmé, cassé, volé ou détruit — sans passer par une vente. Le mouvement reste tracé dans les Journaux avec son motif.",
       "reason": "Motif",
       "saving": "Enregistrement...",
-      "submit": "Retirer du stock"
+      "submit": "Retirer du stock",
+      "note": "Détail (optionnel)",
+      "notePlaceholder": "Ex. : carton tombé du camion"
     },
     "errors": {
       "entryRequired": "Sélectionne un produit, un emplacement et une quantité positive.",
@@ -725,7 +760,8 @@
       "transferFailed": "Impossible de transférer le stock.",
       "lossRequired": "Sélectionne un produit, un emplacement et une quantité positive.",
       "lossInsufficient": "Stock insuffisant dans cet emplacement (disponible : {{available}}).",
-      "lossFailed": "Impossible d'enregistrer le retrait."
+      "lossFailed": "Impossible d'enregistrer le retrait.",
+      "entryNoteRequired": "Motif obligatoire pour une entrée de stock manuelle."
     }
   },
   "expenses": {
@@ -1014,7 +1050,8 @@
       "pinFormat": "Le code PIN doit contenir exactement 4 chiffres.",
       "storeRequired": "Ce rôle doit être rattaché à une boutique (il ne peut pas en changer lui-même).",
       "emailInUse": "Cet email est déjà utilisé.",
-      "impersonateFailed": "Impossible d'ouvrir une session pour ce compte."
+      "impersonateFailed": "Impossible d'ouvrir une session pour ce compte.",
+      "limitFormat": "Un plafond doit être vide ou un nombre positif."
     }
   },
   "quotes": {
@@ -1384,7 +1421,11 @@
     "purchases": {
       "itemRequired": "L'achat doit contenir au moins un article.",
       "quantityPositive": "La quantité de chaque article doit être supérieure à zéro.",
-      "reserveLocationNotFound": "Emplacement de réserve introuvable pour cette boutique."
+      "reserveLocationNotFound": "Emplacement de réserve introuvable pour cette boutique.",
+      "duplicateInvoice": "La facture « {{reference}} » de ce fournisseur est déjà enregistrée.",
+      "notFound": "Achat introuvable.",
+      "notAwaitingReceipt": "Cet achat n'attend pas de réception.",
+      "receiptQuantityRequired": "Saisis la quantité reçue de chaque article."
     },
     "quotes": {
       "itemRequired": "Le devis doit contenir au moins un article.",
@@ -1398,7 +1439,8 @@
       "saleItemNotFound": "Article de vente introuvable pour cette vente.",
       "quantityExceeded": "Quantité remboursable dépassée pour cet article (restant : {{remaining}}, demandé : {{requested}}).",
       "noValidQuantity": "Aucune quantité valide à rembourser.",
-      "cannotFindOriginalLocation": "Impossible de retrouver l'emplacement d'origine de cet article pour la remise en stock."
+      "cannotFindOriginalLocation": "Impossible de retrouver l'emplacement d'origine de cet article pour la remise en stock.",
+      "reasonRequired": "Un motif est obligatoire pour rembourser une vente."
     },
     "sales": {
       "itemRequired": "La vente doit contenir au moins un article.",
@@ -1418,6 +1460,35 @@
     "settings": {
       "advancedCodeRequired": "Le code de maintenance est requis pour modifier ces réglages.",
       "advancedCodeWrong": "Code de maintenance incorrect."
+    },
+    "approval": {
+      "required": "Cette action ({{kind}} de {{amount}}) dépasse le plafond de {{threshold}} : l'approbation d'un responsable est requise.",
+      "invalidApprover": "Ce responsable ne peut pas approuver cette action.",
+      "wrongPin": "Code PIN du responsable incorrect."
+    },
+    "stock": {
+      "quantityPositive": "La quantité doit être supérieure à zéro.",
+      "sameLocation": "L'emplacement de départ et d'arrivée doivent être différents.",
+      "insufficient": "Stock insuffisant à cet emplacement ({{available}} disponible).",
+      "noteRequired": "Un motif est obligatoire pour une entrée de stock manuelle."
+    },
+    "cashSession": {
+      "notFound": "Session de caisse introuvable.",
+      "alreadyClosed": "Cette session de caisse est déjà fermée."
+    },
+    "inventory": {
+      "alreadyOpen": "Un inventaire est déjà en cours à cet emplacement.",
+      "notOpen": "Cet inventaire n'est pas ouvert.",
+      "negative": "La quantité comptée ne peut pas être négative.",
+      "notFound": "Inventaire introuvable.",
+      "nothingCounted": "Aucun produit n'a été compté : saisis au moins une quantité avant de clôturer."
+    },
+    "roles": {
+      "nameRequired": "Le nom du rôle est obligatoire.",
+      "nameTaken": "Un rôle porte déjà ce nom.",
+      "notFound": "Rôle introuvable.",
+      "adminLocked": "Le rôle Admin ne peut pas être modifié.",
+      "sensitiveDenied": "Tu ne peux pas accorder ou retirer un droit sensible (gestion des utilisateurs, paramètres, approbation, journal, contrôles) que tu ne détiens pas toi-même."
     }
   },
   "whatsapp": {
@@ -1734,5 +1805,236 @@
       "updateFileFailed": "Échec de la mise à jour du fichier sur Google Drive.",
       "uploadFileFailed": "Échec de l'envoi du fichier vers Google Drive."
     }
+  },
+  "approval": {
+    "kinds": {
+      "refund": "remboursement",
+      "stock": "mouvement de stock",
+      "credit": "vente à crédit"
+    },
+    "title": "Approbation requise",
+    "approver": "Responsable",
+    "pin": "Code PIN du responsable",
+    "approve": "Approuver",
+    "cancel": "Annuler",
+    "cancelled": "Action annulée : approbation non donnée.",
+    "noApprover": "Aucun responsable n'a de code PIN. Définis un PIN pour un Propriétaire ou un Admin (Utilisateurs)."
+  },
+  "inventory": {
+    "movementNote": "Inventaire n°{{id}}",
+    "title": "Inventaire physique",
+    "hint": "Compte le stock réel à un emplacement. Les quantités du système restent cachées pendant le comptage ; à la clôture, l'écart est valorisé et le stock régularisé (avec l'approbation d'un responsable au-delà du plafond).",
+    "location": "Emplacement",
+    "start": "Démarrer un inventaire",
+    "inProgress": "Inventaire n°{{id}} en cours",
+    "progress": "{{counted}} / {{total}} produits comptés",
+    "blindHint": "quantités du système masquées",
+    "search": "Rechercher un produit…",
+    "product": "Produit",
+    "counted": "Compté",
+    "note": "Note (optionnelle)",
+    "close": "Clôturer et régulariser le stock",
+    "closing": "Clôture…",
+    "closeHint": "Les produits non comptés ne sont pas modifiés. Compte et clôture dans la même séance, sans vendre entre-temps.",
+    "reportTitle": "Résultat de l'inventaire n°{{id}}",
+    "missingValue": "Manquants (valeur au coût)",
+    "surplusValue": "Surplus (valeur au coût)",
+    "noVariance": "Aucun écart : le stock compté correspond au stock du système.",
+    "system": "Système",
+    "difference": "Écart",
+    "value": "Valeur",
+    "history": "Inventaires clôturés",
+    "number": "N°",
+    "closedAt": "Clôturé le",
+    "viewReport": "Voir le rapport",
+    "errors": {
+      "generic": "L'opération d'inventaire a échoué."
+    }
+  },
+  "controls": {
+    "title": "Contrôles de gestion",
+    "hint": "Signaux à vérifier par employé et par fournisseur. Ce ne sont pas des accusations : chaque signal est un point de départ (ticket, discussion, vérification sur place).",
+    "from": "Du",
+    "to": "Au",
+    "signalsTitle": "Signaux à vérifier ({{count}})",
+    "noSignal": "Aucun signal sur la période.",
+    "employees": "Par employé",
+    "thresholds": "Seuils de signalement : remboursements ≥ {{refund}} % des ventes de l'employé (2 minimum), pertes ≥ {{loss}} % de ses ventes, ≥ {{entries}} entrées de stock manuelles, tout écart de caisse au-delà du seuil réglé dans Configuration.",
+    "col": {
+      "employee": "Employé",
+      "sales": "Ventes",
+      "refundsProcessed": "Remboursements faits",
+      "refundRate": "Taux remboursé",
+      "credit": "Crédits accordés",
+      "losses": "Pertes de stock",
+      "manualEntries": "Entrées manuelles",
+      "cashVariance": "Écarts de caisse",
+      "other": "Autres",
+      "date": "Date",
+      "expected": "Attendu",
+      "counted": "Compté",
+      "difference": "Écart",
+      "missing": "Manquants",
+      "surplus": "Surplus",
+      "supplier": "Fournisseur",
+      "purchases": "Achats",
+      "priceAlerts": "Hausses de prix",
+      "shortfall": "Manquant à la réception",
+      "awaiting": "En attente de réception",
+      "debt": "Dette ouverte",
+      "product": "Produit",
+      "supplierPrices": "Prix par fournisseur (dernier prix)",
+      "kind": "Type",
+      "amount": "Montant",
+      "detail": "Détail"
+    },
+    "other": "prix modifiés : {{prices}} · dépenses corrigées : {{expenses}} · approbations refusées : {{failed}} · approbations données : {{approvals}}",
+    "empty": "Rien sur la période.",
+    "cashTitle": "Clôtures de caisse",
+    "stockCountsTitle": "Inventaires",
+    "suppliersTitle": "Fournisseurs",
+    "priceComparison": "Comparatif des prix d'achat (produits achetés chez plusieurs fournisseurs)",
+    "avg": "moy.",
+    "eventsTitle": "Événements sensibles récents",
+    "eventKinds": {
+      "refund": "Remboursement",
+      "loss": "Perte de stock",
+      "manual_entry": "Entrée de stock manuelle",
+      "cash_variance": "Écart de caisse",
+      "price_alert": "Hausse de prix d'achat",
+      "credit_approved": "Crédit approuvé",
+      "stock_count": "Inventaire"
+    },
+    "flags": {
+      "refund_rate": "{{value}} % de ses ventes ont été remboursées (seuil {{threshold}} %).",
+      "cash_variance": "écarts de caisse cumulés : {{amount}}.",
+      "loss_rate": "pertes déclarées élevées ({{value}} — seuil {{threshold}} % des ventes).",
+      "manual_entries": "{{value}} entrées de stock manuelles (seuil {{threshold}}).",
+      "failed_approvals": "{{value}} codes d'approbation refusés (seuil {{threshold}}).",
+      "price_changes": "{{value}} modifications de prix (seuil {{threshold}}).",
+      "expense_edits": "{{value}} dépenses corrigées ou supprimées (seuil {{threshold}}).",
+      "supplier_price_alert": "{{value}} hausse(s) de prix d'achat signalée(s).",
+      "supplier_shortfall": "manquant constaté à la réception : {{amount}} à réclamer.",
+      "supplier_same_user_receipt": "{{value}} réception(s) faite(s) par la personne qui a saisi la facture."
+    },
+    "integrityTitle": "Intégrité du journal",
+    "integrityHint": "Chaque action est chaînée à la précédente par une empreinte : supprimer ou modifier une ligne du journal casse la chaîne. Note l'empreinte de tête de temps en temps : elle permet de détecter aussi un retour en arrière.",
+    "integrityCheck": "Vérifier l'intégrité du journal",
+    "integrityChecking": "Vérification…",
+    "integrityOk": "Journal intact : {{count}} action(s) chaînée(s) vérifiée(s) ({{legacy}} antérieure(s) à la protection).",
+    "integrityBroken": "Journal ALTÉRÉ à la ligne {{id}} — {{reason}}",
+    "integrityHead": "Empreinte de tête :",
+    "integrityReasons": {
+      "prev_mismatch": "une ligne a été supprimée ou déplacée",
+      "hash_mismatch": "le contenu d'une ligne a été modifié",
+      "unhashed_after_chain": "une ligne a été ajoutée hors de l'application"
+    }
+  },
+  "controlsSettings": {
+    "heading": "Contrôles de gestion",
+    "hint": "Seuils au-delà desquels une action exige l'approbation d'un responsable (son code PIN). Laisse vide pour ne pas contrôler ; 0 = tout contrôler. Les plafonds par personne se règlent dans Utilisateurs.",
+    "approvalRefund": "Remboursement au-delà de",
+    "approvalStock": "Perte ou entrée de stock manuelle au-delà de (valeur au coût) — 0 = toute entrée/sortie manuelle doit être approuvée par un Propriétaire/Admin",
+    "approvalCredit": "Vente à crédit au-delà de",
+    "cashVariance": "Écart de caisse signalé au-delà de (vide = tout écart)",
+    "priceAlert": "Alerte si le prix d'achat monte de plus de (%) — 0 pour désactiver",
+    "requireReceipt": "Achats en deux temps : la facture est saisie, le stock n'entre qu'à la réception contrôlée (quantités comptées)",
+    "defaultCreditLimit": "Plafond de crédit par défaut d'un client (vide = illimité)",
+    "approverHint": "Astuce : le Propriétaire et l'Admin peuvent approuver. Il faut leur définir un code PIN (Utilisateurs → Modifier).",
+    "invalid": "Un seuil de contrôle doit être vide ou un nombre positif."
+  },
+  "approvalRoles": {
+    "title": "Rôles et permissions",
+    "hint": "Crée des rôles sur mesure (ex. « Magasinier ») et choisis précisément ce qu'ils peuvent faire. Le rôle Admin ne peut pas être modifié.",
+    "newRole": "Nouveau rôle",
+    "name": "Nom du rôle",
+    "create": "Créer le rôle",
+    "save": "Enregistrer les permissions",
+    "editRole": "Modifier le rôle",
+    "saved": "Rôle enregistré.",
+    "limits": "Plafonds personnels d'approbation (vide = seuil global)",
+    "limitRefund": "Remboursement max sans approbation",
+    "limitStock": "Mouvement de stock max sans approbation (valeur au coût)",
+    "limitCredit": "Vente à crédit max sans approbation",
+    "newPin": "Nouveau code PIN (4 chiffres)",
+    "pinSet": "Code PIN défini",
+    "pinMissing": "Pas de code PIN"
+  },
+  "permissions": {
+    "view_margins": "Voir les marges",
+    "manage_products": "Gérer les produits",
+    "manage_promotions": "Gérer les promotions",
+    "manage_stock": "Gérer le stock et les inventaires",
+    "manage_sales": "Vendre (caisse)",
+    "manage_refunds": "Rembourser",
+    "manage_service_orders": "Créer des tickets de service",
+    "edit_service_orders": "Corriger les tickets de service",
+    "manage_customers": "Créer des clients",
+    "edit_customers": "Modifier les clients (dont plafond de crédit)",
+    "manage_suppliers": "Gérer fournisseurs et achats",
+    "edit_suppliers": "Modifier les fournisseurs",
+    "manage_quotes": "Créer des devis",
+    "edit_quotes": "Modifier les devis",
+    "manage_credits": "Encaisser les créances",
+    "manage_debts": "Payer les dettes fournisseurs",
+    "manage_expenses": "Saisir des dépenses",
+    "edit_expenses": "Corriger/supprimer des dépenses",
+    "view_reports": "Voir les rapports",
+    "view_accounting": "Voir la comptabilité",
+    "manage_settings": "Gérer les paramètres",
+    "manage_users": "Gérer utilisateurs et rôles",
+    "view_audit_logs": "Voir le journal des actions",
+    "switch_store": "Changer de boutique",
+    "view_controls": "Voir le tableau de bord Contrôles",
+    "approve_actions": "Approuver les actions au-dessus des plafonds",
+    "categories": {
+      "sales": "Ventes et caisse",
+      "stock": "Produits et stock",
+      "people": "Clients, fournisseurs et achats",
+      "finance": "Argent : créances, dettes, dépenses, marges",
+      "reports": "Rapports, journal et contrôles",
+      "admin": "Administration et approbations"
+    },
+    "checkAll": "Tout cocher",
+    "uncheckAll": "Tout décocher",
+    "sensitive": "droit sensible"
+  },
+  "purchasesControls": {
+    "invoiceReference": "N° de facture du fournisseur",
+    "priceAlert": "Prix en hausse de {{percent}} % par rapport au dernier ({{previous}}).",
+    "awaitingReceipt": "En attente de réception",
+    "receive": "Réceptionner",
+    "receiveTitle": "Réception de l'achat {{number}}",
+    "receiveHint": "Compte ce que tu reçois réellement, sans regarder la facture. Le stock n'entre que pour les quantités saisies.",
+    "receivedQty": "Quantité reçue",
+    "receiveSubmit": "Valider la réception",
+    "shortfallResult": "Manquant par rapport à la facture : {{amount}} — à réclamer au fournisseur.",
+    "receiptOk": "Réception conforme à la facture.",
+    "status": "Statut",
+    "statusReceived": "Reçu"
+  },
+  "creditsControls": {
+    "method": "Mode d'encaissement",
+    "cash": "Espèces",
+    "card": "Carte",
+    "mobile": "Mobile / virement"
+  },
+  "customersControls": {
+    "creditLimit": "Plafond de crédit (vide = plafond par défaut)",
+    "creditLimitInvalid": "Le plafond de crédit doit être vide ou un nombre positif."
+  },
+  "journalsControls": {
+    "verify": "Vérifier l'intégrité"
+  },
+  "userRights": {
+    "title": "Droits particuliers de cet utilisateur",
+    "hint": "Par-dessus son rôle : autorise ou interdit un droit précis pour cette personne seulement. « Selon le rôle » = aucun changement. Les droits sensibles (⚠) ne peuvent être accordés que par quelqu'un qui les détient.",
+    "inherit": "Selon le rôle",
+    "allow": "Autoriser",
+    "deny": "Interdire",
+    "roleHas": "le rôle l'accorde",
+    "roleLacks": "le rôle ne l'accorde pas",
+    "effective": "Droits effectifs : {{count}} sur {{total}}",
+    "reset": "Remettre tout « selon le rôle »"
   }
 }

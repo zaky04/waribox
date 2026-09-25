@@ -1,8 +1,10 @@
-import { formatAmount } from "../../lib/format";
+import { useApproval } from "../approval/ApprovalProvider";
+import { getCurrency } from "@gestion-boutique/i18n";
+import { formatAmount, formatMoney } from "../../lib/format";
 import {
   createSale,
   getActivePromotionsWithProducts,
-  getExpectedCashAmount,
+  type CloseSessionResult,
   getSettings,
   listCustomers,
   listLocations,
@@ -75,6 +77,7 @@ export function SalesPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
   const { t } = useTranslation();
+  const approval = useApproval();
   const { session, open, close } = useCashSession(currentStoreId);
   const printer = usePrinter();
 
@@ -116,7 +119,8 @@ export function SalesPage() {
   const [receiptPhone, setReceiptPhone] = useState("");
   const [printError, setPrintError] = useState<string | null>(null);
   const [showCloseSession, setShowCloseSession] = useState(false);
-  const [expectedCash, setExpectedCash] = useState<number | null>(null);
+  // Résultat de la dernière clôture (montré sur l'écran d'ouverture qui suit).
+  const [closeResult, setCloseResult] = useState<CloseSessionResult | null>(null);
   const [showPrinterPanel, setShowPrinterPanel] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -268,7 +272,10 @@ export function SalesPage() {
   // jamais ajoutée au total.
   const subtotal = cart.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
   const taxTotal = cart.reduce((sum, line) => {
-    const gross = line.quantity * line.unitPrice;
+    // Base = montant de la ligne après remise promo produit — même base que
+    // SalesService.createSale (sinon la TVA affichée/imprimée serait supérieure
+    // à celle enregistrée sur une vente remisée).
+    const gross = line.quantity * line.unitPrice * (1 - lineDiscount(line.productId).percent / 100);
     return sum + (line.taxRate > 0 ? gross * (line.taxRate / (100 + line.taxRate)) : 0);
   }, 0);
   // Remise promo "produit" : appliquée ligne par ligne, en pourcentage
@@ -314,7 +321,8 @@ export function SalesPage() {
     try {
       const paidValue = amountPaid === "" ? total : Number(amountPaid);
 
-      const sale = await createSale(db, {
+      const sale = await approval.run((a) => createSale(db, {
+        approval: a,
         userId: user.id,
         customerId: customerId ? Number(customerId) : null,
         newCustomerName: customerId ? undefined : newCustomerName,
@@ -335,7 +343,7 @@ export function SalesPage() {
         amountPaid: paidValue,
         surfaceLocationId,
         storeId: currentStoreId,
-      }, user.permissions);
+      }, user.permissions));
 
       const customerName =
         customers.find((c) => c.id === Number(customerId))?.fullName || newCustomerName.trim() || undefined;
@@ -393,7 +401,51 @@ export function SalesPage() {
   }
 
   if (!session) {
-    return <OpenCashSessionScreen onOpen={open} />;
+    return (
+      <>
+        {closeResult && (
+          <main style={{ ...pageStyle, paddingBottom: 0 }}>
+            <div
+              style={{
+                ...cardStyle,
+                border: `2px solid ${closeResult.alert ? "var(--color-warning)" : "var(--color-success)"}`,
+              }}
+            >
+              <strong>{t("sales.closeSession.resultTitle")}</strong>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>{t("sales.closeSession.expectedLabel")}</span>
+                <span style={amountStyle}>{formatMoney(closeResult.expectedAmount)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>{t("sales.closeSession.countedLabel")}</span>
+                <span style={amountStyle}>{formatMoney(closeResult.session.closingAmount ?? 0)}</span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontWeight: 700,
+                  color: closeResult.alert ? "var(--color-warning)" : "var(--color-success)",
+                }}
+              >
+                <span>{t("sales.closeSession.difference")}</span>
+                <span style={amountStyle}>
+                  {closeResult.difference > 0 ? "+" : ""}
+                  {formatMoney(closeResult.difference)}
+                </span>
+              </div>
+              {closeResult.alert && (
+                <p style={{ color: "var(--color-warning)", margin: 0, fontSize: 13 }}>{t("sales.closeSession.alertHint")}</p>
+              )}
+              <button style={primaryButtonStyle} onClick={() => setCloseResult(null)}>
+                {t("sales.closeSession.dismiss")}
+              </button>
+            </div>
+          </main>
+        )}
+        <OpenCashSessionScreen onOpen={open} />
+      </>
+    );
   }
 
   return (
@@ -434,7 +486,6 @@ export function SalesPage() {
                 setShowCloseSession(false);
                 return;
               }
-              setExpectedCash(await getExpectedCashAmount(db, session));
               setShowCloseSession(true);
             }}
             style={{ background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)", borderRadius: "var(--radius-md)", padding: "0 16px" }}
@@ -446,13 +497,13 @@ export function SalesPage() {
 
       {showPrinterPanel && <PrinterPanel />}
 
-      {showCloseSession && expectedCash !== null && (
+      {showCloseSession && (
         <CloseCashSessionPanel
-          expectedAmount={expectedCash}
           onCancel={() => setShowCloseSession(false)}
-          onClose={async (counted, expected) => {
-            await close({ closingAmount: counted, expectedAmount: expected });
+          onClose={async (counted) => {
+            const result = await close({ closingAmount: counted });
             setShowCloseSession(false);
+            if (result) setCloseResult(result);
           }}
         />
       )}
@@ -623,7 +674,7 @@ export function SalesPage() {
                       </span>
                       <span style={{ display: "flex", flexDirection: "column", gap: 4, padding: "10px 12px 12px" }}>
                         <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.25, minHeight: 35 }}>{product.name}</span>
-                        <span style={{ ...amountStyle, fontSize: 15, fontWeight: 600 }}>{formatAmount(product.salePrice)}&nbsp;F</span>
+                        <span style={{ ...amountStyle, fontSize: 15, fontWeight: 600 }}>{formatMoney(product.salePrice)}</span>
                       </span>
                       {inCart > 0 && (
                         <span
@@ -833,7 +884,7 @@ export function SalesPage() {
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 6 }}>
                 <span style={{ fontSize: 16, fontWeight: 700 }}>{t("sales.totalLabel")}</span>
                 <span style={{ ...amountStyle, fontSize: 34, fontWeight: 600, letterSpacing: "-0.02em" }}>
-                  {formatAmount(total)}&nbsp;F
+                  {formatMoney(total)}
                 </span>
               </div>
             </div>
@@ -926,7 +977,7 @@ export function SalesPage() {
               {t("sales.amountPaid")}
               <input
                 style={{ ...inputStyle, ...amountStyle }}
-                type="number"
+                type="number" step="any"
                 value={amountPaid}
                 onChange={(e) => setAmountPaid(e.target.value)}
                 placeholder={total.toFixed(0)}
@@ -939,21 +990,21 @@ export function SalesPage() {
                   {t("sales.cashReceived")}
                   <input
                     style={{ ...inputStyle, ...amountStyle, textAlign: "right", fontSize: 20, fontWeight: 600 }}
-                    type="number"
+                    type="number" step="any"
                     value={cashReceived}
                     onChange={(e) => setCashReceived(e.target.value)}
                     placeholder={total.toFixed(0)}
                   />
                 </label>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {[null, 500, 1000, 2000, 5000, 10000, 20000, 50000].map((bill) => {
+                  {[null, ...getCurrency().cashQuickAmounts].map((bill) => {
                     const value = bill === null ? total : bill;
                     const selected = total > 0 && Number(cashReceived) === value;
                     return (
                       <button
                         key={bill ?? "exact"}
                         type="button"
-                        onClick={() => setCashReceived(String(Math.round(value)))}
+                        onClick={() => setCashReceived(String(Math.round(value * 100) / 100))}
                         style={{
                           ...amountStyle,
                           height: 34,
@@ -967,7 +1018,7 @@ export function SalesPage() {
                           cursor: "pointer",
                         }}
                       >
-                        {bill === null ? t("sales.exactAmount") : String(bill).replace(/\B(?=(\d{3})+(?!\d))/g, " ")}
+                        {bill === null ? t("sales.exactAmount") : formatAmount(bill).replace(/[.,]00$/, "")}
                       </button>
                     );
                   })}
@@ -985,7 +1036,7 @@ export function SalesPage() {
                     }}
                   >
                     <span style={{ fontSize: 15, fontWeight: 700 }}>{t("sales.changeDue")}</span>
-                    <span style={{ ...amountStyle, fontSize: 26, fontWeight: 600 }}>{formatAmount(changeDue)}&nbsp;F</span>
+                    <span style={{ ...amountStyle, fontSize: 26, fontWeight: 600 }}>{formatMoney(changeDue)}</span>
                   </div>
                 )}
               </div>

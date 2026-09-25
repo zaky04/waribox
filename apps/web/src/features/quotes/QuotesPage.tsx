@@ -1,3 +1,4 @@
+import { useApproval } from "../approval/ApprovalProvider";
 import { formatAmount } from "../../lib/format";
 import {
   convertQuoteToSale,
@@ -56,6 +57,7 @@ export function QuotesPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
   const { t } = useTranslation();
+  const approval = useApproval();
   const canManage = hasPermission(user?.permissions ?? {}, "manage_quotes");
   const canEdit = hasPermission(user?.permissions ?? {}, "edit_quotes");
 
@@ -247,13 +249,14 @@ export function QuotesPage() {
     if (!user || !surfaceLocationId || !currentStoreId) return;
     setConverting(true);
     try {
-      await convertQuoteToSale(db, quote.id, {
+      await approval.run((a) => convertQuoteToSale(db, quote.id, {
+        approval: a,
         surfaceLocationId,
         paymentMethod: convertPaymentMethod,
         amountPaid: convertAmountPaid === "" ? undefined : Number(convertAmountPaid),
         userId: user.id,
         storeId: currentStoreId,
-      }, user.permissions);
+      }, user.permissions));
       setExpandedQuoteId(null);
       await refresh();
     } catch (err) {
@@ -471,7 +474,7 @@ export function QuotesPage() {
                               {t("quotes.amountPaid")}
                               <input
                                 style={inputStyle}
-                                type="number"
+                                type="number" step="any"
                                 value={convertAmountPaid}
                                 onChange={(e) => setConvertAmountPaid(e.target.value)}
                                 placeholder={quote.total.toFixed(0)}

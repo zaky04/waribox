@@ -56,5 +56,43 @@ export const stockMovements = sqliteTable("stock_movements", {
   referenceType: text("reference_type"), // 'sale' | 'purchase' | 'manual'
   referenceId: integer("reference_id"),
   createdBy: integer("created_by").references(() => users.id),
+  // Motif libre saisi avec un mouvement manuel, et responsable l'ayant approuvé
+  // quand il dépassait le seuil.
+  note: text("note"),
+  approvedBy: integer("approved_by"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Inventaire physique : on fige la quantité théorique (system_quantity) au
+// démarrage, on saisit les quantités comptées SANS les voir, puis la clôture
+// calcule l'écart et régularise le stock.
+export const stockCounts = sqliteTable("stock_counts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  storeId: integer("store_id").references(() => stores.id),
+  locationId: integer("location_id")
+    .notNull()
+    .references(() => stockLocations.id),
+  status: text("status").notNull().default("open"), // 'open' | 'closed'
+  startedBy: integer("started_by")
+    .notNull()
+    .references(() => users.id),
+  closedBy: integer("closed_by").references(() => users.id),
+  approvedBy: integer("approved_by"),
+  note: text("note"),
+  startedAt: text("started_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  closedAt: text("closed_at"),
+});
+
+export const stockCountLines = sqliteTable("stock_count_lines", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  countId: integer("count_id")
+    .notNull()
+    .references(() => stockCounts.id),
+  variantId: integer("variant_id")
+    .notNull()
+    .references(() => productVariants.id),
+  systemQuantity: real("system_quantity").notNull(),
+  countedQuantity: real("counted_quantity"),
+  // Coût unitaire au démarrage, pour valoriser l'écart.
+  unitCost: real("unit_cost"),
 });

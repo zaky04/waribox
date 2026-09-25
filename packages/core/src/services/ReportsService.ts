@@ -27,6 +27,42 @@ function monthKey(createdAt: string): string {
   return createdAt.slice(0, 7);
 }
 
+type SaleRow = typeof schema.sales.$inferSelect;
+type SaleItemRow = typeof schema.saleItems.$inferSelect;
+
+// Ligne remboursée, rattachée à sa vente d'origine. Les remboursements sont
+// imputés à la DATE DU REMBOURSEMENT (comme une note de crédit : ils viennent en
+// déduction de la période où ils sont faits, même si la vente est plus
+// ancienne) — même règle que le rapport TVA (getTaxSummary).
+export interface RefundLine {
+  refundDate: string;
+  quantity: number;
+  total: number;
+  restocked: boolean;
+  sale: SaleRow;
+  saleItem: SaleItemRow;
+}
+
+async function loadRefundLines(db: Database, sales: SaleRow[], saleItems: SaleItemRow[]): Promise<RefundLine[]> {
+  const [refunds, refundItems] = await Promise.all([
+    db.select().from(schema.refunds),
+    db.select().from(schema.refundItems),
+  ]);
+  const refundById = new Map(refunds.map((r) => [r.id, r] as const));
+  const saleById = new Map(sales.map((x) => [x.id, x] as const));
+  const itemById = new Map(saleItems.map((i) => [i.id, i] as const));
+
+  const lines: RefundLine[] = [];
+  for (const ri of refundItems) {
+    const refund = refundById.get(ri.refundId);
+    const saleItem = itemById.get(ri.saleItemId);
+    const sale = saleItem ? saleById.get(saleItem.saleId) : undefined;
+    if (!refund || !saleItem || !sale) continue;
+    lines.push({ refundDate: refund.createdAt, quantity: ri.quantity, total: ri.total, restocked: ri.restocked, sale, saleItem });
+  }
+  return lines;
+}
+
 export interface SalesSummary {
   totalRevenue: number;
   saleCount: number;
@@ -43,22 +79,37 @@ export async function getSalesSummary(
   userId?: number,
 ): Promise<SalesSummary> {
   const normalized = normalizeRange(range);
-  const sales = (await listSales(db)).filter(
+  const allSales = await listSales(db);
+  const sales = allSales.filter(
     (s) =>
       inRange(s.createdAt, normalized) &&
       (!storeId || s.storeId === storeId) &&
       (!userId || s.userId === userId),
   );
 
-  const totalRevenue = sales.reduce((sum, s) => sum + s.total, 0);
+  let totalRevenue = sales.reduce((sum, s) => sum + s.total, 0);
   const saleCount = sales.length;
-  const averageBasket = saleCount > 0 ? totalRevenue / saleCount : 0;
 
   const byDayMap = new Map<string, number>();
   for (const sale of sales) {
     const key = dayKey(sale.createdAt);
     byDayMap.set(key, (byDayMap.get(key) ?? 0) + sale.total);
   }
+
+  // Chiffre d'affaires NET : on déduit les remboursements faits dans la période
+  // (sur les ventes de ce magasin / ce vendeur), à la date du remboursement.
+  const saleById = new Map(allSales.map((x) => [x.id, x] as const));
+  const refunds = await db.select().from(schema.refunds);
+  for (const refund of refunds) {
+    const sale = saleById.get(refund.saleId);
+    if (!sale || !inRange(refund.createdAt, normalized)) continue;
+    if (storeId && sale.storeId !== storeId) continue;
+    if (userId && sale.userId !== userId) continue;
+    totalRevenue -= refund.total;
+    const key = dayKey(refund.createdAt);
+    byDayMap.set(key, (byDayMap.get(key) ?? 0) - refund.total);
+  }
+  const averageBasket = saleCount > 0 ? totalRevenue / saleCount : 0;
   const byDay = Array.from(byDayMap.entries())
     .map(([date, total]) => ({ date, total }))
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -102,6 +153,17 @@ export async function getTopProducts(
     const existing = byProduct.get(product.id) ?? { name: product.name, quantity: 0, revenue: 0 };
     existing.quantity += item.quantity;
     existing.revenue += item.total;
+    byProduct.set(product.id, existing);
+  }
+  // Net des remboursements de la période (quantités et revenu).
+  for (const line of await loadRefundLines(db, sales, allSaleItems)) {
+    if (!inRange(line.refundDate, normalized) || (storeId && line.sale.storeId !== storeId)) continue;
+    const variant = variants.find((v) => v.id === line.saleItem.variantId);
+    const product = variant ? products.find((p) => p.id === variant.productId) : undefined;
+    if (!product) continue;
+    const existing = byProduct.get(product.id) ?? { name: product.name, quantity: 0, revenue: 0 };
+    existing.quantity -= line.quantity;
+    existing.revenue -= line.total;
     byProduct.set(product.id, existing);
   }
 
@@ -188,6 +250,24 @@ export function allocateCostByQuantityShare(
   return totalCost * (itemQuantity / totalQuantity);
 }
 
+// Coût de revient à annuler pour une ligne remboursée : seulement si l'article
+// est revenu en stock vendable (sinon la marchandise est perdue, son coût reste
+// une charge). Proportionnel à la quantité remboursée de la ligne d'origine.
+export function refundedCost(
+  line: RefundLine,
+  costBySaleVariant: Map<string, number>,
+  qtyBySaleVariant: Map<string, number>,
+): number {
+  if (!line.restocked || line.saleItem.quantity <= 0) return 0;
+  const key = `${line.saleItem.saleId}:${line.saleItem.variantId}`;
+  const itemCost = allocateCostByQuantityShare(
+    costBySaleVariant.get(key) ?? 0,
+    line.saleItem.quantity,
+    qtyBySaleVariant.get(key) ?? line.saleItem.quantity,
+  );
+  return itemCost * (line.quantity / line.saleItem.quantity);
+}
+
 export async function getMarginsSummary(
   db: Database,
   range: DateRange,
@@ -233,6 +313,17 @@ export async function getMarginsSummary(
 
     const dayKeyValue = dayKey(sale.createdAt);
     byDayMap.set(dayKeyValue, (byDayMap.get(dayKeyValue) ?? 0) + itemMargin);
+  }
+
+  // Net des remboursements de la période : revenu et coût des articles remis en stock.
+  const qtyAll = totalQuantityBySaleVariant(allSaleItems);
+  for (const line of await loadRefundLines(db, sales, allSaleItems)) {
+    if (!inRange(line.refundDate, normalized) || (storeId && line.sale.storeId !== storeId)) continue;
+    const lineCost = refundedCost(line, costBySaleVariant, qtyAll);
+    revenue -= line.total;
+    cost -= lineCost;
+    const key = dayKey(line.refundDate);
+    byDayMap.set(key, (byDayMap.get(key) ?? 0) - (line.total - lineCost));
   }
 
   const margin = revenue - cost;
@@ -314,6 +405,20 @@ export async function getProductMarginsBreakdown(
     existing.quantity += item.quantity;
     existing.revenue += itemRevenue;
     existing.cost += itemCost;
+    byProduct.set(product.id, existing);
+  }
+
+  // Net des remboursements de la période.
+  const qtyAll = totalQuantityBySaleVariant(allSaleItems);
+  for (const line of await loadRefundLines(db, sales, allSaleItems)) {
+    if (!inRange(line.refundDate, normalized) || (storeId && line.sale.storeId !== storeId)) continue;
+    const variant = variants.find((v) => v.id === line.saleItem.variantId);
+    const product = variant ? products.find((p) => p.id === variant.productId) : undefined;
+    if (!product) continue;
+    const existing = byProduct.get(product.id) ?? { name: product.name, quantity: 0, revenue: 0, cost: 0 };
+    existing.quantity -= line.quantity;
+    existing.revenue -= line.total;
+    existing.cost -= refundedCost(line, costBySaleVariant, qtyAll);
     byProduct.set(product.id, existing);
   }
 
@@ -449,6 +554,9 @@ export async function getCashFlow(db: Database, range: DateRange, storeId?: numb
     else if (p.referenceType === "service_order") bump(p.createdAt, p.amount, 0);
     else if (p.referenceType === "purchase") bump(p.createdAt, 0, p.amount);
     else if (p.referenceType === "expense") bump(p.createdAt, 0, p.amount);
+    // Remboursement client : argent rendu, donc sortie de trésorerie (déjà déduit
+    // du tiroir-caisse par CashSessionService, mais absent de ce flux avant).
+    else if (p.referenceType === "refund") bump(p.createdAt, 0, p.amount);
   }
   // Remboursements de créances/dettes : pas de storeId propre, hérité de la
   // créance/dette d'origine (voir CreditsService/DebtsService).

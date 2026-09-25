@@ -19,6 +19,7 @@ import {
   loadFolderHandle,
   pickBackupFolder,
 } from "@gestion-boutique/sync";
+import { CURRENCY_PRESETS, getCurrencyPreset, isCfaZoneCurrency, setCurrency } from "@gestion-boutique/i18n";
 import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
@@ -120,6 +121,14 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
 
   const [businessName, setBusinessName] = useState("");
   const [sectorType, setSectorType] = useState("");
+  // Devise du commerce (code ISO) : voir packages/i18n/src/currency.ts.
+  const [currency, setCurrencyState] = useState("XOF");
+  const handleCurrencyChange = (code: string) => {
+    setCurrencyState(code);
+    setCurrency(code);
+    const preset = getCurrencyPreset(code);
+    if (!whatsappCountryCode.trim() && preset.whatsappCountryCode) setWhatsappCountryCode(preset.whatsappCountryCode);
+  };
   // null = thème par défaut (aucune personnalisation) — voir lib/appearance.ts.
   const [appearanceAccentColor, setAppearanceAccentColor] = useState<string | null>(null);
   const [appearanceShape, setAppearanceShape] = useState<string | null>(null);
@@ -154,6 +163,14 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
   const [multiStoreEnabled, setMultiStoreEnabled] = useState(false);
   const [enableSyscohada, setEnableSyscohada] = useState(false);
   const [autoLockMinutes, setAutoLockMinutes] = useState("0");
+  // Contrôles de gestion — vide = pas de contrôle (voir schema/settings.ts).
+  const [approvalRefund, setApprovalRefund] = useState("");
+  const [approvalStock, setApprovalStock] = useState("");
+  const [approvalCredit, setApprovalCredit] = useState("");
+  const [cashVariance, setCashVariance] = useState("");
+  const [priceAlert, setPriceAlert] = useState("10");
+  const [requireReceipt, setRequireReceipt] = useState(false);
+  const [defaultCreditLimit, setDefaultCreditLimit] = useState("");
 
   const [fneEnabled, setFneEnabled] = useState(false);
   const [fneEnvironment, setFneEnvironment] = useState<"test" | "prod">("test");
@@ -239,6 +256,7 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
 
     setBusinessName(settings.businessName ?? "");
     setSectorType(settings.sectorType ?? "");
+    setCurrencyState(settings.currency);
     setAppearanceAccentColor(settings.appearanceAccentColor ?? null);
     setAppearanceShape(settings.appearanceShape ?? null);
     setAppearanceBackground(settings.appearanceBackground ?? null);
@@ -262,6 +280,14 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
     setMultiStoreEnabled(settings.multiStoreEnabled);
     setEnableSyscohada(settings.enableSyscohada);
     setAutoLockMinutes(String(settings.autoLockMinutes));
+    const opt = (n: number | null) => (n == null ? "" : String(n));
+    setApprovalRefund(opt(settings.approvalRefundThreshold));
+    setApprovalStock(opt(settings.approvalStockThreshold));
+    setApprovalCredit(opt(settings.approvalCreditThreshold));
+    setCashVariance(opt(settings.cashVarianceThreshold));
+    setPriceAlert(String(settings.priceAlertPercent));
+    setRequireReceipt(settings.requirePurchaseReceipt);
+    setDefaultCreditLimit(opt(settings.defaultCreditLimit));
 
     setFneEnabled(settings.fneEnabled);
     setFneEnvironment(settings.fneEnvironment === "prod" ? "prod" : "test");
@@ -331,6 +357,24 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
       return;
     }
 
+    // Seuils de contrôle : vide = désactivé (null), sinon un nombre >= 0.
+    const optNumber = (v: string): number | null | undefined => {
+      if (v.trim() === "") return null;
+      const n = Number(v);
+      return Number.isNaN(n) || n < 0 ? undefined : n;
+    };
+    const controlValues = {
+      approvalRefundThreshold: optNumber(approvalRefund),
+      approvalStockThreshold: optNumber(approvalStock),
+      approvalCreditThreshold: optNumber(approvalCredit),
+      cashVarianceThreshold: optNumber(cashVariance),
+      defaultCreditLimit: optNumber(defaultCreditLimit),
+    };
+    const priceAlertValue = Number(priceAlert);
+    if (Object.values(controlValues).some((v) => v === undefined) || Number.isNaN(priceAlertValue) || priceAlertValue < 0) {
+      setError(t("controlsSettings.invalid"));
+      return;
+    }
     const autoLockValue = Number(autoLockMinutes);
     if (!/^\d+$/.test(autoLockMinutes) || autoLockValue < 0) {
       setError(t("settings.errors.autoLock"));
@@ -362,6 +406,7 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
           // écraser un secteur précédemment choisi, pas être ignorée comme
           // un champ non renseigné.
           sectorType: sectorType,
+          currency,
           appearanceAccentColor,
           appearanceShape,
           appearanceBackground,
@@ -387,6 +432,13 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
           multiStoreEnabled,
           enableSyscohada,
           autoLockMinutes: autoLockValue,
+          approvalRefundThreshold: controlValues.approvalRefundThreshold,
+          approvalStockThreshold: controlValues.approvalStockThreshold,
+          approvalCreditThreshold: controlValues.approvalCreditThreshold,
+          cashVarianceThreshold: controlValues.cashVarianceThreshold,
+          defaultCreditLimit: controlValues.defaultCreditLimit,
+          priceAlertPercent: priceAlertValue,
+          requirePurchaseReceipt: requireReceipt,
           fneEnabled,
           fneEnvironment,
           fneApiKey: fneApiKey.trim() || undefined,
@@ -709,6 +761,23 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
         </label>
 
         <label>
+          {t("settings.business.currency")}
+          <select style={inputStyle} value={currency} onChange={(e) => handleCurrencyChange(e.target.value)}>
+            {CURRENCY_PRESETS.map((preset) => (
+              <option key={preset.code} value={preset.code}>
+                {preset.code} — {t(`settings.business.currencyNames.${preset.code}`)} ({preset.symbol})
+              </option>
+            ))}
+          </select>
+          <div style={{ fontSize: 12.5, color: "var(--color-text-muted)", marginTop: 4 }}>
+            {t("settings.business.currencyHint")}
+            {getCurrencyPreset(currency).suggestedVatRate !== undefined && (
+              <> {t("settings.business.currencyVatHint", { rate: getCurrencyPreset(currency).suggestedVatRate })}</>
+            )}
+          </div>
+        </label>
+
+        <label>
           {t("settings.business.address")}
           <input style={inputStyle} value={address} onChange={(e) => setAddress(e.target.value)} />
         </label>
@@ -760,6 +829,7 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
             <input
               style={inputStyle}
               type="number"
+              step="any"
               min={0}
               max={99}
               value={defaultTaxRate}
@@ -1133,6 +1203,7 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
       </div>
 
       <div style={vis("config")}>
+      <div style={{ display: isCfaZoneCurrency(currency) ? "contents" : "none" }}>
       <div style={cardStyle}>
         <strong>{t("settings.fne.heading")}</strong>
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.fne.hint")}</p>
@@ -1222,6 +1293,7 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
       </div>
 
       </div>
+      </div>
 
       <div style={vis("config")}>
       <div style={cardStyle}>
@@ -1302,6 +1374,40 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
       </div>
 
       <div style={vis("config")}>
+      <div style={cardStyle}>
+        <strong>{t("controlsSettings.heading")}</strong>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("controlsSettings.hint")}</p>
+        <label>
+          {t("controlsSettings.approvalRefund")}
+          <input style={inputStyle} type="number" step="any" min={0} value={approvalRefund} onChange={(e) => setApprovalRefund(e.target.value)} />
+        </label>
+        <label>
+          {t("controlsSettings.approvalStock")}
+          <input style={inputStyle} type="number" step="any" min={0} value={approvalStock} onChange={(e) => setApprovalStock(e.target.value)} />
+        </label>
+        <label>
+          {t("controlsSettings.approvalCredit")}
+          <input style={inputStyle} type="number" step="any" min={0} value={approvalCredit} onChange={(e) => setApprovalCredit(e.target.value)} />
+        </label>
+        <label>
+          {t("controlsSettings.defaultCreditLimit")}
+          <input style={inputStyle} type="number" step="any" min={0} value={defaultCreditLimit} onChange={(e) => setDefaultCreditLimit(e.target.value)} />
+        </label>
+        <label>
+          {t("controlsSettings.cashVariance")}
+          <input style={inputStyle} type="number" step="any" min={0} value={cashVariance} onChange={(e) => setCashVariance(e.target.value)} />
+        </label>
+        <label>
+          {t("controlsSettings.priceAlert")}
+          <input style={inputStyle} type="number" step="any" min={0} value={priceAlert} onChange={(e) => setPriceAlert(e.target.value)} />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input type="checkbox" checked={requireReceipt} onChange={(e) => setRequireReceipt(e.target.checked)} />
+          {t("controlsSettings.requireReceipt")}
+        </label>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 12.5, margin: 0 }}>{t("controlsSettings.approverHint")}</p>
+      </div>
+
       <div style={cardStyle}>
         <strong>{t("settings.security.heading")}</strong>
         <label>

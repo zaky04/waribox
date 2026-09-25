@@ -98,6 +98,14 @@ export interface UpdateSettingsInput {
   appearanceShape?: string | null;
   appearanceBackground?: string | null;
   appearanceFont?: string | null;
+  // Contrôles de gestion (voir schema/settings.ts) — null désactive le contrôle.
+  approvalRefundThreshold?: number | null;
+  approvalStockThreshold?: number | null;
+  approvalCreditThreshold?: number | null;
+  cashVarianceThreshold?: number | null;
+  priceAlertPercent?: number;
+  requirePurchaseReceipt?: boolean;
+  defaultCreditLimit?: number | null;
   // Preuve (code de maintenance) exigée pour modifier les réglages avancés
   // ci-dessous quand un code est défini. Jamais enregistrée.
   advancedCode?: string;

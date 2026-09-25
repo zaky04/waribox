@@ -1,3 +1,5 @@
+import { PermissionOverridesEditor } from "./PermissionOverridesEditor";
+import { RolesSection } from "./RolesSection";
 import {
   createUser,
   ensureDefaultRoles,
@@ -9,6 +11,7 @@ import {
   listUsers,
   setUserActive,
   updateUser,
+  type PermissionOverrides,
   type PermissionSet,
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
@@ -48,6 +51,10 @@ export function UsersPage() {
   const [pin, setPin] = useState("");
   const [roleId, setRoleId] = useState<string>("");
   const [storeId, setStoreId] = useState<string>("");
+  const [overrides, setOverrides] = useState<PermissionOverrides>({});
+  const [limitRefund, setLimitRefund] = useState("");
+  const [limitStock, setLimitStock] = useState("");
+  const [limitCredit, setLimitCredit] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [impersonateError, setImpersonateError] = useState<string | null>(null);
@@ -84,6 +91,10 @@ export function UsersPage() {
     setPin("");
     setRoleId("");
     setStoreId("");
+    setLimitRefund("");
+    setLimitStock("");
+    setLimitCredit("");
+    setOverrides({});
     setEditingUserId(null);
     setError(null);
   };
@@ -103,6 +114,10 @@ export function UsersPage() {
     const role = roles.find((r) => r.name === target.roleName);
     setRoleId(role ? String(role.id) : "");
     setStoreId(target.storeId ? String(target.storeId) : "");
+    setOverrides(target.permissionOverrides ?? {});
+    setLimitRefund(target.limitRefund == null ? "" : String(target.limitRefund));
+    setLimitStock(target.limitStock == null ? "" : String(target.limitStock));
+    setLimitCredit(target.limitCredit == null ? "" : String(target.limitCredit));
     setError(null);
     setShowForm(true);
   };
@@ -131,6 +146,17 @@ export function UsersPage() {
       return;
     }
 
+    const parseLimit = (v: string): number | null | undefined => {
+      if (v.trim() === "") return null;
+      const n = Number(v);
+      return Number.isNaN(n) || n < 0 ? undefined : n;
+    };
+    const limits = { limitRefund: parseLimit(limitRefund), limitStock: parseLimit(limitStock), limitCredit: parseLimit(limitCredit) };
+    if (Object.values(limits).some((v) => v === undefined)) {
+      setError(t("users.errors.limitFormat"));
+      return;
+    }
+
     setSaving(true);
     try {
       const resolvedStoreId = needsStore ? Number(storeId) : null;
@@ -145,6 +171,11 @@ export function UsersPage() {
             roleId: Number(roleId),
             storeId: resolvedStoreId,
             newPassword: password || undefined,
+            pin: pin || undefined,
+            permissionOverrides: overrides,
+            limitRefund: limits.limitRefund,
+            limitStock: limits.limitStock,
+            limitCredit: limits.limitCredit,
           },
           user?.permissions ?? {},
           user?.id,
@@ -160,6 +191,10 @@ export function UsersPage() {
             pin: pin || undefined,
             roleId: Number(roleId),
             storeId: resolvedStoreId,
+            permissionOverrides: overrides,
+            limitRefund: limits.limitRefund,
+            limitStock: limits.limitStock,
+            limitCredit: limits.limitCredit,
             createdBy: user?.id,
           },
           user?.permissions ?? {},
@@ -244,18 +279,24 @@ export function UsersPage() {
               minLength={8}
             />
           </label>
-          {!editingUserId && (
-            <label>
-              {t("users.pin")}
-              <input
-                style={inputStyle}
-                inputMode="numeric"
-                maxLength={4}
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
-              />
-            </label>
-          )}
+          <label>
+            {editingUserId ? t("approvalRoles.newPin") : t("users.pin")}
+            <input
+              style={inputStyle}
+              inputMode="numeric"
+              maxLength={4}
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            />
+          </label>
+          {(() => {
+            const target = users.find((u) => u.id === editingUserId);
+            return target ? (
+              <span style={{ fontSize: 12.5, color: target.hasPin ? "var(--color-success)" : "var(--color-warning)" }}>
+                {target.hasPin ? t("approvalRoles.pinSet") : t("approvalRoles.pinMissing")}
+              </span>
+            ) : null;
+          })()}
           <label>
             {t("users.role")}
             <select
@@ -287,6 +328,29 @@ export function UsersPage() {
               </select>
             </label>
           )}
+
+          {roleId && (
+            <PermissionOverridesEditor
+              rolePermissions={JSON.parse(roles.find((r) => String(r.id) === roleId)?.permissions ?? "{}") as PermissionSet}
+              overrides={overrides}
+              onChange={setOverrides}
+              actingPermissions={user?.permissions ?? {}}
+            />
+          )}
+
+          <strong style={{ fontSize: 14 }}>{t("approvalRoles.limits")}</strong>
+          <label>
+            {t("approvalRoles.limitRefund")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitRefund} onChange={(e) => setLimitRefund(e.target.value)} />
+          </label>
+          <label>
+            {t("approvalRoles.limitStock")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitStock} onChange={(e) => setLimitStock(e.target.value)} />
+          </label>
+          <label>
+            {t("approvalRoles.limitCredit")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitCredit} onChange={(e) => setLimitCredit(e.target.value)} />
+          </label>
 
           {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
@@ -361,6 +425,7 @@ export function UsersPage() {
           </tbody>
         </table>
       </div>
+      <RolesSection onChanged={refresh} />
     </main>
   );
 }

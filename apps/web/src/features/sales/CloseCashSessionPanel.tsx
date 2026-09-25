@@ -3,23 +3,27 @@ import { useTranslation } from "react-i18next";
 import { cardStyle, inputStyle, primaryButtonStyle } from "../../components/sharedStyles";
 
 interface CloseCashSessionPanelProps {
-  expectedAmount: number;
-  onClose: (closingAmount: number, expectedAmount: number) => Promise<void>;
+  onClose: (closingAmount: number) => Promise<void>;
   onCancel: () => void;
 }
 
-export function CloseCashSessionPanel({ expectedAmount, onClose, onCancel }: CloseCashSessionPanelProps) {
+// Clôture EN AVEUGLE : le montant attendu n'est jamais affiché avant la
+// validation — le caissier doit réellement compter le tiroir au lieu de
+// recopier le chiffre du système. L'écart est calculé (côté service) et montré
+// après la clôture.
+export function CloseCashSessionPanel({ onClose, onCancel }: CloseCashSessionPanelProps) {
   const { t } = useTranslation();
-  const [counted, setCounted] = useState(String(expectedAmount));
+  const [counted, setCounted] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const countedNumber = Number(counted) || 0;
-  const difference = countedNumber - expectedAmount;
+  const [error, setError] = useState<string | null>(null);
 
   const handleClose = async () => {
+    setError(null);
     setLoading(true);
     try {
-      await onClose(countedNumber, expectedAmount);
+      await onClose(Number(counted));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("sales.closeSession.error"));
     } finally {
       setLoading(false);
     }
@@ -28,19 +32,22 @@ export function CloseCashSessionPanel({ expectedAmount, onClose, onCancel }: Clo
   return (
     <div style={cardStyle}>
       <strong>{t("sales.closeSession.title")}</strong>
-      <p style={{ color: "var(--color-text-muted)", margin: 0 }}>
-        {t("sales.closeSession.expectedAmount")} {expectedAmount}
-      </p>
+      <p style={{ color: "var(--color-text-muted)", margin: 0, fontSize: 13 }}>{t("sales.closeSession.blindHint")}</p>
       <label>
         {t("sales.closeSession.countedAmount")}
-        <input style={inputStyle} type="number" value={counted} onChange={(e) => setCounted(e.target.value)} />
+        <input
+          style={inputStyle}
+          type="number"
+          step="any"
+          min={0}
+          value={counted}
+          onChange={(e) => setCounted(e.target.value)}
+          autoFocus
+        />
       </label>
-      <p style={{ color: difference === 0 ? "var(--color-success)" : "var(--color-warning)" }}>
-        {t("sales.closeSession.difference")} {difference > 0 ? "+" : ""}
-        {difference}
-      </p>
+      {error && <p style={{ color: "var(--color-danger)", fontSize: 13, margin: 0 }}>{error}</p>}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-        <button style={primaryButtonStyle} onClick={handleClose} disabled={loading}>
+        <button style={primaryButtonStyle} onClick={handleClose} disabled={loading || counted === "" || Number(counted) < 0}>
           {loading ? t("sales.closeSession.closing") : t("sales.closeSession.confirm")}
         </button>
         <button

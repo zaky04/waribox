@@ -1,6 +1,7 @@
+import { roundMoney } from "../domain/money";
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
-import { t } from "@gestion-boutique/i18n";
+import { formatAmount, t } from "@gestion-boutique/i18n";
 import { desc, eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
@@ -43,15 +44,16 @@ export async function recordDebtPayment(
     throw new Error(t("coreErrors.debts.amountPositive"));
   }
   if (input.amount > debt.remainingBalance) {
-    throw new Error(t("coreErrors.common.amountExceedsBalance", { balance: debt.remainingBalance }));
+    throw new Error(t("coreErrors.common.amountExceedsBalance", { balance: formatAmount(debt.remainingBalance) }));
   }
 
   await db.insert(schema.supplierDebtPayments).values({
     debtId: input.debtId,
     amount: input.amount,
+    paidBy: input.userId,
   });
 
-  const remainingBalance = debt.remainingBalance - input.amount;
+  const remainingBalance = roundMoney(debt.remainingBalance - input.amount);
   const status = remainingBalance <= 0 ? "settled" : "partial";
 
   const updated = await db

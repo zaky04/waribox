@@ -1,8 +1,10 @@
+import { roundMoney } from "../domain/money";
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { checkCreditApproval, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { findOrCreateCustomerByNameAndPhone } from "./CustomersService";
 import { earnPoints } from "./LoyaltyService";
@@ -40,6 +42,7 @@ export interface CreateServiceOrderInput {
   paymentMethod: ServiceOrderPaymentMethod;
   amountPaid?: number;
   storeId?: number;
+  approval?: ApprovalInput;
 }
 
 // Même modèle que SalesService.computeItemTotal — dupliquée volontairement :
@@ -47,7 +50,7 @@ export interface CreateServiceOrderInput {
 // de vente déjà testé. Voir le plan pour la justification. Prix TTC : le
 // taux extrait la TVA contenue dans le prix, il ne s'ajoute pas dessus.
 export function computeItemTotal(item: ServiceOrderItemInput): number {
-  return item.quantity * item.unitPrice - (item.discount ?? 0);
+  return roundMoney(item.quantity * item.unitPrice - (item.discount ?? 0));
 }
 
 function computeTaxAmount(grossTtc: number, taxRate: number): number {
@@ -64,6 +67,7 @@ export async function createServiceOrder(
   if (input.items.length === 0) {
     throw new Error(t("coreErrors.serviceOrders.itemRequired"));
   }
+  const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
 
   const trimmedName = input.newCustomerName?.trim();
   let customerId = input.customerId ?? null;
@@ -76,21 +80,32 @@ export async function createServiceOrder(
     customerId = customer.id;
   }
 
-  const subtotal = input.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const subtotal = roundMoney(input.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0));
   const taxTotal = input.items.reduce((sum, item) => {
     const gross = item.quantity * item.unitPrice - (item.discount ?? 0);
     return sum + computeTaxAmount(gross, item.taxRate ?? 0);
   }, 0);
-  const itemsTotal = input.items.reduce((sum, item) => sum + computeItemTotal(item), 0);
+  const itemsTotal = roundMoney(input.items.reduce((sum, item) => sum + computeItemTotal(item), 0));
   // Pas de remise ni de rachat de points au niveau de l'ordre dans ce premier
   // jet (voir le plan) — seules les remises par article (déjà incluses dans
   // itemsTotal) existent pour l'instant.
   const discount = 0;
-  const total = Math.max(0, itemsTotal - discount);
+  const total = roundMoney(Math.max(0, itemsTotal - discount));
 
-  const amountPaid = input.amountPaid ?? total;
+  const amountPaid = roundMoney(input.amountPaid ?? total);
   if (amountPaid < total && !customerId) {
     throw new Error(t("coreErrors.serviceOrders.customerIdRequiredCredit"));
+  }
+
+  let creditApprovedBy: number | null = null;
+  if (amountPaid < total) {
+    creditApprovedBy = await checkCreditApproval(db, {
+      customerId: customerId!,
+      creditAmount: roundMoney(total - amountPaid),
+      userId: input.userId,
+      actingPermissions,
+      verifiedApproverId,
+    });
   }
 
   const paymentStatus = amountPaid >= total ? "paid" : amountPaid > 0 ? "partial" : "credit";
@@ -142,9 +157,10 @@ export async function createServiceOrder(
       customerId: customerId!,
       serviceOrderId: order.id,
       storeId: input.storeId,
-      originalAmount: total - amountPaid,
-      remainingBalance: total - amountPaid,
+      originalAmount: roundMoney(total - amountPaid),
+      remainingBalance: roundMoney(total - amountPaid),
       status: "open",
+      approvedBy: creditApprovedBy ?? undefined,
     });
   }
 

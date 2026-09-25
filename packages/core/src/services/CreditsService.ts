@@ -1,6 +1,7 @@
+import { roundMoney } from "../domain/money";
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
-import { t } from "@gestion-boutique/i18n";
+import { formatAmount, t } from "@gestion-boutique/i18n";
 import { desc, eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requireAnyPermission, type PermissionSet } from "../domain/permissions";
@@ -59,16 +60,19 @@ export async function recordCreditRepayment(
     throw new Error(t("coreErrors.credits.amountPositive"));
   }
   if (input.amount > credit.remainingBalance) {
-    throw new Error(t("coreErrors.common.amountExceedsBalance", { balance: credit.remainingBalance }));
+    throw new Error(t("coreErrors.common.amountExceedsBalance", { balance: formatAmount(credit.remainingBalance) }));
   }
 
   await db.insert(schema.creditRepayments).values({
     creditId: input.creditId,
     amount: input.amount,
     method: input.method,
+    // Qui a encaissé, et où : permet de rapprocher le règlement du tiroir-caisse.
+    receivedBy: input.userId,
+    storeId: credit.storeId,
   });
 
-  const remainingBalance = credit.remainingBalance - input.amount;
+  const remainingBalance = roundMoney(credit.remainingBalance - input.amount);
   const status = remainingBalance <= 0 ? "settled" : "partial";
 
   const updated = await db

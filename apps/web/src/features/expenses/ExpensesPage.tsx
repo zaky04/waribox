@@ -188,7 +188,7 @@ export function ExpensesPage() {
             {t("expenses.amount")}
             <input
               style={inputStyle}
-              type="number"
+              type="number" step="any"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
             />

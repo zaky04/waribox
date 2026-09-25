@@ -199,6 +199,66 @@ export const MIGRATIONS: Migration[] = [
       "ALTER TABLE business_settings ADD COLUMN appearance_font TEXT",
     ],
   },
+  // Contrôles de gestion (approbations, inventaire, chaîne d'audit, achats en
+  // deux temps, plafonds de crédit...) — voir CLAUDE.md, journal du 2026-09-25.
+  // Tous les seuils sont NULL/0 par défaut : aucun comportement ne change tant
+  // que le propriétaire n'active pas un contrôle.
+  {
+    id: 7,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN approval_refund_threshold REAL",
+      "ALTER TABLE business_settings ADD COLUMN approval_stock_threshold REAL",
+      "ALTER TABLE business_settings ADD COLUMN approval_credit_threshold REAL",
+      "ALTER TABLE business_settings ADD COLUMN cash_variance_threshold REAL",
+      "ALTER TABLE business_settings ADD COLUMN price_alert_percent REAL NOT NULL DEFAULT 10",
+      "ALTER TABLE business_settings ADD COLUMN require_purchase_receipt INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN default_credit_limit REAL",
+      "ALTER TABLE users ADD COLUMN limit_refund REAL",
+      "ALTER TABLE users ADD COLUMN limit_stock REAL",
+      "ALTER TABLE users ADD COLUMN limit_credit REAL",
+      "ALTER TABLE audit_log ADD COLUMN prev_hash TEXT",
+      "ALTER TABLE audit_log ADD COLUMN hash TEXT",
+      "ALTER TABLE customers ADD COLUMN credit_limit REAL",
+      "ALTER TABLE customer_credits ADD COLUMN approved_by INTEGER",
+      "ALTER TABLE credit_repayments ADD COLUMN received_by INTEGER",
+      "ALTER TABLE credit_repayments ADD COLUMN store_id INTEGER",
+      "ALTER TABLE refunds ADD COLUMN approved_by INTEGER",
+      "ALTER TABLE purchases ADD COLUMN invoice_reference TEXT",
+      "ALTER TABLE purchases ADD COLUMN received_at TEXT",
+      "ALTER TABLE purchases ADD COLUMN received_by INTEGER",
+      "ALTER TABLE purchase_items ADD COLUMN received_quantity REAL",
+      "ALTER TABLE purchase_items ADD COLUMN previous_unit_cost REAL",
+      "ALTER TABLE purchase_items ADD COLUMN price_alert INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE supplier_debt_payments ADD COLUMN paid_by INTEGER",
+      "ALTER TABLE stock_movements ADD COLUMN note TEXT",
+      "ALTER TABLE stock_movements ADD COLUMN approved_by INTEGER",
+      `CREATE TABLE stock_counts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        store_id INTEGER,
+        location_id INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        started_by INTEGER NOT NULL,
+        closed_by INTEGER,
+        approved_by INTEGER,
+        note TEXT,
+        started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        closed_at TEXT
+      )`,
+      `CREATE TABLE stock_count_lines (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        count_id INTEGER NOT NULL,
+        variant_id INTEGER NOT NULL,
+        system_quantity REAL NOT NULL,
+        counted_quantity REAL,
+        unit_cost REAL
+      )`,
+    ],
+  },
+  // Droits particuliers par utilisateur (par-dessus le rôle).
+  {
+    id: 8,
+    statements: ["ALTER TABLE users ADD COLUMN permission_overrides TEXT"],
+  },
 ];
 
 async function runMigrations(): Promise<void> {

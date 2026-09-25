@@ -1,4 +1,4 @@
-import { t } from "@gestion-boutique/i18n";
+import { t, formatMoneyPlain, formatAmountPlain } from "@gestion-boutique/i18n";
 import { DOTS_PER_COLUMN, MAX_LOGO_HEIGHT_DOTS, padLine } from "./receipt";
 import { EscPosBuilder } from "./escpos";
 import { rasterizeLogo } from "./logo";
@@ -73,7 +73,7 @@ export async function buildServiceOrderTicket(data: ServiceOrderTicketData): Pro
 
   for (const line of data.lines) {
     const left = `${line.quantity} x ${line.description}`;
-    const right = line.total.toFixed(0);
+    const right = formatAmountPlain(line.total);
     const combined = padLine(left, right, columns);
     if (combined) {
       builder.text(combined).newline();
@@ -85,17 +85,17 @@ export async function buildServiceOrderTicket(data: ServiceOrderTicketData): Pro
   }
 
   builder.text(separator).newline();
-  builder.text(t("documents.common.subtotal", { amount: data.subtotal.toFixed(0) })).newline();
+  builder.text(t("documents.common.subtotal", { amount: formatAmountPlain(data.subtotal) })).newline();
   if (data.tax > 0) {
-    builder.text(t("documents.common.tax", { amount: data.tax.toFixed(0) })).newline();
+    builder.text(t("documents.common.tax", { amount: formatAmountPlain(data.tax) })).newline();
   }
-  builder.bold(true).text(t("documents.common.total", { amount: data.total.toFixed(0) })).newline().bold(false);
-  builder.text(t("documents.serviceTicket.paid", { amount: data.amountPaid.toFixed(0) })).newline();
+  builder.bold(true).text(t("documents.common.total", { amount: formatMoneyPlain(data.total) })).newline().bold(false);
+  builder.text(t("documents.serviceTicket.paid", { amount: formatAmountPlain(data.amountPaid) })).newline();
   const balance = data.total - data.amountPaid;
   if (balance > 0) {
     builder
       .bold(true)
-      .text(t("documents.serviceTicket.balanceDue", { amount: balance.toFixed(0) }))
+      .text(t("documents.serviceTicket.balanceDue", { amount: formatAmountPlain(balance) }))
       .newline()
       .bold(false);
   }

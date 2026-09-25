@@ -1,3 +1,4 @@
+import { setCurrency } from "@gestion-boutique/i18n";
 import {
   ensureLocationsForStore,
   ensureDefaultRoles,
@@ -37,6 +38,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     let cancelled = false;
     getSettings(db).then((settings) => {
       if (cancelled) return;
+      setCurrency(settings.currency);
       applyAppearance(
         {
           accent: settings.appearanceAccentColor ?? null,

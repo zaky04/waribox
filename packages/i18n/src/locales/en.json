@@ -49,7 +49,9 @@
       "system": "System"
     },
     "appearance": "Appearance",
-    "advanced": "Advanced settings"
+    "advanced": "Advanced settings",
+    "inventory": "Stock count",
+    "controls": "Controls"
   },
   "topbar": {
     "impersonatingPrefix": "Signed in as",
@@ -175,7 +177,14 @@
       "difference": "Difference:",
       "closing": "Closing...",
       "confirm": "Confirm closing",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "blindHint": "Count the cash in the drawer and enter the total. The expected amount is only shown after closing.",
+      "resultTitle": "Register closed — count result",
+      "expectedLabel": "Expected amount",
+      "countedLabel": "Counted amount",
+      "alertHint": "This difference exceeds the threshold: it is flagged to the manager in “Controls”.",
+      "dismiss": "OK",
+      "error": "Closing failed."
     },
     "paymentMethods": {
       "cash": "Cash",
@@ -237,7 +246,19 @@
       "receipt58mm": "58 mm (32 characters)",
       "receipt80mm": "80 mm (48 characters)",
       "receiptCustom": "Custom (number of characters)",
-      "receiptCharsPerLine": "Characters per line"
+      "receiptCharsPerLine": "Characters per line",
+      "currency": "Currency",
+      "currencyHint": "Changes how amounts are displayed (symbol, decimals) everywhere: screens, receipts, reports. Amounts already recorded are not converted.",
+      "currencyVatHint": "Common VAT rate in this country: about {{rate}}% (check with your accountant).",
+      "currencyNames": {
+        "XOF": "CFA franc (WAEMU)",
+        "XAF": "CFA franc (CEMAC)",
+        "NGN": "Nigerian naira",
+        "GHS": "Ghanaian cedi",
+        "EUR": "Euro",
+        "USD": "US dollar",
+        "GBP": "Pound sterling"
+      }
     },
     "appearance": {
       "heading": "Appearance",
@@ -599,7 +620,16 @@
       "change_maintenance_code": "Maintenance code changed",
       "create_expense": "Expense recorded",
       "update_expense": "Expense updated",
-      "delete_expense": "Expense deleted"
+      "delete_expense": "Expense deleted",
+      "stock_entry": "Manual stock entry",
+      "stock_loss": "Stock loss",
+      "stock_transfer": "Stock transfer",
+      "stock_count_start": "Stock count started",
+      "stock_count_close": "Stock count closed",
+      "receive_purchase": "Purchase received",
+      "approval_failed": "Approval refused",
+      "create_role": "Role created",
+      "update_role": "Role updated"
     },
     "sales": {
       "searchPlaceholder": "Sale number...",
@@ -660,14 +690,15 @@
       "remaining": "Remaining",
       "quantityToRefund": "Qty to refund",
       "restock": "Restock",
-      "reason": "Reason (optional)",
+      "reason": "Reason",
       "method": "Refund method",
       "totalToRefund": "Total to refund:",
       "errorQuantityRequired": "Enter a quantity to refund for at least one item.",
       "errorGeneric": "Could not record the refund.",
       "saving": "Saving...",
       "submit": "Refund",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "errorReasonRequired": "A refund reason is required."
     },
     "refundHistoryModal": {
       "title": "Refunds — sale {{number}}",
@@ -700,7 +731,9 @@
       "lotNumber": "Batch number (optional)",
       "expiryDate": "Expiry date",
       "saving": "Saving...",
-      "submit": "Add to stock"
+      "submit": "Add to stock",
+      "note": "Reason",
+      "notePlaceholder": "E.g. opening stock, supplier return…"
     },
     "transfer": {
       "heading": "Reserve ↔ Sales floor transfer",
@@ -714,7 +747,9 @@
       "hint": "Removes an expired, broken, stolen or destroyed product from stock — without going through a sale. The movement stays tracked in Logs with its reason.",
       "reason": "Reason",
       "saving": "Saving...",
-      "submit": "Remove from stock"
+      "submit": "Remove from stock",
+      "note": "Details (optional)",
+      "notePlaceholder": "E.g. box dropped off the truck"
     },
     "errors": {
       "entryRequired": "Choose a product, a location and a positive quantity.",
@@ -725,7 +760,8 @@
       "transferFailed": "Could not transfer the stock.",
       "lossRequired": "Choose a product, a location and a positive quantity.",
       "lossInsufficient": "Insufficient stock at this location (available: {{available}}).",
-      "lossFailed": "Could not record the removal."
+      "lossFailed": "Could not record the removal.",
+      "entryNoteRequired": "A reason is required for a manual stock entry."
     }
   },
   "expenses": {
@@ -1014,7 +1050,8 @@
       "pinFormat": "The PIN code must be exactly 4 digits.",
       "storeRequired": "This role must be assigned to a store (it cannot switch stores itself).",
       "emailInUse": "This email is already in use.",
-      "impersonateFailed": "Could not open a session for this account."
+      "impersonateFailed": "Could not open a session for this account.",
+      "limitFormat": "A limit must be empty or a positive number."
     }
   },
   "quotes": {
@@ -1384,7 +1421,11 @@
     "purchases": {
       "itemRequired": "The purchase must contain at least one item.",
       "quantityPositive": "Each item's quantity must be greater than zero.",
-      "reserveLocationNotFound": "Reserve location not found for this store."
+      "reserveLocationNotFound": "Reserve location not found for this store.",
+      "duplicateInvoice": "Invoice “{{reference}}” from this supplier is already recorded.",
+      "notFound": "Purchase not found.",
+      "notAwaitingReceipt": "This purchase is not awaiting receipt.",
+      "receiptQuantityRequired": "Enter the received quantity of every item."
     },
     "quotes": {
       "itemRequired": "The quote must contain at least one item.",
@@ -1398,7 +1439,8 @@
       "saleItemNotFound": "Sale item not found for this sale.",
       "quantityExceeded": "Refundable quantity exceeded for this item (remaining: {{remaining}}, requested: {{requested}}).",
       "noValidQuantity": "No valid quantity to refund.",
-      "cannotFindOriginalLocation": "Could not find the original location of this item to restock it."
+      "cannotFindOriginalLocation": "Could not find the original location of this item to restock it.",
+      "reasonRequired": "A reason is required to refund a sale."
     },
     "sales": {
       "itemRequired": "The sale must contain at least one item.",
@@ -1418,6 +1460,35 @@
     "settings": {
       "advancedCodeRequired": "The maintenance code is required to change these settings.",
       "advancedCodeWrong": "Incorrect maintenance code."
+    },
+    "approval": {
+      "required": "This action ({{kind}} of {{amount}}) exceeds the limit of {{threshold}}: a manager's approval is required.",
+      "invalidApprover": "This manager cannot approve this action.",
+      "wrongPin": "Incorrect manager PIN."
+    },
+    "stock": {
+      "quantityPositive": "The quantity must be greater than zero.",
+      "sameLocation": "The source and destination locations must be different.",
+      "insufficient": "Not enough stock at this location ({{available}} available).",
+      "noteRequired": "A reason is required for a manual stock entry."
+    },
+    "cashSession": {
+      "notFound": "Cash session not found.",
+      "alreadyClosed": "This cash session is already closed."
+    },
+    "inventory": {
+      "alreadyOpen": "A stock count is already in progress at this location.",
+      "notOpen": "This stock count is not open.",
+      "negative": "The counted quantity cannot be negative.",
+      "notFound": "Stock count not found.",
+      "nothingCounted": "No product has been counted: enter at least one quantity before closing."
+    },
+    "roles": {
+      "nameRequired": "The role name is required.",
+      "nameTaken": "A role already has this name.",
+      "notFound": "Role not found.",
+      "adminLocked": "The Admin role cannot be modified.",
+      "sensitiveDenied": "You cannot grant or remove a sensitive right (user management, settings, approval, log, controls) that you do not hold yourself."
     }
   },
   "whatsapp": {
@@ -1734,5 +1805,236 @@
       "updateFileFailed": "Failed to update the file on Google Drive.",
       "uploadFileFailed": "Failed to upload the file to Google Drive."
     }
+  },
+  "approval": {
+    "kinds": {
+      "refund": "refund",
+      "stock": "stock movement",
+      "credit": "credit sale"
+    },
+    "title": "Approval required",
+    "approver": "Manager",
+    "pin": "Manager PIN",
+    "approve": "Approve",
+    "cancel": "Cancel",
+    "cancelled": "Action cancelled: approval not given.",
+    "noApprover": "No manager has a PIN. Set a PIN for an Owner or Admin (Users)."
+  },
+  "inventory": {
+    "movementNote": "Stock count #{{id}}",
+    "title": "Physical stock count",
+    "hint": "Count the real stock at a location. System quantities stay hidden while counting; on closing, the difference is valued and stock is adjusted (with a manager's approval above the limit).",
+    "location": "Location",
+    "start": "Start a stock count",
+    "inProgress": "Stock count #{{id}} in progress",
+    "progress": "{{counted}} / {{total}} products counted",
+    "blindHint": "system quantities hidden",
+    "search": "Search a product…",
+    "product": "Product",
+    "counted": "Counted",
+    "note": "Note (optional)",
+    "close": "Close and adjust stock",
+    "closing": "Closing…",
+    "closeHint": "Uncounted products are left unchanged. Count and close in the same session, without selling in between.",
+    "reportTitle": "Result of stock count #{{id}}",
+    "missingValue": "Missing (value at cost)",
+    "surplusValue": "Surplus (value at cost)",
+    "noVariance": "No difference: counted stock matches system stock.",
+    "system": "System",
+    "difference": "Difference",
+    "value": "Value",
+    "history": "Closed stock counts",
+    "number": "No.",
+    "closedAt": "Closed on",
+    "viewReport": "View report",
+    "errors": {
+      "generic": "The stock count operation failed."
+    }
+  },
+  "controls": {
+    "title": "Management controls",
+    "hint": "Signals to check by employee and by supplier. They are not accusations: each signal is a starting point (receipt, conversation, on-site check).",
+    "from": "From",
+    "to": "To",
+    "signalsTitle": "Signals to check ({{count}})",
+    "noSignal": "No signal for this period.",
+    "employees": "By employee",
+    "thresholds": "Flag thresholds: refunds ≥ {{refund}}% of the employee's sales (2 minimum), losses ≥ {{loss}}% of their sales, ≥ {{entries}} manual stock entries, any cash difference above the threshold set in Configuration.",
+    "col": {
+      "employee": "Employee",
+      "sales": "Sales",
+      "refundsProcessed": "Refunds made",
+      "refundRate": "Refund rate",
+      "credit": "Credit granted",
+      "losses": "Stock losses",
+      "manualEntries": "Manual entries",
+      "cashVariance": "Cash differences",
+      "other": "Other",
+      "date": "Date",
+      "expected": "Expected",
+      "counted": "Counted",
+      "difference": "Difference",
+      "missing": "Missing",
+      "surplus": "Surplus",
+      "supplier": "Supplier",
+      "purchases": "Purchases",
+      "priceAlerts": "Price increases",
+      "shortfall": "Short at receipt",
+      "awaiting": "Awaiting receipt",
+      "debt": "Open debt",
+      "product": "Product",
+      "supplierPrices": "Price by supplier (latest)",
+      "kind": "Type",
+      "amount": "Amount",
+      "detail": "Detail"
+    },
+    "other": "prices changed: {{prices}} · expenses corrected: {{expenses}} · approvals refused: {{failed}} · approvals given: {{approvals}}",
+    "empty": "Nothing for this period.",
+    "cashTitle": "Cash register closings",
+    "stockCountsTitle": "Stock counts",
+    "suppliersTitle": "Suppliers",
+    "priceComparison": "Purchase price comparison (products bought from several suppliers)",
+    "avg": "avg.",
+    "eventsTitle": "Recent sensitive events",
+    "eventKinds": {
+      "refund": "Refund",
+      "loss": "Stock loss",
+      "manual_entry": "Manual stock entry",
+      "cash_variance": "Cash difference",
+      "price_alert": "Purchase price increase",
+      "credit_approved": "Credit approved",
+      "stock_count": "Stock count"
+    },
+    "flags": {
+      "refund_rate": "{{value}}% of their sales were refunded (threshold {{threshold}}%).",
+      "cash_variance": "cumulative cash differences: {{amount}}.",
+      "loss_rate": "high declared losses ({{value}} — threshold {{threshold}}% of sales).",
+      "manual_entries": "{{value}} manual stock entries (threshold {{threshold}}).",
+      "failed_approvals": "{{value}} approval codes refused (threshold {{threshold}}).",
+      "price_changes": "{{value}} price changes (threshold {{threshold}}).",
+      "expense_edits": "{{value}} expenses corrected or deleted (threshold {{threshold}}).",
+      "supplier_price_alert": "{{value}} purchase price increase(s) flagged.",
+      "supplier_shortfall": "shortfall found at receipt: {{amount}} to claim.",
+      "supplier_same_user_receipt": "{{value}} receipt(s) made by the person who entered the invoice."
+    },
+    "integrityTitle": "Log integrity",
+    "integrityHint": "Each action is chained to the previous one by a fingerprint: deleting or editing a log line breaks the chain. Note the head fingerprint from time to time: it also lets you detect a rollback.",
+    "integrityCheck": "Verify log integrity",
+    "integrityChecking": "Checking…",
+    "integrityOk": "Log intact: {{count}} chained action(s) verified ({{legacy}} predate the protection).",
+    "integrityBroken": "Log TAMPERED at line {{id}} — {{reason}}",
+    "integrityHead": "Head fingerprint:",
+    "integrityReasons": {
+      "prev_mismatch": "a line was deleted or moved",
+      "hash_mismatch": "a line's content was modified",
+      "unhashed_after_chain": "a line was added outside the application"
+    }
+  },
+  "controlsSettings": {
+    "heading": "Management controls",
+    "hint": "Limits above which an action requires a manager's approval (their PIN). Leave empty for no control; 0 = control everything. Per-person limits are set in Users.",
+    "approvalRefund": "Refund above",
+    "approvalStock": "Manual stock loss or entry above (value at cost) — 0 = every manual stock movement must be approved by an Owner/Admin",
+    "approvalCredit": "Credit sale above",
+    "cashVariance": "Flag cash difference above (empty = any difference)",
+    "priceAlert": "Alert if purchase price rises by more than (%) — 0 to disable",
+    "requireReceipt": "Two-step purchases: the invoice is entered, stock only comes in at controlled receipt (counted quantities)",
+    "defaultCreditLimit": "Default customer credit limit (empty = unlimited)",
+    "approverHint": "Tip: the Owner and Admin can approve. Set a PIN for them (Users → Edit).",
+    "invalid": "A control limit must be empty or a positive number."
+  },
+  "approvalRoles": {
+    "title": "Roles and permissions",
+    "hint": "Create custom roles (e.g. “Storekeeper”) and choose exactly what they can do. The Admin role cannot be modified.",
+    "newRole": "New role",
+    "name": "Role name",
+    "create": "Create role",
+    "save": "Save permissions",
+    "editRole": "Edit role",
+    "saved": "Role saved.",
+    "limits": "Personal approval limits (empty = global threshold)",
+    "limitRefund": "Max refund without approval",
+    "limitStock": "Max stock movement without approval (value at cost)",
+    "limitCredit": "Max credit sale without approval",
+    "newPin": "New PIN (4 digits)",
+    "pinSet": "PIN set",
+    "pinMissing": "No PIN"
+  },
+  "permissions": {
+    "view_margins": "See margins",
+    "manage_products": "Manage products",
+    "manage_promotions": "Manage promotions",
+    "manage_stock": "Manage stock and stock counts",
+    "manage_sales": "Sell (register)",
+    "manage_refunds": "Refund",
+    "manage_service_orders": "Create service tickets",
+    "edit_service_orders": "Correct service tickets",
+    "manage_customers": "Create customers",
+    "edit_customers": "Edit customers (incl. credit limit)",
+    "manage_suppliers": "Manage suppliers and purchases",
+    "edit_suppliers": "Edit suppliers",
+    "manage_quotes": "Create quotes",
+    "edit_quotes": "Edit quotes",
+    "manage_credits": "Collect receivables",
+    "manage_debts": "Pay supplier debts",
+    "manage_expenses": "Enter expenses",
+    "edit_expenses": "Correct/delete expenses",
+    "view_reports": "See reports",
+    "view_accounting": "See accounting",
+    "manage_settings": "Manage settings",
+    "manage_users": "Manage users and roles",
+    "view_audit_logs": "See the action log",
+    "switch_store": "Switch store",
+    "view_controls": "See the Controls dashboard",
+    "approve_actions": "Approve actions above limits",
+    "categories": {
+      "sales": "Sales and register",
+      "stock": "Products and stock",
+      "people": "Customers, suppliers and purchases",
+      "finance": "Money: receivables, debts, expenses, margins",
+      "reports": "Reports, log and controls",
+      "admin": "Administration and approvals"
+    },
+    "checkAll": "Check all",
+    "uncheckAll": "Uncheck all",
+    "sensitive": "sensitive right"
+  },
+  "purchasesControls": {
+    "invoiceReference": "Supplier invoice number",
+    "priceAlert": "Price up {{percent}}% vs the last one ({{previous}}).",
+    "awaitingReceipt": "Awaiting receipt",
+    "receive": "Receive",
+    "receiveTitle": "Receipt of purchase {{number}}",
+    "receiveHint": "Count what you actually receive, without looking at the invoice. Stock only comes in for the quantities entered.",
+    "receivedQty": "Quantity received",
+    "receiveSubmit": "Confirm receipt",
+    "shortfallResult": "Shortfall versus the invoice: {{amount}} — to claim from the supplier.",
+    "receiptOk": "Receipt matches the invoice.",
+    "status": "Status",
+    "statusReceived": "Received"
+  },
+  "creditsControls": {
+    "method": "Payment method",
+    "cash": "Cash",
+    "card": "Card",
+    "mobile": "Mobile / transfer"
+  },
+  "customersControls": {
+    "creditLimit": "Credit limit (empty = default limit)",
+    "creditLimitInvalid": "The credit limit must be empty or a positive number."
+  },
+  "journalsControls": {
+    "verify": "Verify integrity"
+  },
+  "userRights": {
+    "title": "This user's individual rights",
+    "hint": "On top of their role: allow or deny a specific right for this person only. “Per role” = no change. Sensitive rights (⚠) can only be granted by someone who holds them.",
+    "inherit": "Per role",
+    "allow": "Allow",
+    "deny": "Deny",
+    "roleHas": "the role grants it",
+    "roleLacks": "the role does not grant it",
+    "effective": "Effective rights: {{count}} of {{total}}",
+    "reset": "Reset everything to “per role”"
   }
 }

@@ -4037,6 +4037,86 @@ bouton menu) **inchangés**.
 
 **Limites assumées** : le code de maintenance sert aussi de « code vendeur » — à définir avant de livrer, sinon le client peut définir le sien en premier. Mode réseau toujours en `ws://` clair avec hash de mots de passe répliqués (voir 2026-09-07). `xlsx` reste vulnérable en lecture seulement (non utilisée). Le refus côté service n'est couvert que par test unitaire de détection + test navigateur du chemin passant ; pas de test d'intégration du rejet (pas de harnais SQLite).
 
+### 2026-09-25 — Multi-devises (XOF/XAF, NGN, GHS, EUR, USD, GBP) : points 1 à 4
+
+**Contexte** : l'app était pensée FCFA (suffixe « F » en dur, montants arrondis à l'entier ; la colonne `business_settings.currency` existait mais rien ne la lisait). Demande : préparer Nigeria, Ghana, zone euro.
+
+**Fait** :
+1. **Devise réglable** (Configuration → Entreprise → Devise) : `packages/i18n/src/currency.ts` (comme la langue, partagé UI/documents) — presets code/symbole/décimales/position/séparateurs, `setCurrency()` appelé au chargement (App, AuthGate, sélecteur) et gardé en `localStorage` pour le premier rendu. `formatAmount`/`formatMoney` (écran, séparateur insécable), `formatAmountPlain`/`formatMoneyPlain` (documents : ASCII, code ISO sur les totaux — les imprimantes thermiques et polices PDF standard n'affichent ni NBSP ni ₦/₵). Tickets ESC/PDF, devis, étiquettes, 9 rapports PDF et messages WhatsApp convertis. Un changement de devise **ne convertit pas** les montants déjà enregistrés (dit dans l'interface).
+2. **Décimales** : `roundMoney` (`packages/core/src/domain/money.ts`) au centime sur totaux de vente/ticket/achat/devis, paiements, créances/dettes, remboursements (avant : 3×0,10 payé 0,30 = « partiel » à cause de 0,30000000000000004). Champs de prix/paiement/taux de TVA en `step="any"` (sinon la validation HTML refusait les décimales). Tolérance de la validation de synchro réseau passée de 0,5 à 0,02 (0,5 devenait énorme avec des centimes). Bouton « Exact » n'arrondit plus à l'entier ; coupures rapides par devise (`cashQuickAmounts`).
+3. **Modes de paiement** : « Mobile Money » réécrit par devise (`Virement / mobile` NGN, `Virement / autre` EUR/USD/GBP ; inchangé XOF/XAF/GHS) en surchargeant les entrées i18next — piège corrigé par un test : i18next modifie sur place les objets JSON importés, les libellés d'origine sont donc mémorisés au chargement.
+4. **Zone CFA** : cartes FNE et SYSCOHADA masquées hors XOF/XAF (`cfaZone`) ; indicatif WhatsApp proposé si vide (234/233) ; TVA courante indiquée en aide (7,5 % NGN, 15 % GHS, ~20 % EUR/GBP) sans être appliquée.
+
+**Vérifié** (navigateur + tests : 8 tests de formatage/arrondi) : bascule XOF→NGN→EUR→XOF en direct, vente 3×0,10 payée 0,30 = « Payée », vente 3×1 500,50 avec « Exact », reçu PDF « TOTAL : 4,501.50 NGN », retour XOF identique à avant.
+
+**Pas fait** : conformité fiscale propre à chaque pays (FIRS Nigeria, E-VAT Ghana, certification caisse en France), langue par défaut selon le pays, conversion de montants existants, devise choisie à l'installation (seulement dans Configuration), mode de calcul de TVA autre que TTC-extrait, exports Excel (nombres bruts, non formatés).
+
+### 2026-09-25 — Audit complet (bugs, sécurité, fonctionnalités) : 5 correctifs, 1 chantier restant
+
+**Méthode** : build/tests/`pnpm audit`, balayage statique (fonctions de service qui écrivent sans permission, SQL brut, XSS, secrets), puis parcours réel dans le navigateur avec un jeu de données neuf (fournisseur, client, 3 produits, achat à crédit, dette, transferts, ventes comptant/partielle/carte, remboursement, créance, devis→vente, ticket de service, dépense, promotion, caissier restreint, clôture de caisse, PIN, XSS, toutes les pages FR puis EN).
+
+**Corrigé** : TVA affichée/imprimée sur une vente remisée (le reçu utilisait le montant avant promo alors que la base enregistrée était juste) ; flux de trésorerie sans les remboursements clients ; montant attendu au tiroir sans les acomptes de tickets de service ; `setPin` (exporté, non utilisé) sans contrôle de permission ; montants non formatés dans les messages « dépasse le solde » et à la clôture de caisse.
+
+**Vérifié sain** : verrouillage après 5 essais (même avec le bon mot de passe pendant le blocage), droits du Caissier (menus et données limités à ses ventes), PIN, XSS (noms HTML affichés en texte), aucune erreur console sur 21 pages en FR et EN, aucune fuite de texte français en anglais.
+
+**Corrigé ensuite (même jour)** : le chiffre d'affaires est maintenant NET des remboursements partout — `getSalesSummary` (Accueil, Rapports Ventes), `getTopProducts`, `getMarginsSummary` (donc Compte de résultat), `getProductMarginsBreakdown`. Règle : un remboursement se déduit à la date du remboursement (comme le rapport TVA), revenu = `refund_items.total`, coût annulé seulement si l'article est remis en stock (`refundedCost`, testée). Vérifié : Accueil, Ventes, Marges, TVA et Compte de résultat concordent (284 500 sur le jeu de test).
+
+**Restant** : `earnPoints`/`redeemPoints`/`recordMovement` exportés sans permission (primitives internes, non atteignables hors du bundle) ; remboursements de créances clients absents du tiroir (table sans utilisateur) ; montant compté pré-rempli avec l'attendu à la clôture (favorise l'absence de comptage).
+
+### 2026-09-25 — Contrôles de gestion (permissions, approbations, inventaire, chaîne d'audit)
+
+**Contexte** : demande d'un socle anti-fraude (employés, fournisseurs). Inventaire de l'existant fait avant, voir l'échange ; tout ce qui suit est nouveau. **Tous les seuils sont vides/NULL par défaut : aucun blocage tant que le propriétaire n'active rien** — sauf quelques règles toujours actives (voir « Toujours actif »).
+
+**Données (migration 7)** : réglages `approval_*_threshold`, `cash_variance_threshold`, `price_alert_percent`, `require_purchase_receipt`, `default_credit_limit` ; plafonds personnels `users.limit_refund/stock/credit` ; `audit_log.prev_hash/hash` ; `customers.credit_limit` ; `credit_repayments.received_by/store_id`, `supplier_debt_payments.paid_by` ; `refunds/customer_credits/stock_movements.approved_by` ; `stock_movements.note` ; `purchases.invoice_reference/received_at/received_by`, `purchase_items.received_quantity/previous_unit_cost/price_alert` ; tables `stock_counts`, `stock_count_lines`. Nouvelles permissions : `view_controls`, `approve_actions` (rattrapées sur les rôles existants par `ensureDefaultRoles` au démarrage — Admin/Propriétaire seulement).
+
+**Approbations** ([ApprovalService.ts](packages/core/src/services/ApprovalService.ts)) : au-delà d'un plafond (remboursement, perte/entrée de stock manuelle/régularisation d'inventaire, vente ou ticket à crédit), un responsable (permission `approve_actions`, code PIN) doit approuver ; un utilisateur qui peut approuver n'a lui-même pas besoin d'approbation. Plafond personnel prime sur le seuil global ; NULL = pas de contrôle, 0 = tout contrôler. **Deux temps** : `verifyApprovalInput` (vérifie le PIN, HORS transaction — un PIN faux incrémente le compteur d'essais qui doit survivre à un rollback) puis `checkApproval` (lecture seule, dans la transaction, lève `ApprovalRequiredError`). UI : `ApprovalProvider`/`useApproval().run(action)` redemande le PIN si refusé ([ApprovalProvider.tsx](apps/web/src/features/approval/ApprovalProvider.tsx)). Utilisé par StockPage, RefundModal, SalesPage, ServiceOrdersPage, QuotesPage, InventoryPage.
+
+**Journal infalsifiable** : chaque ligne d'`audit_log` porte `hash = SHA-256(hash précédent | champs)` ; écritures sérialisées (file d'attente) ; `verifyAuditChain` détecte modification, suppression au milieu, insertion hors application (bouton dans Contrôles). Limite : la suppression des DERNIÈRES lignes ou un retour à une ancienne sauvegarde ne se voit qu'en comparant l'empreinte de tête affichée à une valeur notée avant. Journalisé en plus : entrées/pertes/transferts de stock (avant/après, valeur, motif, approbateur), anciennes valeurs pour prix produits, dépenses corrigées, plafonds de crédit clients, rôles/plafonds des utilisateurs, approbations refusées.
+
+**Autres contrôles** : caisse clôturée **en aveugle** (montant attendu jamais affiché avant, recalculé côté service — plus accepté du client — inclut règlements de créances en espèces et tickets de service ; écart au-delà du seuil signalé) ; inventaire physique en aveugle (page Inventaire, écart valorisé, régularisation tracée avec approbation) ; achats : numéro de facture unique par fournisseur, alerte de hausse de prix (dernier coût connu), achats en deux temps optionnels avec réception contrôlée (quantités comptées sans voir la facture, manquant valorisé à réclamer) ; plafonds de crédit par client/par défaut ; règlements de créances rattachés à un encaisseur ; rôles sur mesure (Utilisateurs → Rôles et permissions, Admin verrouillé) et PIN modifiable ; tableau de bord **Contrôles** (signaux par employé/fournisseur, écarts de caisse, inventaires, comparatif de prix fournisseurs, événements sensibles) ; bouton Rembourser dans Historique des ventes pour `manage_refunds` (avant : seulement dans Journaux, Admin).
+
+**Toujours actif (même sans seuil)** : motif obligatoire pour un remboursement et pour une entrée de stock manuelle ; transfert/perte refusés si stock insuffisant ; clôture d'inventaire refusée si rien n'est compté.
+
+**Vérifié dans le navigateur** (migration d'une base existante, puis parcours) : rôle sur mesure, remboursement/perte/crédit/inventaire avec approbation (PIN faux refusé puis bon accepté), clôture de caisse en aveugle, facture en double refusée, alerte de prix, réception avec manquant, tableau de bord et intégrité (32 lignes chaînées), Gérant qui rembourse avec le PIN du propriétaire. Tests : 52 (core) dont chaîne d'audit (modif/suppression/insertion), seuils, écarts d'inventaire, hausse de prix, diff.
+
+**Bug trouvé en test** : l'inventaire n'enregistrait les quantités qu'à la perte de focus du champ — la clôture enregistre désormais toutes les saisies avant de clôturer.
+
+**Limites / pas fait** : régularisations d'inventaire, réceptions d'achats et approbations ne sont pas répliquées en mode réseau (comme les achats) ; `credit_repayments` historiques sans encaisseur (NULL) ; heure = horloge de l'appareil ; le code PIN d'un responsable doit exister (Utilisateurs → Modifier) sinon l'approbation est impossible ; export/rapports PDF du tableau de bord Contrôles non faits.
+
+### 2026-09-25 — Droits par catégorie et par utilisateur, approbation stock réservée Propriétaire/Admin
+
+**Demande** : le gérant peut s'entendre avec son staff pour voler — seuls
+Propriétaire/Admin doivent approuver les entrées/sorties de stock, et ils
+doivent pouvoir définir les droits par catégorie (rôles) et par utilisateur.
+
+**Fait** :
+- `permissions.ts` : `PERMISSION_CATEGORIES` (26 droits répartis en 6
+  catégories, chacun une seule fois — testé), `SENSITIVE_PERMISSIONS`
+  (`manage_users`, `manage_settings`, `approve_actions`, `view_audit_logs`,
+  `view_controls`, `switch_store`), `PermissionOverrides` (`true` = accorde,
+  `false` = retire), `applyOverrides`, `assertCanChangePermissions`
+  (anti-escalade : on ne peut accorder/retirer un droit sensible que si on
+  le possède soi-même).
+- Migration `id: 8` : `users.permission_overrides` (JSON). Les droits
+  effectifs de `authenticate` = rôle + exceptions ; les approbateurs
+  (`ApprovalService`) sont calculés sur ces droits effectifs — donc seuls
+  les détenteurs de `approve_actions` (Admin/Propriétaire par défaut, pas
+  Gérant) peuvent approuver.
+- UI : `PermissionOverridesEditor` (Utilisateurs → « Droits particuliers »,
+  Selon le rôle / Autoriser / Interdire par droit) et `RolesSection`
+  regroupée par catégorie avec tout cocher/décocher.
+- Seuil d'approbation stock : `null` = pas de contrôle, `0` = toute
+  entrée/sortie manuelle et régularisation d'inventaire exige un PIN
+  Propriétaire/Admin (Configuration → Contrôles de gestion).
+
+**Vérifié dans le navigateur** : caissier avec `manage_stock` accordé
+individuellement voit Stock + Inventaire (et pas Utilisateurs) ; seuil à 0 →
+entrée manuelle du caissier bloquée par « Approbation requise », seul Test
+Admin proposé (pas de Gérant), PIN valide → stock 5. Build + 60 tests OK.
+
+**Limites** : transferts de stock et réceptions d'achat non soumis à
+approbation ; approbateurs = PIN obligatoire.
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du

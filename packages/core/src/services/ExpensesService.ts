@@ -129,6 +129,7 @@ export async function updateExpense(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "edit_expenses");
+  const before = await db.select().from(schema.expenses).where(eq(schema.expenses.id, id)).get();
   const expense = await db
     .update(schema.expenses)
     .set({
@@ -165,7 +166,12 @@ export async function updateExpense(
     action: "update_expense",
     entity: "expense",
     entityId: expense.id,
-    metadata: { category: expense.category, amount: expense.amount },
+    metadata: {
+      category: expense.category,
+      amount: expense.amount,
+      // Ancienne valeur conservée : corriger une dépense après coup doit laisser une trace.
+      before: before ? { category: before.category, amount: before.amount, expenseDate: before.expenseDate, paymentMethod: before.paymentMethod } : null,
+    },
   });
 
   return expense;

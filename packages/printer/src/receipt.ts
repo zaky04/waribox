@@ -1,4 +1,4 @@
-import { t } from "@gestion-boutique/i18n";
+import { t, formatMoneyPlain, formatAmountPlain } from "@gestion-boutique/i18n";
 import { EscPosBuilder } from "./escpos";
 import { rasterizeLogo } from "./logo";
 
@@ -93,7 +93,7 @@ export async function buildReceipt(data: ReceiptData): Promise<Uint8Array> {
 
   for (const line of data.lines) {
     const left = `${line.quantity} x ${line.label}`;
-    const right = line.total.toFixed(0);
+    const right = formatAmountPlain(line.total);
     const combined = padLine(left, right, columns);
     if (combined) {
       builder.text(combined).newline();
@@ -105,19 +105,19 @@ export async function buildReceipt(data: ReceiptData): Promise<Uint8Array> {
   }
 
   builder.text(separator).newline();
-  builder.text(t("documents.common.subtotal", { amount: data.subtotal.toFixed(0) })).newline();
+  builder.text(t("documents.common.subtotal", { amount: formatAmountPlain(data.subtotal) })).newline();
   if (data.discount > 0) {
-    builder.text(t("documents.common.discount", { amount: data.discount.toFixed(0) })).newline();
+    builder.text(t("documents.common.discount", { amount: formatAmountPlain(data.discount) })).newline();
   }
   if (data.tax > 0) {
-    builder.text(t("documents.common.tax", { amount: data.tax.toFixed(0) })).newline();
+    builder.text(t("documents.common.tax", { amount: formatAmountPlain(data.tax) })).newline();
   }
-  builder.bold(true).text(t("documents.common.total", { amount: data.total.toFixed(0) })).newline().bold(false);
+  builder.bold(true).text(t("documents.common.total", { amount: formatMoneyPlain(data.total) })).newline().bold(false);
   builder
     .text(
       t("documents.receipt.payment", {
         method: t(`sales.paymentMethods.${data.paymentMethod}`, { defaultValue: data.paymentMethod }),
-        amount: data.amountPaid.toFixed(0),
+        amount: formatAmountPlain(data.amountPaid),
       }),
     )
     .newline();

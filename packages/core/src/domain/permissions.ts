@@ -25,10 +25,71 @@ export const PERMISSIONS = [
   "manage_users",
   "view_audit_logs",
   "switch_store",
+  // Voir le tableau de bord "Contrôles" (anomalies par employé, fournisseurs).
+  "view_controls",
+  // Approuver, avec son code PIN, une action qui dépasse le plafond d'un autre
+  // utilisateur (remboursement, perte de stock, crédit). Un utilisateur qui la
+  // possède n'a lui-même besoin d'aucune approbation.
+  "approve_actions",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
 export type PermissionSet = Partial<Record<Permission, boolean>>;
+// Droits particuliers d'un utilisateur : true accorde, false retire, absent = suit le rôle.
+export type PermissionOverrides = Partial<Record<Permission, boolean>>;
+
+// Regroupement pour l'écran de gestion des droits (chaque permission dans une
+// seule catégorie).
+export const PERMISSION_CATEGORIES: { key: string; permissions: Permission[] }[] = [
+  { key: "sales", permissions: ["manage_sales", "manage_refunds", "manage_quotes", "edit_quotes", "manage_service_orders", "edit_service_orders", "manage_promotions"] },
+  { key: "stock", permissions: ["manage_products", "manage_stock"] },
+  { key: "people", permissions: ["manage_customers", "edit_customers", "manage_suppliers", "edit_suppliers"] },
+  { key: "finance", permissions: ["manage_credits", "manage_debts", "manage_expenses", "edit_expenses", "view_margins", "view_accounting"] },
+  { key: "reports", permissions: ["view_reports", "view_controls", "view_audit_logs"] },
+  { key: "admin", permissions: ["manage_settings", "manage_users", "switch_store", "approve_actions"] },
+];
+
+// Permissions "de pouvoir" : on ne peut les accorder ou les retirer (à un rôle ou
+// à un utilisateur) que si on les détient soi-même — sinon un Gérant à qui on
+// aurait confié la gestion des utilisateurs pourrait s'attribuer le droit
+// d'approuver ses propres opérations.
+export const SENSITIVE_PERMISSIONS: Permission[] = [
+  "manage_users",
+  "manage_settings",
+  "approve_actions",
+  "view_audit_logs",
+  "view_controls",
+  "switch_store",
+];
+
+export function parseOverrides(raw: string | null | undefined): PermissionOverrides {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const out: PermissionOverrides = {};
+    for (const key of PERMISSIONS) if (typeof parsed[key] === "boolean") out[key] = parsed[key] as boolean;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+// Droits effectifs = ceux du rôle, puis les droits particuliers par-dessus.
+export function applyOverrides(base: PermissionSet, overrides: PermissionOverrides): PermissionSet {
+  const out: PermissionSet = { ...base };
+  for (const key of PERMISSIONS) if (overrides[key] !== undefined) out[key] = overrides[key];
+  return out;
+}
+
+// Lève si le changement entre deux jeux de droits effectifs touche une
+// permission sensible que l'auteur du changement ne détient pas.
+export function assertCanChangePermissions(acting: PermissionSet, before: PermissionSet, after: PermissionSet): void {
+  for (const key of SENSITIVE_PERMISSIONS) {
+    if ((before[key] === true) !== (after[key] === true) && acting[key] !== true) {
+      throw new PermissionError(t("coreErrors.roles.sensitiveDenied"));
+    }
+  }
+}
 
 export function hasPermission(permissions: PermissionSet, permission: Permission): boolean {
   return permissions[permission] === true;

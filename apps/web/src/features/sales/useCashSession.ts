@@ -3,6 +3,7 @@ import {
   getActiveSession,
   openSession,
   type CloseSessionInput,
+  type CloseSessionResult,
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useState } from "react";
@@ -32,10 +33,11 @@ export function useCashSession(storeId: number | null) {
     setSession(created);
   };
 
-  const close = async (input: Omit<CloseSessionInput, "sessionId">) => {
+  const close = async (input: Omit<CloseSessionInput, "sessionId">): Promise<CloseSessionResult | undefined> => {
     if (!session || !user) return;
-    await closeSession(db, { ...input, sessionId: session.id }, user.permissions);
+    const result = await closeSession(db, { ...input, sessionId: session.id }, user.permissions);
     setSession(null);
+    return result;
   };
 
   return { session, open, close };

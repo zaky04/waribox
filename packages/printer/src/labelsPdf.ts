@@ -1,3 +1,4 @@
+import { formatAmountPlain } from "@gestion-boutique/i18n";
 import JsBarcode from "jsbarcode";
 import { jsPDF } from "jspdf";
 
@@ -56,7 +57,7 @@ export function buildLabelSheetPdf(labels: LabelInput[]): Blob {
 
       doc.setFontSize(9);
       doc.setFont("helvetica", "bold");
-      doc.text(`${label.price.toFixed(0)}`, x + CELL_WIDTH_MM / 2, y + 7 + BARCODE_HEIGHT_MM + 5, {
+      doc.text(`${formatAmountPlain(label.price)}`, x + CELL_WIDTH_MM / 2, y + 7 + BARCODE_HEIGHT_MM + 5, {
         align: "center",
       });
 

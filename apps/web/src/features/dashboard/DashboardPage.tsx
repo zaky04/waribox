@@ -1,4 +1,4 @@
-import { formatAmount } from "../../lib/format";
+import { formatAmount, formatMoney } from "../../lib/format";
 import {
   deriveOrderStatus,
   getLowStockProducts,
@@ -299,7 +299,7 @@ export function DashboardPage({ onNavigate }: { onNavigate?: (tab: NavTab) => vo
               <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
                 <span style={{ fontSize: 14, color: "var(--color-text-muted)" }}>{heroLabel}</span>
                 <span style={{ ...amountStyle, fontSize: "clamp(38px, 6vw, 64px)", fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>
-                  {formatAmount(heroRevenue)}&nbsp;F
+                  {formatMoney(heroRevenue)}
                 </span>
                 {deltaPct !== null && (
                   <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, flexWrap: "wrap" }}>
@@ -321,13 +321,13 @@ export function DashboardPage({ onNavigate }: { onNavigate?: (tab: NavTab) => vo
                   <div style={dottedRow}>
                     <span>{t("dashboard.avgBasket")}</span>
                     <span style={dottedLeader} />
-                    <span style={{ ...amountStyle, fontWeight: 500 }}>{formatAmount(avgBasket)}&nbsp;F</span>
+                    <span style={{ ...amountStyle, fontWeight: 500 }}>{formatMoney(avgBasket)}</span>
                   </div>
                   {canViewReports && canViewOwnSales && (
                     <div style={dottedRow}>
                       <span>{t("dashboard.mySalesToday")}</span>
                       <span style={dottedLeader} />
-                      <span style={{ ...amountStyle, fontWeight: 500 }}>{formatAmount(myTodayRevenue)}&nbsp;F</span>
+                      <span style={{ ...amountStyle, fontWeight: 500 }}>{formatMoney(myTodayRevenue)}</span>
                     </div>
                   )}
                 </div>
@@ -451,7 +451,7 @@ export function DashboardPage({ onNavigate }: { onNavigate?: (tab: NavTab) => vo
                   >
                     <div style={{ ...amountStyle, display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 14 }}>
                       <span style={{ fontWeight: 500 }}>{sale.number}</span>
-                      <span style={{ fontWeight: 600 }}>{formatAmount(sale.total)}&nbsp;F</span>
+                      <span style={{ fontWeight: 600 }}>{formatMoney(sale.total)}</span>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "var(--color-text-muted)" }}>
                       <span>

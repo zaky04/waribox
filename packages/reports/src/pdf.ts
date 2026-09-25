@@ -1,4 +1,4 @@
-import { t } from "@gestion-boutique/i18n";
+import { t, formatAmountPlain } from "@gestion-boutique/i18n";
 import { jsPDF } from "jspdf";
 
 const TABLE_MARGIN_X = 14;
@@ -116,15 +116,15 @@ export interface SalesReportData {
 }
 
 export function buildSalesReportPdf(data: SalesReportData): Blob {
-  const rows = data.topProducts.map((p) => [p.name, p.quantity, p.revenue.toFixed(0)]);
+  const rows = data.topProducts.map((p) => [p.name, p.quantity, formatAmountPlain(p.revenue)]);
   return buildReportPdf(
     t("documents.reports.sales.title"),
     t("documents.reports.sales.subtitle", {
       from: data.from,
       to: data.to,
-      totalRevenue: data.totalRevenue.toFixed(0),
+      totalRevenue: formatAmountPlain(data.totalRevenue),
       saleCount: data.saleCount,
-      averageBasket: data.averageBasket.toFixed(0),
+      averageBasket: formatAmountPlain(data.averageBasket),
     }),
     [
       t("documents.reports.sales.columnProduct"),
@@ -155,7 +155,7 @@ export interface MarginsReportData {
 }
 
 export function buildMarginsReportPdf(data: MarginsReportData): Blob {
-  const rows = data.byDay.map((d) => [d.date, d.margin.toFixed(0)]);
+  const rows = data.byDay.map((d) => [d.date, formatAmountPlain(d.margin)]);
   const doc = new jsPDF();
   doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
@@ -167,9 +167,9 @@ export function buildMarginsReportPdf(data: MarginsReportData): Blob {
     t("documents.reports.margins.subtitle", {
       from: data.from,
       to: data.to,
-      revenue: data.revenue.toFixed(0),
-      cost: data.cost.toFixed(0),
-      margin: data.margin.toFixed(0),
+      revenue: formatAmountPlain(data.revenue),
+      cost: formatAmountPlain(data.cost),
+      margin: formatAmountPlain(data.margin),
       marginRate: data.marginRate.toFixed(1),
     }),
     26,
@@ -194,7 +194,7 @@ export function buildMarginsReportPdf(data: MarginsReportData): Blob {
     const productRows = data.productBreakdown.map((p) => [
       p.name,
       p.quantity,
-      p.margin.toFixed(0),
+      formatAmountPlain(p.margin),
       `${p.marginRate.toFixed(1)}%`,
       `${p.cumulativeShare.toFixed(1)}%`,
       p.abcClass,
@@ -232,7 +232,7 @@ export interface CashFlowReportData {
 }
 
 export function buildCashFlowReportPdf(data: CashFlowReportData): Blob {
-  const rows = data.byMonth.map((m) => [m.month, m.cashIn.toFixed(0), m.cashOut.toFixed(0), m.net.toFixed(0)]);
+  const rows = data.byMonth.map((m) => [m.month, formatAmountPlain(m.cashIn), formatAmountPlain(m.cashOut), formatAmountPlain(m.net)]);
   const doc = new jsPDF();
   doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
@@ -270,10 +270,10 @@ export function buildCashFlowReportPdf(data: CashFlowReportData): Blob {
     doc.setFont("helvetica", "normal");
     const projRows = data.projection.byYear.map((p) => [
       p.year,
-      p.projectedIn.toFixed(0),
-      p.projectedOut.toFixed(0),
-      p.projectedNet.toFixed(0),
-      p.cumulative.toFixed(0),
+      formatAmountPlain(p.projectedIn),
+      formatAmountPlain(p.projectedOut),
+      formatAmountPlain(p.projectedNet),
+      formatAmountPlain(p.cumulative),
     ]);
     drawTable(
       doc,
@@ -305,16 +305,16 @@ export interface IncomeStatementReportData {
 }
 
 export function buildIncomeStatementReportPdf(data: IncomeStatementReportData): Blob {
-  const rows = data.expensesByCategory.map((e) => [e.category, e.amount.toFixed(0)]);
+  const rows = data.expensesByCategory.map((e) => [e.category, formatAmountPlain(e.amount)]);
   return buildReportPdf(
     t("documents.reports.incomeStatement.title"),
     t("documents.reports.incomeStatement.subtitle", {
       from: data.from,
       to: data.to,
-      revenue: data.revenue.toFixed(0),
-      cogs: data.cogs.toFixed(0),
-      expensesTotal: data.expensesTotal.toFixed(0),
-      netIncome: data.netIncome.toFixed(0),
+      revenue: formatAmountPlain(data.revenue),
+      cogs: formatAmountPlain(data.cogs),
+      expensesTotal: formatAmountPlain(data.expensesTotal),
+      netIncome: formatAmountPlain(data.netIncome),
     }),
     [t("documents.reports.incomeStatement.columnCategory"), t("documents.reports.incomeStatement.columnAmount")],
     rows,
@@ -332,15 +332,15 @@ export interface TaxReportData {
 }
 
 export function buildTaxReportPdf(data: TaxReportData): Blob {
-  const rows = data.byDay.map((d) => [d.date, d.taxCollected.toFixed(0)]);
+  const rows = data.byDay.map((d) => [d.date, formatAmountPlain(d.taxCollected)]);
   return buildReportPdf(
     t("documents.reports.tax.title"),
     t("documents.reports.tax.subtitle", {
       from: data.from,
       to: data.to,
-      salesTaxTotal: data.salesTaxTotal.toFixed(0),
-      refundsTaxTotal: data.refundsTaxTotal.toFixed(0),
-      totalTaxCollected: data.totalTaxCollected.toFixed(0),
+      salesTaxTotal: formatAmountPlain(data.salesTaxTotal),
+      refundsTaxTotal: formatAmountPlain(data.refundsTaxTotal),
+      totalTaxCollected: formatAmountPlain(data.totalTaxCollected),
     }),
     [t("documents.reports.tax.columnDate"), t("documents.reports.tax.columnTaxCollected")],
     rows,
@@ -360,13 +360,13 @@ export interface BalanceSheetReportData {
 
 export function buildBalanceSheetReportPdf(data: BalanceSheetReportData): Blob {
   const rows: (string | number)[][] = [
-    [t("documents.reports.balanceSheet.rowCash"), data.cash.toFixed(0)],
-    [t("documents.reports.balanceSheet.rowStockValue"), data.stockValue.toFixed(0)],
-    [t("documents.reports.balanceSheet.rowReceivables"), data.receivables.toFixed(0)],
-    [t("documents.reports.balanceSheet.rowTotalAssets"), data.actifTotal.toFixed(0)],
-    [t("documents.reports.balanceSheet.rowPayables"), data.payables.toFixed(0)],
-    [t("documents.reports.balanceSheet.rowTotalLiabilities"), data.passifTotal.toFixed(0)],
-    [t("documents.reports.balanceSheet.rowEquity"), data.equity.toFixed(0)],
+    [t("documents.reports.balanceSheet.rowCash"), formatAmountPlain(data.cash)],
+    [t("documents.reports.balanceSheet.rowStockValue"), formatAmountPlain(data.stockValue)],
+    [t("documents.reports.balanceSheet.rowReceivables"), formatAmountPlain(data.receivables)],
+    [t("documents.reports.balanceSheet.rowTotalAssets"), formatAmountPlain(data.actifTotal)],
+    [t("documents.reports.balanceSheet.rowPayables"), formatAmountPlain(data.payables)],
+    [t("documents.reports.balanceSheet.rowTotalLiabilities"), formatAmountPlain(data.passifTotal)],
+    [t("documents.reports.balanceSheet.rowEquity"), formatAmountPlain(data.equity)],
   ];
   return buildReportPdf(
     t("documents.reports.balanceSheet.title"),
@@ -402,16 +402,16 @@ export function buildSyscohadaJournalPdf(data: SyscohadaJournalReportData): Blob
     l.compte,
     l.intitule,
     l.libelle,
-    l.debit > 0 ? l.debit.toFixed(0) : "",
-    l.credit > 0 ? l.credit.toFixed(0) : "",
+    l.debit > 0 ? formatAmountPlain(l.debit) : "",
+    l.credit > 0 ? formatAmountPlain(l.credit) : "",
   ]);
   return buildReportPdf(
     data.title,
     t("documents.reports.syscohadaJournal.subtitle", {
       from: data.from,
       to: data.to,
-      totalDebit: totalDebit.toFixed(0),
-      totalCredit: totalCredit.toFixed(0),
+      totalDebit: formatAmountPlain(totalDebit),
+      totalCredit: formatAmountPlain(totalCredit),
     }),
     [
       t("documents.reports.syscohadaJournal.columnDate"),
@@ -445,17 +445,17 @@ export function buildSyscohadaBalancePdf(data: SyscohadaBalanceReportData): Blob
   const rows = data.rows.map((r) => [
     r.compte,
     r.intitule,
-    r.debit.toFixed(0),
-    r.credit.toFixed(0),
-    r.solde.toFixed(0),
+    formatAmountPlain(r.debit),
+    formatAmountPlain(r.credit),
+    formatAmountPlain(r.solde),
   ]);
   return buildReportPdf(
     t("documents.reports.syscohadaBalance.title"),
     t("documents.reports.syscohadaBalance.subtitle", {
       from: data.from,
       to: data.to,
-      totalDebit: totalDebit.toFixed(0),
-      totalCredit: totalCredit.toFixed(0),
+      totalDebit: formatAmountPlain(totalDebit),
+      totalCredit: formatAmountPlain(totalCredit),
     }),
     [
       t("documents.reports.syscohadaBalance.columnAccount"),
@@ -490,11 +490,11 @@ export function buildCashSessionsReportPdf(data: CashSessionsReportData): Blob {
   const rows = data.rows.map((r) => [
     r.openedAt,
     r.userName,
-    r.openingAmount.toFixed(0),
+    formatAmountPlain(r.openingAmount),
     r.closedAt ?? t("documents.reports.ongoing"),
-    r.closingAmount != null ? r.closingAmount.toFixed(0) : "—",
-    r.expectedAmount != null ? r.expectedAmount.toFixed(0) : "—",
-    r.difference != null ? r.difference.toFixed(0) : "—",
+    r.closingAmount != null ? formatAmountPlain(r.closingAmount) : "—",
+    r.expectedAmount != null ? formatAmountPlain(r.expectedAmount) : "—",
+    r.difference != null ? formatAmountPlain(r.difference) : "—",
   ]);
   return buildReportPdf(
     t("documents.reports.cashSessions.title"),
@@ -502,7 +502,7 @@ export function buildCashSessionsReportPdf(data: CashSessionsReportData): Blob {
       from: data.from,
       to: data.to,
       count: data.rows.length,
-      totalDifference: totalDifference.toFixed(0),
+      totalDifference: formatAmountPlain(totalDifference),
     }),
     [
       t("documents.reports.cashSessions.columnOpenedAt"),

@@ -277,3 +277,18 @@ export const IconPalette = (p: IconProps) => (
     <circle cx="15" cy="7.5" r="1" />
   </Svg>
 );
+
+export const IconClipboard = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="6" y="4" width="12" height="17" rx="2" />
+    <path d="M9 4h6v3H9z" />
+    <path d="m9 13 2 2 4-4" />
+  </Svg>
+);
+
+export const IconEye = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z" />
+    <circle cx="12" cy="12" r="3" />
+  </Svg>
+);

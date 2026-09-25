@@ -1,3 +1,4 @@
+import { useApproval } from "../approval/ApprovalProvider";
 import { formatAmount } from "../../lib/format";
 import {
   createServiceOrder,
@@ -79,6 +80,7 @@ export function ServiceOrdersPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
   const { t } = useTranslation();
+  const approval = useApproval();
   const printer = usePrinter();
 
   const PAYMENT_METHODS: { value: ServiceOrderPaymentMethod; label: string }[] = [
@@ -223,7 +225,8 @@ export function ServiceOrdersPage() {
     try {
       const paidValue = amountPaid === "" ? total : Number(amountPaid);
 
-      const order = await createServiceOrder(db, {
+      const order = await approval.run((a) => createServiceOrder(db, {
+        approval: a,
         userId: user.id,
         customerId: customerId ? Number(customerId) : null,
         newCustomerName: customerId ? undefined : newCustomerName.trim() || undefined,
@@ -239,7 +242,7 @@ export function ServiceOrdersPage() {
         paymentMethod,
         amountPaid: paidValue,
         storeId: currentStoreId ?? undefined,
-      }, user.permissions);
+      }, user.permissions));
 
       const selectedCustomer = customers.find((c) => c.id === Number(customerId));
       const customerName = selectedCustomer?.fullName || newCustomerName.trim() || undefined;
@@ -569,7 +572,7 @@ export function ServiceOrdersPage() {
                           </td>
                           <td style={tdStyle}>
                             <input
-                              type="number"
+                              type="number" step="any"
                               min={0}
                               value={line.unitPrice}
                               onChange={(e) => updateLine(line.key, { unitPrice: Number(e.target.value) })}
@@ -682,7 +685,7 @@ export function ServiceOrdersPage() {
                 {t("serviceOrders.amountPaid")}
                 <input
                   style={inputStyle}
-                  type="number"
+                  type="number" step="any"
                   value={amountPaid}
                   onChange={(e) => setAmountPaid(e.target.value)}
                   placeholder={total.toFixed(0)}
@@ -814,7 +817,7 @@ export function ServiceOrdersPage() {
                                 >
                                   <span>{t("serviceOrders.remainingBalance")} {formatAmount(credit.remainingBalance)}</span>
                                   <input
-                                    type="number"
+                                    type="number" step="any"
                                     style={{ ...inputStyle, width: 90, marginTop: 0 }}
                                     value={repayAmount}
                                     onChange={(e) => setRepayAmount(e.target.value)}
@@ -957,7 +960,7 @@ export function ServiceOrdersPage() {
                                         </td>
                                         <td style={tdStyle}>
                                           <input
-                                            type="number"
+                                            type="number" step="any"
                                             min={0}
                                             value={item.unitPrice}
                                             onChange={(e) =>
@@ -968,7 +971,7 @@ export function ServiceOrdersPage() {
                                         </td>
                                         <td style={tdStyle}>
                                           <input
-                                            type="number"
+                                            type="number" step="any"
                                             min={0}
                                             value={item.taxRate}
                                             onChange={(e) =>

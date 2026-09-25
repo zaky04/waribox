@@ -1,3 +1,5 @@
+import { RefundModal } from "../journals/RefundModal";
+import { useAuth } from "../auth/useAuth";
 import { formatAmount } from "../../lib/format";
 import {
   getSettings,
@@ -10,6 +12,7 @@ import {
   listStores,
   listUsers,
   type PaymentMethod,
+  hasPermission,
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { buildReceiptPdf, type ReceiptData } from "@gestion-boutique/printer";
@@ -79,6 +82,9 @@ export function SalesHistoryPage() {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [reportError, setReportError] = useState<string | null>(null);
   const [generatingSaleId, setGeneratingSaleId] = useState<number | null>(null);
+  const { user } = useAuth();
+  const canRefund = !!user && hasPermission(user.permissions, "manage_refunds");
+  const [refundingSale, setRefundingSale] = useState<Sale | null>(null);
 
   const refreshReference = useCallback(async () => {
     const [productRows, variantRows, userRows, customerRows, storeRows, salePayments, businessSettings] =
@@ -292,6 +298,14 @@ export function SalesHistoryPage() {
                   >
                     {generatingSaleId === sale.id ? t("salesHistory.generating") : t("salesHistory.report")}
                   </button>
+                  {canRefund && sale.status !== "refunded" && (
+                    <button
+                      style={{ ...primaryButtonStyle, padding: "6px 12px", marginLeft: 8, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)" }}
+                      onClick={() => setRefundingSale(sale)}
+                    >
+                      {t("journals.sales.refund")}
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -305,6 +319,14 @@ export function SalesHistoryPage() {
           </tbody>
         </table>
       </div>
+      {refundingSale && (
+        <RefundModal
+          sale={refundingSale}
+          variantLabel={variantLabel}
+          onClose={() => setRefundingSale(null)}
+          onDone={refreshSales}
+        />
+      )}
     </main>
   );
 }

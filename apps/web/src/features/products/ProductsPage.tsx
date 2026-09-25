@@ -281,7 +281,7 @@ export function ProductsPage() {
               {t("products.purchasePrice")}
               <input
                 style={inputStyle}
-                type="number"
+                type="number" step="any"
                 value={purchasePrice}
                 onChange={(e) => setPurchasePrice(e.target.value)}
               />
@@ -290,7 +290,7 @@ export function ProductsPage() {
               {t("products.salePrice")}
               <input
                 style={inputStyle}
-                type="number"
+                type="number" step="any"
                 value={salePrice}
                 onChange={(e) => setSalePrice(e.target.value)}
               />
@@ -321,7 +321,7 @@ export function ProductsPage() {
               {t("products.taxRate", { rate: businessSettings.defaultTaxRate })}
               <input
                 style={inputStyle}
-                type="number"
+                type="number" step="any"
                 min={0}
                 max={99}
                 value={taxRate}

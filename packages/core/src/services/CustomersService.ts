@@ -69,6 +69,8 @@ export interface UpdateCustomerInput {
   phone?: string;
   email?: string;
   address?: string;
+  // Plafond de crédit du client (null = plafond par défaut des paramètres).
+  creditLimit?: number | null;
   createdBy?: number;
 }
 
@@ -79,6 +81,7 @@ export async function updateCustomer(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "edit_customers");
+  const before = await db.select({ creditLimit: schema.customers.creditLimit }).from(schema.customers).where(eq(schema.customers.id, id)).get();
   const customer = await db
     .update(schema.customers)
     .set({
@@ -86,6 +89,7 @@ export async function updateCustomer(
       phone: input.phone,
       email: input.email,
       address: input.address,
+      creditLimit: input.creditLimit,
     })
     .where(eq(schema.customers.id, id))
     .returning()
@@ -97,7 +101,11 @@ export async function updateCustomer(
       action: "update_customer",
       entity: "customer",
       entityId: customer.id,
-      metadata: { fullName: customer.fullName },
+      metadata: {
+        fullName: customer.fullName,
+        // Relever un plafond de crédit est une décision de gestion : on garde l'ancien.
+        creditLimit: input.creditLimit !== undefined ? { from: before?.creditLimit ?? null, to: customer.creditLimit ?? null } : undefined,
+      },
     });
   }
 

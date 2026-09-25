@@ -1,3 +1,5 @@
+import type { ApprovalInput } from "./ApprovalService";
+import { roundMoney } from "../domain/money";
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
@@ -25,7 +27,7 @@ export interface QuoteItemInput {
 // Prix TTC, comme SalesService.computeItemTotal — voir ce fichier pour le
 // détail du modèle (le taux extrait la TVA, il ne l'ajoute pas).
 function computeItemTotal(item: QuoteItemInput): number {
-  return item.quantity * item.unitPrice - (item.discount ?? 0);
+  return roundMoney(item.quantity * item.unitPrice - (item.discount ?? 0));
 }
 
 export interface CreateQuoteInput {
@@ -50,7 +52,7 @@ export async function createQuote(db: Database, input: CreateQuoteInput, actingP
     customerId = customer.id;
   }
 
-  const total = input.items.reduce((sum, item) => sum + computeItemTotal(item), 0);
+  const total = roundMoney(input.items.reduce((sum, item) => sum + computeItemTotal(item), 0));
   const number = await nextQuoteNumber(db);
 
   const quote = await db
@@ -125,6 +127,7 @@ export interface ConvertQuoteToSaleInput {
   amountPaid?: number;
   userId: number;
   storeId: number;
+  approval?: ApprovalInput;
 }
 
 export async function convertQuoteToSale(
@@ -164,6 +167,7 @@ export async function convertQuoteToSale(
       amountPaid: input.amountPaid,
       surfaceLocationId: input.surfaceLocationId,
       storeId: input.storeId,
+      approval: input.approval,
     },
     actingPermissions,
   );

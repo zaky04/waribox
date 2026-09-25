@@ -1,5 +1,8 @@
+import { InventoryPage } from "../features/inventory/InventoryPage";
+import { ControlsPage } from "../features/controls/ControlsPage";
+import { ApprovalProvider } from "../features/approval/ApprovalProvider";
 import { getSettings, listStores } from "@gestion-boutique/core";
-import { i18next } from "@gestion-boutique/i18n";
+import { i18next, setCurrency } from "@gestion-boutique/i18n";
 import { schema } from "@gestion-boutique/database";
 import { useEffect, useRef, useState } from "react";
 import { I18nextProvider } from "react-i18next";
@@ -84,6 +87,7 @@ function MainContent() {
   // verrouillage/déverrouillage ou un rechargement complet de la page.
   useEffect(() => {
     Promise.all([getSettings(db), listStores(db)]).then(([settings, storeRows]) => {
+      setCurrency(settings.currency);
       setBusinessName(settings.businessName ?? null);
       setLogoDataUrl(settings.logoDataUrl ?? null);
       setAutoLockMinutes(settings.autoLockMinutes);
@@ -132,7 +136,7 @@ function MainContent() {
   }, [appearanceAccentColor, appearanceShape, appearanceBackground, appearanceFont, theme]);
 
   return (
-    <>
+    <ApprovalProvider>
       {/* top en env(safe-area-inset-top) et pas 0 : un élément sticky se
           bloque à sa propre valeur `top`, indépendamment du padding-top déjà
           posé sur body (voir index.css) — avec top:0 il repasserait sous la
@@ -164,12 +168,14 @@ function MainContent() {
       {tab === "promotions" && enabledModules.promotions && <PromotionsPage />}
       {tab === "products" && enabledModules.products && <ProductsPage />}
       {tab === "stock" && enabledModules.stock && <StockPage />}
+      {tab === "inventory" && enabledModules.stock && <InventoryPage />}
       {tab === "customers" && <CustomersPage />}
       {tab === "suppliers" && enabledModules.suppliers && <SuppliersPage />}
       {tab === "purchases" && enabledModules.purchases && <PurchasesPage />}
       {tab === "credits" && <CreditsPage />}
       {tab === "debts" && <DebtsPage />}
       {tab === "reports" && <ReportsPage />}
+      {tab === "controls" && <ControlsPage />}
       {tab === "expenses" && <ExpensesPage />}
       {tab === "accounting" && <AccountingPage />}
       {tab === "settings" && <SettingsPage section="config" />}
@@ -179,7 +185,7 @@ function MainContent() {
       {tab === "journals" && <JournalsPage />}
         </div>
       </div>
-    </>
+    </ApprovalProvider>
   );
 }
 

@@ -19,6 +19,7 @@ import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
+import { useApproval } from "../approval/ApprovalProvider";
 import { FilterBar } from "../../components/FilterBar";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
@@ -67,6 +68,7 @@ export function StockPage() {
   const [entryQuantity, setEntryQuantity] = useState("0");
   const [lotNumber, setLotNumber] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
+  const [entryNote, setEntryNote] = useState("");
   const [entryError, setEntryError] = useState<string | null>(null);
   const [entrySaving, setEntrySaving] = useState(false);
 
@@ -81,9 +83,11 @@ export function StockPage() {
   const [lossLocationId, setLossLocationId] = useState<string>("");
   const [lossQuantity, setLossQuantity] = useState("0");
   const [lossReason, setLossReason] = useState(LOSS_REASONS[0]!.value);
+  const [lossNote, setLossNote] = useState("");
   const [lossError, setLossError] = useState<string | null>(null);
   const [lossSaving, setLossSaving] = useState(false);
 
+  const approval = useApproval();
   const [search, setSearch] = useState("");
   const [filterLocationId, setFilterLocationId] = useState("");
   const [lowStockOnly, setLowStockOnly] = useState(false);
@@ -160,6 +164,10 @@ export function StockPage() {
       setEntryError(t("stock.errors.entryRequired"));
       return;
     }
+    if (!entryNote.trim()) {
+      setEntryError(t("stock.errors.entryNoteRequired"));
+      return;
+    }
     if (selectedProductTracksExpiry && !expiryDate) {
       setEntryError(t("stock.errors.entryExpiryRequired"));
       return;
@@ -167,22 +175,27 @@ export function StockPage() {
 
     setEntrySaving(true);
     try {
-      await addManualStockEntry(
-        db,
-        {
-          variantId: vId,
-          locationId: lId,
-          quantity: qty,
-          lotNumber: lotNumber || undefined,
-          expiryDate: selectedProductTracksExpiry ? expiryDate : undefined,
-          userId: user?.id,
-        },
-        user?.permissions ?? {},
+      await approval.run((a) =>
+        addManualStockEntry(
+          db,
+          {
+            variantId: vId,
+            locationId: lId,
+            quantity: qty,
+            lotNumber: lotNumber || undefined,
+            expiryDate: selectedProductTracksExpiry ? expiryDate : undefined,
+            userId: user?.id,
+            note: entryNote,
+            approval: a,
+          },
+          user?.permissions ?? {},
+        ),
       );
 
       setVariantId("");
       setEntryLocationId("");
       setEntryQuantity("0");
+      setEntryNote("");
       setLotNumber("");
       setExpiryDate("");
       await refresh();
@@ -253,20 +266,25 @@ export function StockPage() {
 
     setLossSaving(true);
     try {
-      await recordStockLoss(
-        db,
-        {
-          variantId: vId,
-          locationId: lId,
-          quantity: qty,
-          reason: lossReason,
-          userId: user?.id,
-        },
-        user?.permissions ?? {},
+      await approval.run((a) =>
+        recordStockLoss(
+          db,
+          {
+            variantId: vId,
+            locationId: lId,
+            quantity: qty,
+            reason: lossReason,
+            note: lossNote,
+            userId: user?.id,
+            approval: a,
+          },
+          user?.permissions ?? {},
+        ),
       );
       setLossVariantId("");
       setLossLocationId("");
       setLossQuantity("0");
+      setLossNote("");
       setLossReason(LOSS_REASONS[0]!.value);
       await refresh();
     } catch (err) {
@@ -496,6 +514,16 @@ export function StockPage() {
               />
             </label>
 
+            <label>
+              {t("stock.entry.note")}
+              <input
+                style={inputStyle}
+                value={entryNote}
+                onChange={(e) => setEntryNote(e.target.value)}
+                placeholder={t("stock.entry.notePlaceholder")}
+              />
+            </label>
+
             {selectedProductTracksExpiry && (
               <>
                 <label>
@@ -627,6 +655,15 @@ export function StockPage() {
                 type="number"
                 value={lossQuantity}
                 onChange={(e) => setLossQuantity(e.target.value)}
+              />
+            </label>
+            <label>
+              {t("stock.loss.note")}
+              <input
+                style={inputStyle}
+                value={lossNote}
+                onChange={(e) => setLossNote(e.target.value)}
+                placeholder={t("stock.loss.notePlaceholder")}
               />
             </label>
 
