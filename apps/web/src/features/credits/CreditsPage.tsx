@@ -1,3 +1,4 @@
+import { formatAmount } from "../../lib/format";
 import {
   getSettings,
   isCreditOverdue,
@@ -177,7 +178,7 @@ export function CreditsPage() {
           style={{
             ...primaryButtonStyle,
             background: showSettled ? "var(--gradient-accent)" : "transparent",
-            color: showSettled ? "#0f172a" : "var(--color-text)",
+            color: showSettled ? "var(--color-on-accent)" : "var(--color-text)",
             border: showSettled ? "none" : "1px solid var(--color-border)",
           }}
           onClick={() => setShowSettled((v) => !v)}
@@ -211,8 +212,8 @@ export function CreditsPage() {
                   <td style={tdStyle}>{customerName(credit.customerId)}</td>
                   <td style={tdStyle}>{referenceNumber(credit)}</td>
                   <td style={tdStyle}>{articleSummary(credit)}</td>
-                  <td style={tdStyle}>{credit.originalAmount}</td>
-                  <td style={tdStyle}>{credit.remainingBalance}</td>
+                  <td style={tdStyle}>{formatAmount(credit.originalAmount)}</td>
+                  <td style={tdStyle}>{formatAmount(credit.remainingBalance)}</td>
                   <td style={tdStyle}>{credit.dueDate ?? "—"}</td>
                   <td style={tdStyle}>
                     <span style={badgeStyle(credit.status === "settled" ? "ok" : overdue ? "danger" : "warning")}>

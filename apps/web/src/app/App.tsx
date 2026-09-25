@@ -1,7 +1,7 @@
 import { getSettings, listStores } from "@gestion-boutique/core";
 import { i18next } from "@gestion-boutique/i18n";
 import { schema } from "@gestion-boutique/database";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { UpdateBanner } from "../components/UpdateBanner";
 import { applyAppearance } from "../lib/appearance";
@@ -61,7 +61,10 @@ function MainContent() {
   const [sectorType, setSectorType] = useState<string | null>(null);
   const [appearanceAccentColor, setAppearanceAccentColor] = useState<string | null>(null);
   const [appearanceShape, setAppearanceShape] = useState<string | null>(null);
+  const [appearanceBackground, setAppearanceBackground] = useState<string | null>(null);
+  const [appearanceFont, setAppearanceFont] = useState<string | null>(null);
   const theme = useThemeStore((s) => s.theme);
+  const headerRef = useRef<HTMLDivElement>(null);
   useBackupScheduler();
   useFneQueue(db);
   useIdleLock(autoLockMinutes);
@@ -98,8 +101,23 @@ function MainContent() {
       setSectorType(settings.sectorType ?? null);
       setAppearanceAccentColor(settings.appearanceAccentColor ?? null);
       setAppearanceShape(settings.appearanceShape ?? null);
+      setAppearanceBackground(settings.appearanceBackground ?? null);
+      setAppearanceFont(settings.appearanceFont ?? null);
     });
   }, [db, tab]);
+
+  // Hauteur de l'en-tête sticky → --app-header-h, pour que la colonne de
+  // menu (≥1024px, voir index.css) se cale juste sous lui même quand il
+  // change de hauteur (bandeau d'impersonation, retour à la ligne...).
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const update = () => document.documentElement.style.setProperty("--app-header-h", `${el.offsetHeight}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Séparé de l'effet ci-dessus (qui ne tourne qu'au changement d'onglet) :
   // --color-accent-soft/--bg-glow ont une opacité différente en clair/sombre
@@ -107,8 +125,11 @@ function MainContent() {
   // redéclencher quand `theme` change seul, sans attendre un changement
   // d'onglet ni une relecture de business_settings.
   useEffect(() => {
-    applyAppearance(appearanceAccentColor, appearanceShape, theme);
-  }, [appearanceAccentColor, appearanceShape, theme]);
+    applyAppearance(
+      { accent: appearanceAccentColor, shape: appearanceShape, background: appearanceBackground, font: appearanceFont },
+      theme,
+    );
+  }, [appearanceAccentColor, appearanceShape, appearanceBackground, appearanceFont, theme]);
 
   return (
     <>
@@ -116,12 +137,26 @@ function MainContent() {
           bloque à sa propre valeur `top`, indépendamment du padding-top déjà
           posé sur body (voir index.css) — avec top:0 il repasserait sous la
           barre de statut Android dès le premier défilement. */}
-      <div style={{ position: "sticky", top: "env(safe-area-inset-top)", zIndex: 10, background: "var(--color-bg)" }}>
+      <div
+        ref={headerRef}
+        style={{ position: "sticky", top: "env(safe-area-inset-top)", zIndex: 10, background: "var(--color-bg)" }}
+      >
         <TopBar multiStoreEnabled={multiStoreEnabled} stores={stores} />
         <BusinessHeader businessName={businessName} logoDataUrl={logoDataUrl} />
         <Nav active={tab} onChange={setTab} enabledModules={enabledModules} sectorType={sectorType} />
       </div>
-      {tab === "dashboard" && <DashboardPage />}
+      <div className="app-body">
+        <Nav
+          placement="sidebar"
+          active={tab}
+          onChange={setTab}
+          enabledModules={enabledModules}
+          sectorType={sectorType}
+          businessName={businessName}
+          logoDataUrl={logoDataUrl}
+        />
+        <div className="app-content">
+      {tab === "dashboard" && <DashboardPage onNavigate={setTab} />}
       {tab === "sales" && enabledModules.sales && <SalesPage />}
       {tab === "sales_history" && enabledModules.sales && <SalesHistoryPage />}
       {tab === "quotes" && enabledModules.sales && <QuotesPage />}
@@ -137,9 +172,13 @@ function MainContent() {
       {tab === "reports" && <ReportsPage />}
       {tab === "expenses" && <ExpensesPage />}
       {tab === "accounting" && <AccountingPage />}
-      {tab === "settings" && <SettingsPage />}
+      {tab === "settings" && <SettingsPage section="config" />}
+      {tab === "advanced" && <SettingsPage section="advanced" />}
+      {tab === "appearance" && <SettingsPage section="appearance" />}
       {tab === "users" && <UsersPage />}
       {tab === "journals" && <JournalsPage />}
+        </div>
+      </div>
     </>
   );
 }

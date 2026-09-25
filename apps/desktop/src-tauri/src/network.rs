@@ -98,6 +98,19 @@ struct HelloPayload {
     token: Option<String>,
 }
 
+// Comparaison en temps constant : ne révèle pas, par la durée de réponse, combien
+// de caractères d'un jeton deviné sont corrects.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
 fn is_valid_hello(raw: &str, expected_token: &str) -> bool {
     let Ok(envelope) = serde_json::from_str::<HelloEnvelope>(raw) else {
         return false;
@@ -105,7 +118,10 @@ fn is_valid_hello(raw: &str, expected_token: &str) -> bool {
     if envelope.kind != "hello" {
         return false;
     }
-    envelope.payload.and_then(|p| p.token).as_deref() == Some(expected_token)
+    match envelope.payload.and_then(|p| p.token) {
+        Some(token) => constant_time_eq(token.as_bytes(), expected_token.as_bytes()),
+        None => false,
+    }
 }
 
 /// Démarre le serveur Master. Idempotent : si déjà démarré, renvoie le port

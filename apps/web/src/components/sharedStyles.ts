@@ -37,11 +37,10 @@ export const primaryButtonStyle: CSSProperties = {
   borderRadius: "var(--radius-md)",
   border: "none",
   background: "var(--gradient-accent)",
-  color: "#0f172a",
+  color: "var(--color-on-accent)",
   fontWeight: 700,
   fontSize: 16,
   cursor: "pointer",
-  boxShadow: "0 4px 14px -4px rgba(56, 189, 248, 0.5)",
 };
 
 export const tableStyle: CSSProperties = {
@@ -66,19 +65,30 @@ export const tdStyle: CSSProperties = {
   borderBottom: "1px solid var(--color-border)",
 };
 
-const BADGE_COLORS: Record<"ok" | "warning" | "danger" | "info", { bg: string; fg: string }> = {
-  ok: { bg: "#14532d", fg: "#86efac" },
-  warning: { bg: "#7c2d12", fg: "#fdba74" },
-  danger: { bg: "#7f1d1d", fg: "#fca5a5" },
-  info: { bg: "#312e81", fg: "#a5b4fc" },
+// Pastilles à plat : filet + texte de la couleur de statut, sans fond plein
+// (direction "ticket de caisse", voir index.css) — suit les variables de
+// statut, donc lisibles en clair comme en mode nuit.
+const BADGE_COLORS: Record<"ok" | "warning" | "danger" | "info", string> = {
+  ok: "var(--color-success)",
+  warning: "var(--color-warning)",
+  danger: "var(--color-danger)",
+  info: "var(--color-text-muted)",
 };
 
 export const badgeStyle = (variant: "ok" | "warning" | "danger" | "info"): CSSProperties => ({
   display: "inline-block",
-  padding: "3px 10px",
-  borderRadius: 999,
+  padding: "2px 8px",
+  borderRadius: 4,
   fontSize: 12,
   fontWeight: 700,
-  background: BADGE_COLORS[variant].bg,
-  color: BADGE_COLORS[variant].fg,
+  background: "transparent",
+  border: "1px solid " + BADGE_COLORS[variant],
+  color: BADGE_COLORS[variant],
 });
+
+// Montants : chiffres à chasse fixe (IBM Plex Mono), pour l'alignement des
+// colonnes et l'allure "ticket".
+export const amountStyle: CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontVariantNumeric: "tabular-nums",
+};

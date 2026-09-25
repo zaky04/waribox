@@ -37,7 +37,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
     let cancelled = false;
     getSettings(db).then((settings) => {
       if (cancelled) return;
-      applyAppearance(settings.appearanceAccentColor ?? null, settings.appearanceShape ?? null, theme);
+      applyAppearance(
+        {
+          accent: settings.appearanceAccentColor ?? null,
+          shape: settings.appearanceShape ?? null,
+          background: settings.appearanceBackground ?? null,
+          font: settings.appearanceFont ?? null,
+        },
+        theme,
+      );
     });
     return () => {
       cancelled = true;

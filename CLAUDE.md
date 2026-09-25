@@ -3967,6 +3967,76 @@ build` et les 43 tests unitaires passent.
 - Pas de nouvelle typographie ni de disposition par secteur (toujours hors
   périmètre, voir entrée précédente).
 
+### 2026-09-24 — Menu en colonne verticale à gauche sur grand écran + bouton "Rejoindre un réseau" invisible
+
+**Bouton invisible (Paramètres → Mode réseau)** : le bouton "Rejoindre un
+réseau" de `NetworkSection.tsx` réutilisait `primaryButtonStyle` (texte
+`#0f172a`) avec un fond `var(--color-bg)` sombre → texte sombre sur fond
+sombre en thème sombre. Corrigé (texte `var(--color-text)` + bordure). Les
+autres boutons "secondaires" de l'app redéfinissent tous leur couleur de
+texte, seul ce cas était fautif (vérifié par recherche).
+
+**Menu vertical** (demande du porteur du projet, capture à l'appui : les
+2 rangées d'onglets mangeaient la hauteur et le contenu centré laissait de
+grands vides latéraux). Décision : **≥1024px uniquement**, tablette
+(768–1023px : barre horizontale à retour à la ligne) et mobile (<768px :
+bouton menu) **inchangés**.
+- [Nav.tsx](apps/web/src/app/Nav.tsx) : nouvelle prop `placement`
+  (`"header"` par défaut = comportement d'avant ; `"sidebar"` = colonne
+  `<aside class="nav-sidebar">`, mêmes onglets/permissions/icônes/
+  intitulés de groupe, libellé "Produits" adaptatif conservé).
+- [App.tsx](apps/web/src/app/App.tsx) : `<Nav placement="sidebar">` monté
+  dans un `.app-body` (flex ≥1024px) à côté d'un `.app-content` qui
+  enveloppe les pages ; la hauteur de l'en-tête sticky est mesurée
+  (`ResizeObserver`) dans `--app-header-h` pour que la colonne se cale
+  juste dessous et ne dépasse jamais la fenêtre (`max-height` + scroll
+  interne).
+- [index.css](apps/web/src/app/index.css) : `.nav-sidebar` (240px,
+  `position: sticky`), `.nav-full` masquée ≥1024px.
+- **Vérifié dans le navigateur** (mesures DOM, pas seulement à l'œil) :
+  1400px → colonne 240px sticky sous l'en-tête, contenu à x=240, 17
+  entrées, 4 groupes, clic "Paramètres" navigue et applique l'accent ;
+  1023px → barre horizontale (colonne masquée) ; 1024px → colonne ;
+  900px → barre horizontale ; 375px → bouton menu, aucun débordement
+  (`scrollWidth` 375). `pnpm run build` + 43 tests passent.
+- **Pas fait** : colonne repliable en icônes seules (proposée, non
+  demandée explicitement).
+- **Piège de vérification** : sur le panneau navigateur intégré, un clic
+  `computer`/`ref` sur le bouton submit d'un formulaire peut ne pas
+  déclencher `onSubmit` ; `form.requestSubmit()` via `javascript_tool`
+  fonctionne. Et après remise à zéro OPFS (voir entrée du 2026-09-20), le
+  compte de test doit être recréé.
+
+### 2026-09-25 — Refonte "ticket de caisse" (papier, encre, tampon)
+
+**Contexte** : l'interface était jugée trop standard/« faite par IA ». Direction validée sur maquette (Artifact) puis appliquée.
+
+**Fait** :
+- Tokens dans [index.css](apps/web/src/app/index.css) : thème clair « papier » par défaut (le sombre « nuit » reste sélectionnable — un utilisateur existant repasse en clair), aplats sans dégradé/lueur (`--gradient-accent` = couleur unie, `--bg-glow: none`, noms conservés car lus par de nombreux composants), `--tint-1..5` pour les monogrammes produit.
+- Polices auto-hébergées `@fontsource` (Familjen Grotesk, IBM Plex Mono pour les montants, Caveat pour les notes manuscrites), incluses dans le precache PWA — aucune dépendance réseau.
+- Accent par défaut terracotta `#b4432b`, `--color-on-accent` calculé par luminance ; 3 formes (standard/arrondi/carré) ; nouveaux presets.
+- Nouveaux composants : `Stamp` (tampon d'encre animé), `TicketEdge` (bord dentelé).
+- Accueil et écran Ventes refaits (ticket avec pointillés, total mono 34px, boutons ±, moyens de paiement en segments, rendu monnaie encadré, coupures rapides).
+- Menu latéral gauche ≥1024px (voir entrée du 2026-09-24).
+
+**Pas fait** : écran de clôture de caisse par comptage, reprise des `borderRadius`/polices codés en dur hors styles partagés, feuille ticket spécifique mobile.
+**Non vérifié visuellement** : écran Ventes refait (build/tests OK, mais pas de session connectée disponible dans le navigateur de test).
+
+### 2026-09-25 — Menus Configuration / Configuration avancée / Apparence + durcissement sécurité
+
+**Organisation** : Paramètres est éclaté en 3 menus (même composant `SettingsPage`, prop `section`, un seul état et un seul bouton Enregistrer ; les blocs hors-section restent montés en `display: contents/none` pour ne perdre aucune saisie). **Configuration** : entreprise, FNE, SYSCOHADA, remises programmées, fidélité, sécurité, sauvegardes. **Configuration avancée** (verrouillée par le code de maintenance) : modules actifs, multi-boutique, mode réseau, maintenance/mise à jour. **Apparence** : secteur d'activité, couleur d'accent, forme, fond de page (papier/blanc/gris, clair seulement) et police (Familjen/système/serif) — migration 6 (`appearance_background`, `appearance_font`), `applyAppearance` prend maintenant un objet.
+
+**Sécurité corrigée** :
+- `updateSettings` écrivait l'objet reçu tel quel (`.set(input)`) : n'importe quel appel pouvait écraser `maintenanceCodeHash` ou remettre à zéro le compteur d'essais. Liste noire des colonnes (`id`, hash, compteurs) ; `setMaintenanceCode` écrit le hash directement.
+- Les champs « avancés » (`enableSales/Products/Stock/Suppliers/Purchases/ServiceOrders`, `printPromisedDateOnTicket`, `multiStoreEnabled`) exigent `advancedCode` (code de maintenance) **côté service** dès qu'un code existe et que l'assistant de premier démarrage est terminé — seulement s'ils *changent* (`changedAdvancedSettings`, testée). L'UI garde le code saisi au déverrouillage en mémoire.
+- `setMaintenanceCode` vérifiait le code actuel sans compteur d'essais (devinable sans limite) : passe maintenant par `checkMaintenanceCode` (`maintenanceCodeCheck.ts`, fichier séparé pour éviter un import circulaire avec SettingsService).
+- Réseau (`network.rs`) : comparaison du jeton de pairage en temps constant.
+- `getSettings` : création de la ligne singleton avec `onConflictDoNothing` (deux lectures simultanées au premier lancement faisaient échouer la seconde).
+
+**Bug trouvé en test navigateur** : juste après avoir défini le code, l'écran se reverrouillait aussitôt — le code défini déverrouille désormais la visite en cours.
+
+**Limites assumées** : le code de maintenance sert aussi de « code vendeur » — à définir avant de livrer, sinon le client peut définir le sien en premier. Mode réseau toujours en `ws://` clair avec hash de mots de passe répliqués (voir 2026-09-07). `xlsx` reste vulnérable en lecture seulement (non utilisée). Le refus côté service n'est couvert que par test unitaire de détection + test navigateur du chemin passant ; pas de test d'intégration du rejet (pas de harnais SQLite).
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du

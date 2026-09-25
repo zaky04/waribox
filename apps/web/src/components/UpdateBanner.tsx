@@ -30,7 +30,7 @@ export function UpdateBanner() {
             borderRadius: "var(--radius-md)",
             border: "none",
             background: "var(--gradient-accent)",
-            color: "#0f172a",
+            color: "var(--color-on-accent)",
             fontWeight: 700,
             cursor: "pointer",
           }}

@@ -39,7 +39,7 @@
     "reports": "Reports",
     "expenses": "Expenses",
     "accounting": "Accounting",
-    "settings": "Settings",
+    "settings": "Configuration",
     "users": "Users",
     "journals": "Logs",
     "groups": {
@@ -47,7 +47,9 @@
       "relations": "Relations",
       "finance": "Finance",
       "system": "System"
-    }
+    },
+    "appearance": "Appearance",
+    "advanced": "Advanced settings"
   },
   "topbar": {
     "impersonatingPrefix": "Signed in as",
@@ -81,7 +83,22 @@
     "backup": "Backup",
     "backupNever": "Never",
     "backupOverdue": "Overdue — do it in Settings",
-    "backupUpToDate": "Up to date"
+    "backupUpToDate": "Up to date",
+    "vsYesterday": "vs yesterday ({{amount}})",
+    "avgBasket": "Average basket",
+    "salesLabel": "Sales",
+    "peakHour": "{{hour}}:00 — the rush",
+    "todoTitle": "To do today",
+    "todoEmpty": "nothing to report",
+    "todoLowStockDetail": "{{count}} product(s) below their alert threshold",
+    "todoExpiringDetail": "{{count}} batch(es) to sell or remove within {{days}} days",
+    "todoReadyDetail": "{{count}} ticket(s) ready for pickup",
+    "todoCreditsDetail": "{{count}} overdue credit(s) to chase",
+    "todoBackupDetail": "Last backup: {{date}}",
+    "open": "Open",
+    "recentSales": "Latest sales",
+    "noSalesYet": "no sales yet",
+    "chartLabel": "Sales by hour today"
   },
   "sales": {
     "title": "Sales",
@@ -165,7 +182,11 @@
       "card": "Card",
       "mobile_money": "Mobile Money",
       "credit": "Credit"
-    }
+    },
+    "stampPaid": "PAID",
+    "exactAmount": "Exact",
+    "removeOne": "Remove one",
+    "addOne": "Add one"
   },
   "salesHistory": {
     "title": "Sales History",
@@ -188,12 +209,12 @@
     "noSales": "No sales for this selection."
   },
   "settings": {
-    "title": "Settings",
+    "title": "Configuration",
     "business": {
       "heading": "Business",
       "name": "Business name",
       "sectorType": "Business type",
-      "sectorTypeHint": "Adapts the icon and label of the \"Products\" tab to your business (e.g. \"Medicines\" for a pharmacy) — doesn't affect any data. To change the app's colors, see the Appearance section below.",
+      "sectorTypeHint": "Adapts the icon and label of the \"Products\" tab to your business (e.g. \"Medicines\" for a pharmacy) — doesn't affect any data.",
       "sectorNone": "None (default theme)",
       "sectorBoutique": "Shop / general store",
       "sectorPharmacie": "Pharmacy",
@@ -228,14 +249,23 @@
       "shapeRounded": "Rounded",
       "shapeSquare": "Square",
       "presets": {
-        "amber": "Amber",
+        "ochre": "Ochre",
         "teal": "Teal",
-        "tomato": "Tomato",
+        "ink": "Ink blue",
         "plum": "Plum",
-        "emerald": "Emerald",
+        "forest": "Forest green",
         "rose": "Rose",
         "slate": "Slate"
-      }
+      },
+      "shapeStandard": "Standard",
+      "background": "Page background (light theme)",
+      "bgPaper": "Paper",
+      "bgWhite": "White",
+      "bgGrey": "Light grey",
+      "font": "Font",
+      "fontDefault": "Familjen Grotesk",
+      "fontSystem": "System",
+      "fontSerif": "Classic (serif)"
     },
     "modules": {
       "heading": "Active modules",
@@ -396,6 +426,17 @@
       "backupSkipped": "Backup not performed ({{error}}) — continuing installation.",
       "launching": "Launching installer...",
       "readyMessage": "An installation window should open. If Windows shows \"Windows protected your PC\", that's normal for an unsigned installer: click \"More info\" then \"Run anyway\". Once the installation wizard is visible, click below to close WariBox and let the installation continue."
+    },
+    "modulesGate": {
+      "title": "Restricted access",
+      "hint": "Enabled modules, multi-store, network mode, e-invoicing, SYSCOHADA export and maintenance: these settings define what the software allows. Enter the maintenance code to change them.",
+      "codeLabel": "Maintenance code",
+      "unlock": "Unlock",
+      "wrong": "Incorrect code.",
+      "noCodeBanner": "No code set: this screen is open to everyone. Set a code below, in the Maintenance section, to protect it."
+    },
+    "promotionsCard": {
+      "heading": "Scheduled discounts"
     }
   },
   "network": {
@@ -1263,7 +1304,7 @@
     },
     "moduleSetup": {
       "title": "Modules to activate",
-      "hint": "Choose the features useful to your business — changeable at any time later in Settings.",
+      "hint": "Choose the features useful to your business — changeable at any time later in Advanced settings.",
       "saving": "Saving...",
       "continue": "Continue"
     },
@@ -1373,6 +1414,10 @@
     },
     "stores": {
       "noStoreExists": "No store exists — the database migration must have failed."
+    },
+    "settings": {
+      "advancedCodeRequired": "The maintenance code is required to change these settings.",
+      "advancedCodeWrong": "Incorrect maintenance code."
     }
   },
   "whatsapp": {

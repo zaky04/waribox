@@ -1,3 +1,4 @@
+import { formatAmount } from "../../lib/format";
 import {
   createPurchase,
   ensureVariantBarcode,
@@ -403,7 +404,7 @@ export function PurchasesPage() {
                           style={{ ...inputStyle, width: 80, marginTop: 0 }}
                         />
                       </td>
-                      <td style={tdStyle}>{(line.quantity * line.unitCost).toFixed(0)}</td>
+                      <td style={tdStyle}>{formatAmount(line.quantity * line.unitCost)}</td>
                       <td style={tdStyle}>
                         <button
                           onClick={() => removeLine(line.variantId)}
@@ -420,7 +421,7 @@ export function PurchasesPage() {
           )}
 
           <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12, fontWeight: 700, fontSize: 18 }}>
-            {t("purchases.totalLabel")} {total.toFixed(0)}
+            {t("purchases.totalLabel")} {formatAmount(total)}
           </div>
 
           <label>
@@ -485,7 +486,7 @@ export function PurchasesPage() {
                 <td style={tdStyle}>{p.number}</td>
                 <td style={tdStyle}>{p.createdAt}</td>
                 <td style={tdStyle}>{supplierName(p.supplierId)}</td>
-                <td style={tdStyle}>{p.total}</td>
+                <td style={tdStyle}>{formatAmount(p.total)}</td>
               </tr>
             ))}
             {purchases.length === 0 && (

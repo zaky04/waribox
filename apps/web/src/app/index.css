@@ -1,66 +1,83 @@
+/* Direction visuelle "ticket de caisse" (voir CLAUDE.md, journal du
+   2026-09-25) : papier chaud + encre + un seul accent (le "tampon"), à plat —
+   aucun dégradé, aucune lueur, aucune ombre portée sur les cartes. :root =
+   thème clair (défaut), :root[data-theme="dark"] = mode nuit (papier brun
+   sombre, pas de bleu nuit). --gradient-accent et --bg-glow sont conservées
+   comme noms (des dizaines de composants les lisent) mais valent désormais
+   une couleur unie / rien. */
 :root {
-  color-scheme: light dark;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  --color-bg: #0f172a;
-  --color-bg-elevated: #1e293b;
-  --color-border: #334155;
-  --color-text: #f1f5f9;
-  --color-text-muted: #94a3b8;
+  color-scheme: light;
+  --font-sans: "Familjen Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-hand: "Caveat", "Segoe Print", cursive;
+  font-family: var(--font-sans);
 
-  /* Accent — bleu -> indigo, réutilisé partout (boutons, onglets actifs,
-     anneaux de focus) via ce dégradé plutôt qu'une teinte plate. */
-  --color-accent: #38bdf8;
-  --color-accent-2: #818cf8;
-  --gradient-accent: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-2) 100%);
-  --color-accent-soft: rgba(56, 189, 248, 0.16);
+  --color-bg: #f4efe6;
+  --color-bg-elevated: #fbf8f2;
+  --color-bg-side: #ebe4d6;
+  --color-ticket: #fffdf8;
+  --color-border: #d5ccb9;
+  --color-rule-strong: #b9af9c;
+  --color-dot: #c9bfaa;
+  --color-text: #1d1b16;
+  --color-text-muted: #5e584d;
 
-  --radius-md: 14px;
-  --radius-lg: 20px;
+  /* Accent unique — le "tampon". Surchargé par Paramètres → Apparence. */
+  --color-accent: #b4432b;
+  --color-accent-2: #b4432b;
+  --color-on-accent: #ffffff;
+  --gradient-accent: var(--color-accent);
+  --color-accent-soft: rgba(180, 67, 43, 0.12);
 
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
-  --shadow-card-strong: 0 4px 12px rgba(0, 0, 0, 0.45), 0 16px 40px -16px rgba(56, 189, 248, 0.25);
+  --radius-md: 6px;
+  --radius-lg: 8px;
 
-  /* Couleurs de statut (texte d'erreur/succès/avertissement, souvent posé
-     directement sur le fond de page) — valeurs pastel choisies pour le
-     thème sombre (contraste 6.5:1 à 12.7:1 contre --color-bg sombre,
-     largement au-dessus du minimum WCAG AA de 4.5:1). Ces mêmes valeurs
-     tombent à 1.3:1-2.6:1 en thème clair (quasi invisibles) — d'où la
-     redéfinition complète dans :root[data-theme="light"] ci-dessous,
-     plutôt qu'une seule teinte "à peu près correcte" pour les deux. */
-  --color-danger: #f87171;
-  --color-success: #86efac;
-  --color-warning: #fdba74;
-  --color-caution: #facc15;
+  --shadow-card: none;
+  --shadow-card-strong: 0 6px 20px rgba(29, 27, 22, 0.14);
 
-  /* Halos décoratifs discrets en arrière-plan — profondeur sans gêner la
-     lecture, fixés (pas de répétition ni de défilement). */
-  --bg-glow: radial-gradient(circle at 12% -10%, rgba(56, 189, 248, 0.14), transparent 45%),
-    radial-gradient(circle at 100% 0%, rgba(129, 140, 248, 0.12), transparent 40%);
-}
-
-:root[data-theme="light"] {
-  --color-bg: #f8fafc;
-  --color-bg-elevated: #ffffff;
-  --color-border: #e2e8f0;
-  --color-text: #0f172a;
-  --color-text-muted: #64748b;
-
-  --color-accent-soft: rgba(56, 189, 248, 0.12);
-  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 20px -10px rgba(15, 23, 42, 0.12);
-  --shadow-card-strong: 0 4px 10px rgba(15, 23, 42, 0.06), 0 16px 32px -14px rgba(56, 189, 248, 0.2);
-
-  /* Contraste vérifié contre --color-bg clair (#f8fafc) : 6.18:1 / 5.20:1 /
-     6.04:1 / 4.71:1 — tous au-dessus du minimum WCAG AA (4.5:1). Le jaune
-     est le plus juste des quatre : c'est la teinte la plus difficile à
-     foncer tout en restant reconnaissable comme jaune plutôt que comme
-     brun sur un fond blanc, pas un raccourci pris ici. */
+  /* Couleurs de statut (texte sur --color-bg) — contraste ≥4.5:1 vérifié
+     contre le papier clair (voir journal du 2026-08-18). */
   --color-danger: #b91c1c;
-  --color-success: #0e7a37;
+  --color-success: #2f6b4f;
   --color-warning: #a3410f;
   --color-caution: #a16207;
 
-  --bg-glow: radial-gradient(circle at 12% -10%, rgba(56, 189, 248, 0.1), transparent 45%),
-    radial-gradient(circle at 100% 0%, rgba(129, 140, 248, 0.08), transparent 40%);
+  --bg-glow: none;
+  --tint-1: #e6d9c3;
+  --tint-2: #d9e3d5;
+  --tint-3: #e9d3cb;
+  --tint-4: #d6dde6;
+  --tint-5: #ebdda9;
+  /* Léger grain de papier (SVG bruit, 160px, répété) — remplace l'ancien halo. */
+  --bg-grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .45 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='.09'/></svg>");
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #16140f;
+  --color-bg-elevated: #1f1c16;
+  --color-bg-side: #100f0b;
+  --color-ticket: #26221a;
+  --color-border: #3a3529;
+  --color-rule-strong: #5a523f;
+  --color-dot: #4a4436;
+  --color-text: #f1ebdd;
+  --color-text-muted: #a69e8c;
+
+  --color-accent-soft: rgba(180, 67, 43, 0.22);
+  --shadow-card-strong: 0 6px 20px rgba(0, 0, 0, 0.5);
+
+  /* Pastels lisibles sur fond sombre (6.5:1 à 12.7:1). */
+  --color-danger: #f87171;
+  --color-success: #7fb79a;
+  --color-warning: #fdba74;
+  --color-caution: #facc15;
+
+  --tint-1: #3a3220;
+  --tint-2: #27352b;
+  --tint-3: #3c2a24;
+  --tint-4: #262f3a;
+  --tint-5: #3b3417;
 }
 
 /* Apparence personnalisable (voir Paramètres → Apparence,
@@ -86,9 +103,10 @@ body {
   margin: 0;
   min-height: 100vh;
   background-color: var(--color-bg);
-  background-image: var(--bg-glow);
-  background-repeat: no-repeat;
-  background-attachment: fixed;
+  background-image: var(--bg-grain);
+  background-repeat: repeat;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   color: var(--color-text);
   /* L'app Android (Tauri, gen/android/app/.../MainActivity.kt appelle
      enableEdgeToEdge() — voir CLAUDE.md) dessine sous la barre de statut et
@@ -105,6 +123,13 @@ body {
 /* Polish global — pas de className à ajouter par page : ces règles
    s'appliquent partout via de simples sélecteurs de balises, cohérent avec
    la convention "style inline" déjà utilisée dans toute l'app. */
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
 
 button {
   transition: filter 0.15s ease, transform 0.05s ease, box-shadow 0.15s ease, opacity 0.15s ease;
@@ -201,6 +226,48 @@ table tbody tr:hover {
   }
 }
 
+/* Grand écran (≥1024px) : le menu passe en colonne verticale à gauche
+   (.nav-sidebar, monté à côté du contenu par App.tsx) et la barre du haut
+   disparaît. Tablette (768–1023px) et mobile gardent leur affichage
+   inchangé ci-dessus. --app-header-h est mesurée par App.tsx (hauteur de
+   l'en-tête sticky) pour que la colonne se cale juste dessous. */
+.nav-sidebar {
+  display: none;
+}
+.app-body {
+  display: block;
+}
+.app-content {
+  min-width: 0;
+}
+@media (min-width: 1024px) {
+  /* Le nom/logo du commerce vit en haut de la colonne de menu. */
+  .business-header {
+    display: none !important;
+  }
+  .nav-full {
+    display: none;
+  }
+  .app-body {
+    display: flex;
+    align-items: flex-start;
+  }
+  .app-content {
+    flex: 1;
+  }
+  .nav-sidebar {
+    display: block;
+    flex: none;
+    width: 240px;
+    position: sticky;
+    top: calc(env(safe-area-inset-top) + var(--app-header-h, 0px));
+    max-height: calc(100vh - var(--app-header-h, 0px));
+    overflow-y: auto;
+    padding: 8px 12px 24px;
+    border-right: 1px solid var(--color-bg-elevated);
+  }
+}
+
 /* Wrapper de tout ce qui défile horizontalement (mobile) : tableaux, mais
    aussi la barre d'onglets Nav (voir journal 2026-08-17, "Audit et
    correctifs responsive" puis son suivi) — le simple `overflow-x: auto`
@@ -224,4 +291,22 @@ table tbody tr:hover {
   background-color: var(--color-bg);
   background-size: 28px 100%, 28px 100%, 12px 100%, 12px 100%;
   background-attachment: local, local, scroll, scroll;
+}
+
+/* Tampon qui tombe (voir components/Stamp.tsx) — part de plus grand et
+   transparent, "frappe" avec un léger rebond, puis se pose. La rotation finale
+   est passée par --stamp-rotate. */
+@keyframes stampIn {
+  0% {
+    transform: rotate(var(--stamp-rotate, -9deg)) scale(1.8);
+    opacity: 0;
+  }
+  55% {
+    transform: rotate(var(--stamp-rotate, -9deg)) scale(0.94);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(var(--stamp-rotate, -9deg)) scale(1);
+    opacity: 1;
+  }
 }

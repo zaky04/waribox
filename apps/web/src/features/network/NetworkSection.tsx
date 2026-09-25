@@ -45,7 +45,16 @@ function RoleChoice() {
             {t("network.becomeMaster")}
           </button>
         )}
-        <button style={{ ...primaryButtonStyle, background: "var(--color-bg)" }} onClick={() => setRole("worker")}>
+        <button
+          style={{
+            ...primaryButtonStyle,
+            background: "var(--color-bg)",
+            color: "var(--color-text)",
+            border: "1px solid var(--color-border)",
+            boxShadow: "none",
+          }}
+          onClick={() => setRole("worker")}
+        >
           {t("network.joinNetwork")}
         </button>
       </div>

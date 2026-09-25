@@ -1,3 +1,4 @@
+import { formatAmount } from "../../lib/format";
 import {
   createServiceOrder,
   deriveOrderStatus,
@@ -415,7 +416,7 @@ export function ServiceOrdersPage() {
             style={{
               ...primaryButtonStyle,
               background: view === "new" ? "var(--gradient-accent)" : "transparent",
-              color: view === "new" ? "#0f172a" : "var(--color-text)",
+              color: view === "new" ? "var(--color-on-accent)" : "var(--color-text)",
               border: view === "new" ? "none" : "1px solid var(--color-border)",
             }}
           >
@@ -426,7 +427,7 @@ export function ServiceOrdersPage() {
             style={{
               ...primaryButtonStyle,
               background: view === "track" ? "var(--gradient-accent)" : "transparent",
-              color: view === "track" ? "#0f172a" : "var(--color-text)",
+              color: view === "track" ? "var(--color-on-accent)" : "var(--color-text)",
               border: view === "track" ? "none" : "1px solid var(--color-border)",
             }}
           >
@@ -438,7 +439,7 @@ export function ServiceOrdersPage() {
               style={{
                 ...primaryButtonStyle,
                 background: view === "history" ? "var(--gradient-accent)" : "transparent",
-                color: view === "history" ? "#0f172a" : "var(--color-text)",
+                color: view === "history" ? "var(--color-on-accent)" : "var(--color-text)",
                 border: view === "history" ? "none" : "1px solid var(--color-border)",
               }}
             >
@@ -575,7 +576,7 @@ export function ServiceOrdersPage() {
                               style={{ ...inputStyle, width: 90, marginTop: 0 }}
                             />
                           </td>
-                          <td style={tdStyle}>{(line.quantity * line.unitPrice).toFixed(0)}</td>
+                          <td style={tdStyle}>{formatAmount(line.quantity * line.unitPrice)}</td>
                           <td style={tdStyle}>
                             <button
                               onClick={() => removeLine(line.key)}
@@ -613,9 +614,9 @@ export function ServiceOrdersPage() {
             <div style={cardStyle}>
               <strong>{t("serviceOrders.customerAndPayment")}</strong>
               <div>
-                <div>{t("serviceOrders.subtotal")} {subtotal.toFixed(0)}</div>
-                <div>{t("serviceOrders.tax")} {taxTotal.toFixed(0)}</div>
-                <div style={{ fontWeight: 700, fontSize: 18 }}>{t("serviceOrders.totalLabel")} {total.toFixed(0)}</div>
+                <div>{t("serviceOrders.subtotal")} {formatAmount(subtotal)}</div>
+                <div>{t("serviceOrders.tax")} {formatAmount(taxTotal)}</div>
+                <div style={{ fontWeight: 700, fontSize: 18 }}>{t("serviceOrders.totalLabel")} {formatAmount(total)}</div>
               </div>
 
               <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
@@ -811,7 +812,7 @@ export function ServiceOrdersPage() {
                                     flexWrap: "wrap",
                                   }}
                                 >
-                                  <span>{t("serviceOrders.remainingBalance")} {credit.remainingBalance.toFixed(0)}</span>
+                                  <span>{t("serviceOrders.remainingBalance")} {formatAmount(credit.remainingBalance)}</span>
                                   <input
                                     type="number"
                                     style={{ ...inputStyle, width: 90, marginTop: 0 }}
@@ -874,7 +875,7 @@ export function ServiceOrdersPage() {
                       <tr>
                         <td style={tdStyle}>{order.number}</td>
                         <td style={tdStyle}>{customerName(order.customerId)}</td>
-                        <td style={tdStyle}>{order.total.toFixed(0)}</td>
+                        <td style={tdStyle}>{formatAmount(order.total)}</td>
                         <td style={tdStyle}>
                           <span style={badgeStyle(order.paymentStatus === "paid" ? "ok" : "warning")}>
                             {PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus}

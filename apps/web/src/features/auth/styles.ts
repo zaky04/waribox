@@ -29,9 +29,8 @@ export const authPrimaryButtonStyle: CSSProperties = {
   borderRadius: "var(--radius-md)",
   border: "none",
   background: "var(--gradient-accent)",
-  color: "#0f172a",
+  color: "var(--color-on-accent)",
   fontWeight: 700,
   fontSize: 16,
   cursor: "pointer",
-  boxShadow: "0 4px 14px -4px rgba(56, 189, 248, 0.5)",
 };

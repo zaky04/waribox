@@ -50,7 +50,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
               background: "transparent",
               border: "1px solid var(--color-warning)",
               color: "var(--color-warning)",
-              borderRadius: 8,
+              borderRadius: "var(--radius-md)",
               padding: "4px 10px",
               cursor: "pointer",
               fontSize: 13,
@@ -68,7 +68,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
           alignItems: "center",
           gap: 12,
           padding: "12px 16px",
-          background: "var(--color-bg-elevated)",
+          background: "var(--color-bg-side)",
           borderBottom: "1px solid var(--color-border)",
         }}
       >
@@ -84,7 +84,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
               background: "transparent",
               border: "1px solid var(--color-border)",
               color: "var(--color-text)",
-              borderRadius: 8,
+              borderRadius: "var(--radius-md)",
               padding: "6px 12px",
               cursor: "pointer",
             }}
@@ -99,7 +99,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
               background: "transparent",
               border: "1px solid var(--color-border)",
               color: "var(--color-text)",
-              borderRadius: 8,
+              borderRadius: "var(--radius-md)",
               padding: "6px 8px",
               cursor: "pointer",
             }}
@@ -116,7 +116,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
               background: "transparent",
               border: "1px solid var(--color-border)",
               color: "var(--color-text)",
-              borderRadius: 8,
+              borderRadius: "var(--radius-md)",
               padding: "6px 12px",
               cursor: "pointer",
             }}
@@ -130,7 +130,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
               background: "transparent",
               border: "1px solid var(--color-border)",
               color: "var(--color-text)",
-              borderRadius: 8,
+              borderRadius: "var(--radius-md)",
               padding: "6px 12px",
               cursor: "pointer",
             }}
@@ -143,7 +143,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
               background: "transparent",
               border: "1px solid var(--color-border)",
               color: "var(--color-text)",
-              borderRadius: 8,
+              borderRadius: "var(--radius-md)",
               padding: "6px 12px",
               cursor: "pointer",
             }}

@@ -1,3 +1,4 @@
+import { formatAmount } from "../../lib/format";
 import {
   listAllVariants,
   listProducts,
@@ -126,7 +127,7 @@ export function DebtsPage() {
           style={{
             ...primaryButtonStyle,
             background: showSettled ? "var(--gradient-accent)" : "transparent",
-            color: showSettled ? "#0f172a" : "var(--color-text)",
+            color: showSettled ? "var(--color-on-accent)" : "var(--color-text)",
             border: showSettled ? "none" : "1px solid var(--color-border)",
           }}
           onClick={() => setShowSettled((v) => !v)}
@@ -156,8 +157,8 @@ export function DebtsPage() {
                 <td style={tdStyle}>{supplierName(debt.supplierId)}</td>
                 <td style={tdStyle}>{purchaseNumber(debt.purchaseId)}</td>
                 <td style={tdStyle}>{articleSummary(debt.purchaseId)}</td>
-                <td style={tdStyle}>{debt.originalAmount}</td>
-                <td style={tdStyle}>{debt.remainingBalance}</td>
+                <td style={tdStyle}>{formatAmount(debt.originalAmount)}</td>
+                <td style={tdStyle}>{formatAmount(debt.remainingBalance)}</td>
                 <td style={tdStyle}>
                   <span style={badgeStyle(debt.status === "settled" ? "ok" : "warning")}>
                     {STATUS_LABELS[debt.status] ?? debt.status}

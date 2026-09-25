@@ -1,3 +1,4 @@
+import { formatAmount } from "../../lib/format";
 import {
   convertQuoteToSale,
   createQuote,
@@ -312,7 +313,7 @@ export function QuotesPage() {
                             style={{ ...inputStyle, width: 60, marginTop: 0 }}
                           />
                         </td>
-                        <td style={tdStyle}>{(line.quantity * line.unitPrice).toFixed(0)}</td>
+                        <td style={tdStyle}>{formatAmount(line.quantity * line.unitPrice)}</td>
                         <td style={tdStyle}>
                           <button
                             onClick={() => removeLine(line.variantId)}
@@ -332,9 +333,9 @@ export function QuotesPage() {
           <div style={cardStyle}>
             <strong>{t("quotes.customerAndValidity")}</strong>
             <div>
-              <div>{t("quotes.subtotal")} {subtotal.toFixed(0)}</div>
-              <div>{t("quotes.tax")} {taxTotal.toFixed(0)}</div>
-              <div style={{ fontWeight: 700, fontSize: 18 }}>{t("quotes.totalLabel")} {total.toFixed(0)}</div>
+              <div>{t("quotes.subtotal")} {formatAmount(subtotal)}</div>
+              <div>{t("quotes.tax")} {formatAmount(taxTotal)}</div>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>{t("quotes.totalLabel")} {formatAmount(total)}</div>
             </div>
 
             <label>
@@ -400,7 +401,7 @@ export function QuotesPage() {
                     <tr>
                       <td style={tdStyle}>{quote.number}</td>
                       <td style={tdStyle}>{customerName(quote.customerId)}</td>
-                      <td style={tdStyle}>{quote.total.toFixed(0)}</td>
+                      <td style={tdStyle}>{formatAmount(quote.total)}</td>
                       <td style={tdStyle}>
                         <span style={badgeStyle(quote.status === "converted" || quote.status === "accepted" ? "ok" : "warning")}>
                           {STATUS_LABELS[quote.status] ?? quote.status}

@@ -7,11 +7,13 @@ function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute("content", theme === "light" ? "#f8fafc" : "#0f172a");
+    ?.setAttribute("content", theme === "light" ? "#f4efe6" : "#16140f");
 }
 
+// Clair par défaut (papier) depuis la refonte "ticket de caisse" ; seul un
+// choix explicite du mode nuit est mémorisé comme tel.
 function getInitialTheme(): Theme {
-  return localStorage.getItem(STORAGE_KEY) === "light" ? "light" : "dark";
+  return localStorage.getItem(STORAGE_KEY) === "dark" ? "dark" : "light";
 }
 
 interface ThemeState {

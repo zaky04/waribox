@@ -191,6 +191,14 @@ export const MIGRATIONS: Migration[] = [
       "ALTER TABLE business_settings ADD COLUMN appearance_shape TEXT",
     ],
   },
+  // Fond de page et police d'interface personnalisables (Paramètres → Apparence).
+  {
+    id: 6,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN appearance_background TEXT",
+      "ALTER TABLE business_settings ADD COLUMN appearance_font TEXT",
+    ],
+  },
 ];
 
 async function runMigrations(): Promise<void> {

@@ -40,6 +40,7 @@ import { useAuth } from "../auth/useAuth";
 import { useThemeStore } from "../../stores/theme";
 import { certifyInvoice, FneApiError, resolveFneBaseUrl } from "../fne/fneHttp";
 import { NetworkSection } from "../network/NetworkSection";
+import type { AppearanceOptions } from "../../lib/appearance";
 import { StoresSection } from "../stores/StoresSection";
 import { runGoogleDriveBackup, runLocalBackup } from "./backupRunner";
 import { resizeImageToDataUrl } from "./imageUtils";
@@ -69,7 +70,23 @@ function describeError(err: unknown, fallback: string): string {
   return fallback;
 }
 
-export function SettingsPage() {
+const BACKGROUND_OPTIONS: { value: string | null; labelKey: string; fontFamily?: string }[] = [
+  { value: null, labelKey: "settings.appearance.bgPaper" },
+  { value: "white", labelKey: "settings.appearance.bgWhite" },
+  { value: "grey", labelKey: "settings.appearance.bgGrey" },
+];
+const FONT_OPTIONS: { value: string | null; labelKey: string; fontFamily?: string }[] = [
+  { value: null, labelKey: "settings.appearance.fontDefault" },
+  { value: "system", labelKey: "settings.appearance.fontSystem", fontFamily: "system-ui, sans-serif" },
+  { value: "serif", labelKey: "settings.appearance.fontSerif", fontFamily: "Georgia, serif" },
+];
+
+export type SettingsSection = "config" | "appearance" | "advanced";
+
+export function SettingsPage({ section = "config" }: { section?: SettingsSection }) {
+  // Une seule page/un seul état/un seul bouton Enregistrer, trois vues : les blocs
+  // hors-section restent montés (display: none) pour ne perdre aucune saisie.
+  const vis = (name: SettingsSection): React.CSSProperties => ({ display: section === name ? "contents" : "none" });
   const db = useDatabase();
   const { user } = useAuth();
   const { t } = useTranslation();
@@ -106,6 +123,15 @@ export function SettingsPage() {
   // null = thème par défaut (aucune personnalisation) — voir lib/appearance.ts.
   const [appearanceAccentColor, setAppearanceAccentColor] = useState<string | null>(null);
   const [appearanceShape, setAppearanceShape] = useState<string | null>(null);
+  const [appearanceBackground, setAppearanceBackground] = useState<string | null>(null);
+  const [appearanceFont, setAppearanceFont] = useState<string | null>(null);
+  // Aperçu immédiat (avant Enregistrer) : on repasse tout l'état courant, seul
+  // le champ modifié change.
+  const previewAppearance = (o: Partial<AppearanceOptions>) =>
+    applyAppearance(
+      { accent: appearanceAccentColor, shape: appearanceShape, background: appearanceBackground, font: appearanceFont, ...o },
+      theme,
+    );
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -155,6 +181,31 @@ export function SettingsPage() {
   const [importing, setImporting] = useState(false);
 
   const [maintenanceCodeSet, setMaintenanceCodeSet] = useState(false);
+  // Menu Modules protégé par le code de maintenance (vendeur/support) : le
+  // verrou vaut pour la visite en cours seulement (la page est remontée à
+  // chaque changement de menu). Sans code défini, l'accès reste libre (bases
+  // existantes) avec un rappel.
+  const [codeChecked, setCodeChecked] = useState(false);
+  const [modulesUnlocked, setModulesUnlocked] = useState(false);
+  const [gateCode, setGateCode] = useState("");
+  // Gardé en mémoire (jamais stocké) pour le joindre à l'enregistrement : le
+  // service exige la preuve du code pour modifier les réglages avancés.
+  const [unlockedCode, setUnlockedCode] = useState<string | null>(null);
+  const [gateError, setGateError] = useState<string | null>(null);
+  const handleUnlockModules = async () => {
+    setGateError(null);
+    try {
+      if (await verifyMaintenanceCode(db, gateCode.trim())) {
+        setModulesUnlocked(true);
+        setUnlockedCode(gateCode.trim());
+        setGateCode("");
+      } else {
+        setGateError(t("settings.modulesGate.wrong"));
+      }
+    } catch (err) {
+      setGateError(describeError(err, t("settings.modulesGate.wrong")));
+    }
+  };
   const [currentMaintenanceCode, setCurrentMaintenanceCode] = useState("");
   const [newMaintenanceCode, setNewMaintenanceCode] = useState("");
   const [maintenanceCodeError, setMaintenanceCodeError] = useState<string | null>(null);
@@ -176,6 +227,7 @@ export function SettingsPage() {
       hasMaintenanceCode(db),
     ]);
     setMaintenanceCodeSet(maintenanceCodeIsSet);
+    setCodeChecked(true);
     setLoyaltyPointsRatio(String(settings.loyaltyPointsRatio));
     setLoyaltyTierSilverThreshold(String(settings.loyaltyTierSilverThreshold));
     setLoyaltyTierGoldThreshold(String(settings.loyaltyTierGoldThreshold));
@@ -189,6 +241,8 @@ export function SettingsPage() {
     setSectorType(settings.sectorType ?? "");
     setAppearanceAccentColor(settings.appearanceAccentColor ?? null);
     setAppearanceShape(settings.appearanceShape ?? null);
+    setAppearanceBackground(settings.appearanceBackground ?? null);
+    setAppearanceFont(settings.appearanceFont ?? null);
     setAddress(settings.address ?? "");
     setPhone(settings.phone ?? "");
     setEmail(settings.email ?? "");
@@ -310,6 +364,9 @@ export function SettingsPage() {
           sectorType: sectorType,
           appearanceAccentColor,
           appearanceShape,
+          appearanceBackground,
+          appearanceFont,
+          advancedCode: unlockedCode ?? undefined,
           address: address.trim() || undefined,
           phone: phone.trim() || undefined,
           email: email.trim() || undefined,
@@ -454,6 +511,10 @@ export function SettingsPage() {
         actingPermissions: user.permissions,
       });
       setMaintenanceCodeSet(true);
+      // Le code qu'on vient de définir déverrouille la visite en cours (sinon l'écran
+      // se reverrouillerait aussitôt) et sert de preuve pour l'enregistrement.
+      setModulesUnlocked(true);
+      setUnlockedCode(newMaintenanceCode);
       setCurrentMaintenanceCode("");
       setNewMaintenanceCode("");
       setMaintenanceCodeSaved(true);
@@ -594,10 +655,47 @@ export function SettingsPage() {
     await exit(0);
   };
 
+  if (section === "advanced" && (!codeChecked || (maintenanceCodeSet && !modulesUnlocked))) {
+    return (
+      <main style={pageStyle}>
+        <h1>{t("nav.advanced")}</h1>
+        {codeChecked && (
+          <div style={cardStyle}>
+            <strong>{t("settings.modulesGate.title")}</strong>
+            <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.modulesGate.hint")}</p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleUnlockModules();
+              }}
+              style={{ display: "flex", flexDirection: "column", gap: 12 }}
+            >
+              <label>
+                {t("settings.modulesGate.codeLabel")}
+                <input
+                  style={inputStyle}
+                  type="password"
+                  autoComplete="off"
+                  value={gateCode}
+                  onChange={(e) => setGateCode(e.target.value)}
+                />
+              </label>
+              {gateError && <p style={{ color: "var(--color-danger)", fontSize: 13, margin: 0 }}>{gateError}</p>}
+              <button style={primaryButtonStyle} type="submit" disabled={!gateCode.trim()}>
+                {t("settings.modulesGate.unlock")}
+              </button>
+            </form>
+          </div>
+        )}
+      </main>
+    );
+  }
+
   return (
     <main style={pageStyle}>
-      <h1>{t("settings.title")}</h1>
+      <h1>{t(section === "appearance" ? "nav.appearance" : section === "advanced" ? "nav.advanced" : "settings.title")}</h1>
 
+      <div style={vis("config")}>
       <div style={cardStyle}>
         <strong>{t("settings.business.heading")}</strong>
         <label>
@@ -608,21 +706,6 @@ export function SettingsPage() {
             onChange={(e) => setBusinessName(e.target.value)}
             placeholder="WariBox"
           />
-        </label>
-
-        <label>
-          {t("settings.business.sectorType")}
-          <select style={inputStyle} value={sectorType} onChange={(e) => setSectorType(e.target.value)}>
-            <option value="">{t("settings.business.sectorNone")}</option>
-            {SECTOR_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {t(option.labelKey)}
-              </option>
-            ))}
-          </select>
-          <div style={{ fontSize: 12.5, color: "var(--color-text-muted)", marginTop: 4 }}>
-            {t("settings.business.sectorTypeHint")}
-          </div>
         </label>
 
         <label>
@@ -752,11 +835,29 @@ export function SettingsPage() {
 
       </div>
 
+      </div>
+
+      <div style={vis("appearance")}>
       <div style={cardStyle}>
         <strong>{t("settings.appearance.heading")}</strong>
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
           {t("settings.appearance.hint")}
         </p>
+        <label>
+          {t("settings.business.sectorType")}
+          <select style={inputStyle} value={sectorType} onChange={(e) => setSectorType(e.target.value)}>
+            <option value="">{t("settings.business.sectorNone")}</option>
+            {SECTOR_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {t(option.labelKey)}
+              </option>
+            ))}
+          </select>
+          <div style={{ fontSize: 12.5, color: "var(--color-text-muted)", marginTop: 4 }}>
+            {t("settings.business.sectorTypeHint")}
+          </div>
+        </label>
+
 
         <div>
           <strong style={{ fontSize: 14 }}>{t("settings.appearance.accentColor")}</strong>
@@ -766,17 +867,17 @@ export function SettingsPage() {
               title={t("settings.appearance.default")}
               onClick={() => {
                 setAppearanceAccentColor(null);
-                applyAppearance(null, appearanceShape, theme);
+                previewAppearance({ accent: null });
               }}
               style={{
                 width: 36,
                 height: 36,
                 borderRadius: "50%",
                 cursor: "pointer",
-                background: "#0f172a",
+                background: DEFAULT_ACCENT_COLOR,
                 border:
                   appearanceAccentColor === null
-                    ? "3px solid var(--color-accent)"
+                    ? "3px solid var(--color-text)"
                     : "1px solid var(--color-border)",
                 position: "relative",
               }}
@@ -803,7 +904,7 @@ export function SettingsPage() {
                 title={t(preset.labelKey)}
                 onClick={() => {
                   setAppearanceAccentColor(preset.color);
-                  applyAppearance(preset.color, appearanceShape, theme);
+                  previewAppearance({ accent: preset.color });
                 }}
                 style={{
                   width: 36,
@@ -839,7 +940,7 @@ export function SettingsPage() {
                 value={appearanceAccentColor ?? DEFAULT_ACCENT_COLOR}
                 onChange={(e) => {
                   setAppearanceAccentColor(e.target.value);
-                  applyAppearance(e.target.value, appearanceShape, theme);
+                  previewAppearance({ accent: e.target.value });
                 }}
                 style={{
                   width: 48,
@@ -858,33 +959,101 @@ export function SettingsPage() {
         <div>
           <strong style={{ fontSize: 14 }}>{t("settings.appearance.shape")}</strong>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-            {(["rounded", "square"] as const).map((shapeOption) => (
+            {(["standard", "round", "square"] as const).map((shapeOption) => {
+              const value = shapeOption === "standard" ? null : shapeOption;
+              const radius = shapeOption === "round" ? 14 : shapeOption === "square" ? 2 : 6;
+              return (
+                <button
+                  key={shapeOption}
+                  type="button"
+                  onClick={() => {
+                    setAppearanceShape(value);
+                    previewAppearance({ shape: value });
+                  }}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: radius,
+                    border:
+                      (appearanceShape ?? "standard") === shapeOption
+                        ? "2px solid var(--color-accent)"
+                        : "1px solid var(--color-border)",
+                    background: "var(--color-bg)",
+                    color: "var(--color-text)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {shapeOption === "standard"
+                    ? t("settings.appearance.shapeStandard")
+                    : shapeOption === "round"
+                      ? t("settings.appearance.shapeRounded")
+                      : t("settings.appearance.shapeSquare")}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <strong style={{ fontSize: 14 }}>{t("settings.appearance.background")}</strong>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
+            {BACKGROUND_OPTIONS.map((opt) => (
               <button
-                key={shapeOption}
+                key={opt.value ?? "default"}
                 type="button"
                 onClick={() => {
-                  setAppearanceShape(shapeOption === "rounded" ? null : shapeOption);
-                  applyAppearance(appearanceAccentColor, shapeOption === "rounded" ? null : shapeOption, theme);
+                  setAppearanceBackground(opt.value);
+                  previewAppearance({ background: opt.value });
                 }}
                 style={{
                   padding: "8px 16px",
-                  borderRadius: shapeOption === "rounded" ? "var(--radius-md)" : 4,
-                  border:
-                    (appearanceShape ?? "rounded") === shapeOption
-                      ? "2px solid var(--color-accent)"
-                      : "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-md)",
+                  border: appearanceBackground === opt.value ? "2px solid var(--color-accent)" : "1px solid var(--color-border)",
                   background: "var(--color-bg)",
                   color: "var(--color-text)",
+                  fontFamily: opt.fontFamily,
                   cursor: "pointer",
                 }}
               >
-                {shapeOption === "rounded" ? t("settings.appearance.shapeRounded") : t("settings.appearance.shapeSquare")}
+                {t(opt.labelKey)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <strong style={{ fontSize: 14 }}>{t("settings.appearance.font")}</strong>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
+            {FONT_OPTIONS.map((opt) => (
+              <button
+                key={opt.value ?? "default"}
+                type="button"
+                onClick={() => {
+                  setAppearanceFont(opt.value);
+                  previewAppearance({ font: opt.value });
+                }}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: "var(--radius-md)",
+                  border: appearanceFont === opt.value ? "2px solid var(--color-accent)" : "1px solid var(--color-border)",
+                  background: "var(--color-bg)",
+                  color: "var(--color-text)",
+                  fontFamily: opt.fontFamily,
+                  cursor: "pointer",
+                }}
+              >
+                {t(opt.labelKey)}
               </button>
             ))}
           </div>
         </div>
       </div>
 
+      </div>
+
+      <div style={vis("advanced")}>
+      {section === "advanced" && !maintenanceCodeSet && (
+        <p style={{ color: "var(--color-warning)", fontSize: 13, margin: 0 }}>{t("settings.modulesGate.noCodeBanner")}</p>
+      )}
       <div style={cardStyle}>
         <strong>{t("settings.modules.heading")}</strong>
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.modules.hint")}</p>
@@ -938,14 +1107,6 @@ export function SettingsPage() {
             {t("settings.modules.printPromisedDate")}
           </label>
         )}
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input
-            type="checkbox"
-            checked={enablePromotions}
-            onChange={(e) => setEnablePromotions(e.target.checked)}
-          />
-          {t("settings.modules.promotions")}
-        </label>
       </div>
 
       <div style={cardStyle}>
@@ -962,10 +1123,16 @@ export function SettingsPage() {
         {multiStoreEnabled && <StoresSection />}
       </div>
 
+      </div>
+
+      <div style={vis("advanced")}>
       <div style={cardStyle}>
         <NetworkSection />
       </div>
 
+      </div>
+
+      <div style={vis("config")}>
       <div style={cardStyle}>
         <strong>{t("settings.fne.heading")}</strong>
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.fne.hint")}</p>
@@ -1054,6 +1221,21 @@ export function SettingsPage() {
         {enableSyscohada && <SyscohadaAccountsSection />}
       </div>
 
+      </div>
+
+      <div style={vis("config")}>
+      <div style={cardStyle}>
+        <strong>{t("settings.promotionsCard.heading")}</strong>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={enablePromotions}
+            onChange={(e) => setEnablePromotions(e.target.checked)}
+          />
+          {t("settings.modules.promotions")}
+        </label>
+      </div>
+
       <div style={cardStyle}>
         <strong>{t("settings.loyalty.heading")}</strong>
         <label>
@@ -1117,6 +1299,9 @@ export function SettingsPage() {
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.loyalty.tiersHint")}</p>
       </div>
 
+      </div>
+
+      <div style={vis("config")}>
       <div style={cardStyle}>
         <strong>{t("settings.security.heading")}</strong>
         <label>
@@ -1321,6 +1506,9 @@ export function SettingsPage() {
         </div>
       </div>
 
+      </div>
+
+      <div style={vis("advanced")}>
       <div style={cardStyle}>
         <strong>{t("settings.maintenance.heading")}</strong>
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.maintenance.hint")}</p>
@@ -1416,6 +1604,8 @@ export function SettingsPage() {
             )}
           </div>
         )}
+      </div>
+
       </div>
 
       {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}

@@ -1,3 +1,4 @@
+import { formatAmount } from "../../lib/format";
 import {
   getSettings,
   listAllVariants,
@@ -281,7 +282,7 @@ export function SalesHistoryPage() {
                     return method ? (PAYMENT_METHOD_LABELS[method as PaymentMethod] ?? method) : "—";
                   })()}
                 </td>
-                <td style={tdStyle}>{sale.total}</td>
+                <td style={tdStyle}>{formatAmount(sale.total)}</td>
                 <td style={tdStyle}>{PAYMENT_STATUS_LABELS[sale.paymentStatus] ?? sale.paymentStatus}</td>
                 <td style={tdStyle}>
                   <button

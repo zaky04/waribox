@@ -39,7 +39,7 @@
     "reports": "Rapports",
     "expenses": "Dépenses",
     "accounting": "Comptabilité",
-    "settings": "Paramètres",
+    "settings": "Configuration",
     "users": "Utilisateurs",
     "journals": "Journaux",
     "groups": {
@@ -47,7 +47,9 @@
       "relations": "Relations",
       "finance": "Finances",
       "system": "Système"
-    }
+    },
+    "appearance": "Apparence",
+    "advanced": "Configuration avancée"
   },
   "topbar": {
     "impersonatingPrefix": "Connecté en tant que",
@@ -81,7 +83,22 @@
     "backup": "Sauvegarde",
     "backupNever": "Jamais",
     "backupOverdue": "En retard — à faire dans Paramètres",
-    "backupUpToDate": "À jour"
+    "backupUpToDate": "À jour",
+    "vsYesterday": "par rapport à hier ({{amount}} F)",
+    "avgBasket": "Panier moyen",
+    "salesLabel": "Ventes",
+    "peakHour": "{{hour}} h : le coup de feu",
+    "todoTitle": "À faire aujourd'hui",
+    "todoEmpty": "rien à signaler",
+    "todoLowStockDetail": "{{count}} produit(s) sous leur seuil d'alerte",
+    "todoExpiringDetail": "{{count}} lot(s) à écouler ou retirer d'ici {{days}} jours",
+    "todoReadyDetail": "{{count}} ticket(s) prêts à retirer",
+    "todoCreditsDetail": "{{count}} créance(s) en retard à relancer",
+    "todoBackupDetail": "Dernière sauvegarde : {{date}}",
+    "open": "Ouvrir",
+    "recentSales": "Dernières ventes",
+    "noSalesYet": "aucune vente pour l'instant",
+    "chartLabel": "Ventes par heure aujourd'hui"
   },
   "sales": {
     "title": "Ventes",
@@ -165,7 +182,11 @@
       "card": "Carte",
       "mobile_money": "Mobile Money",
       "credit": "Crédit"
-    }
+    },
+    "stampPaid": "PAYÉ",
+    "exactAmount": "Exact",
+    "removeOne": "Retirer un exemplaire",
+    "addOne": "Ajouter un exemplaire"
   },
   "salesHistory": {
     "title": "Historique des ventes",
@@ -188,12 +209,12 @@
     "noSales": "Aucune vente pour cette sélection."
   },
   "settings": {
-    "title": "Paramètres",
+    "title": "Configuration",
     "business": {
       "heading": "Entreprise",
       "name": "Nom de l'entreprise",
       "sectorType": "Secteur d'activité",
-      "sectorTypeHint": "Adapte l'icône et le libellé de l'onglet \"Produits\" à ton activité (ex : \"Médicaments\" pour une pharmacie) — n'affecte aucune donnée. Pour changer les couleurs de l'app, voir la section Apparence ci-dessous.",
+      "sectorTypeHint": "Adapte l'icône et le libellé de l'onglet \"Produits\" à ton activité (ex : \"Médicaments\" pour une pharmacie) — n'affecte aucune donnée.",
       "sectorNone": "Aucun (thème par défaut)",
       "sectorBoutique": "Boutique / commerce général",
       "sectorPharmacie": "Pharmacie",
@@ -228,14 +249,23 @@
       "shapeRounded": "Arrondi",
       "shapeSquare": "Carré",
       "presets": {
-        "amber": "Ambre",
+        "ochre": "Ocre",
         "teal": "Sarcelle",
-        "tomato": "Tomate",
+        "ink": "Bleu encre",
         "plum": "Prune",
-        "emerald": "Émeraude",
+        "forest": "Vert forêt",
         "rose": "Rose",
         "slate": "Ardoise"
-      }
+      },
+      "shapeStandard": "Standard",
+      "background": "Fond de page (thème clair)",
+      "bgPaper": "Papier",
+      "bgWhite": "Blanc",
+      "bgGrey": "Gris clair",
+      "font": "Police",
+      "fontDefault": "Familjen Grotesk",
+      "fontSystem": "Système",
+      "fontSerif": "Classique (serif)"
     },
     "modules": {
       "heading": "Modules actifs",
@@ -396,6 +426,17 @@
       "backupSkipped": "Sauvegarde non effectuée ({{error}}) — poursuite de l'installation.",
       "launching": "Lancement de l'installeur...",
       "readyMessage": "Une fenêtre d'installation devrait s'ouvrir. Si Windows affiche « Windows a protégé votre PC », c'est normal pour un installeur non signé : clique sur « Informations complémentaires » puis « Exécuter quand même ». Une fois l'assistant d'installation visible, clique ci-dessous pour fermer WariBox et laisser l'installation continuer."
+    },
+    "modulesGate": {
+      "title": "Accès réservé",
+      "hint": "Modules activés, multi-boutique, mode réseau, facturation électronique, export SYSCOHADA et maintenance : ces réglages définissent ce que le logiciel permet. Saisis le code de maintenance pour les modifier.",
+      "codeLabel": "Code de maintenance",
+      "unlock": "Déverrouiller",
+      "wrong": "Code incorrect.",
+      "noCodeBanner": "Aucun code défini : cet écran est ouvert à tous. Définis un code plus bas, dans la section Maintenance, pour le protéger."
+    },
+    "promotionsCard": {
+      "heading": "Remises programmées"
     }
   },
   "network": {
@@ -1263,7 +1304,7 @@
     },
     "moduleSetup": {
       "title": "Modules à activer",
-      "hint": "Choisis les fonctionnalités utiles à ton commerce — modifiable à tout moment ensuite dans Paramètres.",
+      "hint": "Choisis les fonctionnalités utiles à ton commerce — modifiable à tout moment ensuite dans Configuration avancée.",
       "saving": "Enregistrement...",
       "continue": "Continuer"
     },
@@ -1373,6 +1414,10 @@
     },
     "stores": {
       "noStoreExists": "Aucune boutique n'existe — la migration de la base a dû échouer."
+    },
+    "settings": {
+      "advancedCodeRequired": "Le code de maintenance est requis pour modifier ces réglages.",
+      "advancedCodeWrong": "Code de maintenance incorrect."
     }
   },
   "whatsapp": {

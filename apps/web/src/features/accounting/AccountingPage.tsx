@@ -1,3 +1,4 @@
+import { formatAmount } from "../../lib/format";
 import {
   buildBalanceSheetReportExcel,
   buildBalanceSheetReportPdf,
@@ -173,7 +174,7 @@ export function AccountingPage() {
               style={{
                 ...primaryButtonStyle,
                 background: subTab === tab.key ? "var(--gradient-accent)" : "transparent",
-                color: subTab === tab.key ? "#0f172a" : "var(--color-text)",
+                color: subTab === tab.key ? "var(--color-on-accent)" : "var(--color-text)",
                 border: subTab === tab.key ? "none" : "1px solid var(--color-border)",
               }}
             >
@@ -208,22 +209,22 @@ export function AccountingPage() {
               <div style={{ display: "flex", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
                 <div style={cardStyle}>
                   <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.revenue")}</span>
-                  <strong style={{ fontSize: 22 }}>{incomeStatement.revenue.toFixed(0)}</strong>
+                  <strong style={{ fontSize: 22 }}>{formatAmount(incomeStatement.revenue)}</strong>
                 </div>
                 <div style={cardStyle}>
                   <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.cogs")}</span>
-                  <strong style={{ fontSize: 22 }}>{incomeStatement.cogs.toFixed(0)}</strong>
+                  <strong style={{ fontSize: 22 }}>{formatAmount(incomeStatement.cogs)}</strong>
                 </div>
                 <div style={cardStyle}>
                   <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.expenses")}</span>
-                  <strong style={{ fontSize: 22 }}>{incomeStatement.expensesTotal.toFixed(0)}</strong>
+                  <strong style={{ fontSize: 22 }}>{formatAmount(incomeStatement.expensesTotal)}</strong>
                 </div>
                 <div style={cardStyle}>
                   <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.netIncome")}</span>
                   <strong
                     style={{ fontSize: 22, color: incomeStatement.netIncome >= 0 ? "var(--color-success)" : "var(--color-danger)" }}
                   >
-                    {incomeStatement.netIncome.toFixed(0)}
+                    {formatAmount(incomeStatement.netIncome)}
                   </strong>
                 </div>
               </div>
@@ -251,7 +252,7 @@ export function AccountingPage() {
                     {incomeStatement.expensesByCategory.map((e) => (
                       <tr key={e.category}>
                         <td style={tdStyle}>{e.category}</td>
-                        <td style={tdStyle}>{e.amount.toFixed(0)}</td>
+                        <td style={tdStyle}>{formatAmount(e.amount)}</td>
                       </tr>
                     ))}
                     {incomeStatement.expensesByCategory.length === 0 && (
@@ -274,35 +275,35 @@ export function AccountingPage() {
           <div style={{ display: "flex", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.cash")}</span>
-              <strong style={{ fontSize: 22 }}>{balanceSheet.cash.toFixed(0)}</strong>
+              <strong style={{ fontSize: 22 }}>{formatAmount(balanceSheet.cash)}</strong>
             </div>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.stockValue")}</span>
-              <strong style={{ fontSize: 22 }}>{balanceSheet.stockValue.toFixed(0)}</strong>
+              <strong style={{ fontSize: 22 }}>{formatAmount(balanceSheet.stockValue)}</strong>
             </div>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.receivables")}</span>
-              <strong style={{ fontSize: 22 }}>{balanceSheet.receivables.toFixed(0)}</strong>
+              <strong style={{ fontSize: 22 }}>{formatAmount(balanceSheet.receivables)}</strong>
             </div>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.totalAssets")}</span>
-              <strong style={{ fontSize: 22 }}>{balanceSheet.actifTotal.toFixed(0)}</strong>
+              <strong style={{ fontSize: 22 }}>{formatAmount(balanceSheet.actifTotal)}</strong>
             </div>
           </div>
 
           <div style={{ display: "flex", gap: 16, marginTop: 16, flexWrap: "wrap" }}>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.payables")}</span>
-              <strong style={{ fontSize: 22 }}>{balanceSheet.payables.toFixed(0)}</strong>
+              <strong style={{ fontSize: 22 }}>{formatAmount(balanceSheet.payables)}</strong>
             </div>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.totalLiabilities")}</span>
-              <strong style={{ fontSize: 22 }}>{balanceSheet.passifTotal.toFixed(0)}</strong>
+              <strong style={{ fontSize: 22 }}>{formatAmount(balanceSheet.passifTotal)}</strong>
             </div>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("accounting.equity")}</span>
               <strong style={{ fontSize: 22, color: balanceSheet.equity >= 0 ? "var(--color-success)" : "var(--color-danger)" }}>
-                {balanceSheet.equity.toFixed(0)}
+                {formatAmount(balanceSheet.equity)}
               </strong>
             </div>
           </div>
@@ -366,7 +367,7 @@ export function AccountingPage() {
                   style={{
                     ...secondaryButtonStyle,
                     background: syscohadaView === v.key ? "var(--gradient-accent)" : "transparent",
-                    color: syscohadaView === v.key ? "#0f172a" : "var(--color-text)",
+                    color: syscohadaView === v.key ? "var(--color-on-accent)" : "var(--color-text)",
                     border: syscohadaView === v.key ? "none" : "1px solid var(--color-border)",
                   }}
                 >
@@ -406,8 +407,8 @@ export function AccountingPage() {
                       <td style={tdStyle}>{l.compte}</td>
                       <td style={tdStyle}>{l.intitule}</td>
                       <td style={tdStyle}>{l.libelle}</td>
-                      <td style={tdStyle}>{l.debit > 0 ? l.debit.toFixed(0) : ""}</td>
-                      <td style={tdStyle}>{l.credit > 0 ? l.credit.toFixed(0) : ""}</td>
+                      <td style={tdStyle}>{l.debit > 0 ? formatAmount(l.debit) : ""}</td>
+                      <td style={tdStyle}>{l.credit > 0 ? formatAmount(l.credit) : ""}</td>
                     </tr>
                   ))}
                   {syscohadaLines.length === 0 && (
@@ -425,10 +426,10 @@ export function AccountingPage() {
                         <strong>{t("accounting.total")}</strong>
                       </td>
                       <td style={tdStyle}>
-                        <strong>{syscohadaLines.reduce((sum, l) => sum + l.debit, 0).toFixed(0)}</strong>
+                        <strong>{formatAmount(syscohadaLines.reduce((sum, l) => sum + l.debit, 0))}</strong>
                       </td>
                       <td style={tdStyle}>
-                        <strong>{syscohadaLines.reduce((sum, l) => sum + l.credit, 0).toFixed(0)}</strong>
+                        <strong>{formatAmount(syscohadaLines.reduce((sum, l) => sum + l.credit, 0))}</strong>
                       </td>
                     </tr>
                   </tfoot>
@@ -452,9 +453,9 @@ export function AccountingPage() {
                     <tr key={r.compte}>
                       <td style={tdStyle}>{r.compte}</td>
                       <td style={tdStyle}>{r.intitule}</td>
-                      <td style={tdStyle}>{r.debit.toFixed(0)}</td>
-                      <td style={tdStyle}>{r.credit.toFixed(0)}</td>
-                      <td style={tdStyle}>{r.solde.toFixed(0)}</td>
+                      <td style={tdStyle}>{formatAmount(r.debit)}</td>
+                      <td style={tdStyle}>{formatAmount(r.credit)}</td>
+                      <td style={tdStyle}>{formatAmount(r.solde)}</td>
                     </tr>
                   ))}
                   {syscohadaBalance.length === 0 && (
@@ -472,10 +473,10 @@ export function AccountingPage() {
                         <strong>{t("accounting.total")}</strong>
                       </td>
                       <td style={tdStyle}>
-                        <strong>{syscohadaBalance.reduce((sum, r) => sum + r.debit, 0).toFixed(0)}</strong>
+                        <strong>{formatAmount(syscohadaBalance.reduce((sum, r) => sum + r.debit, 0))}</strong>
                       </td>
                       <td style={tdStyle}>
-                        <strong>{syscohadaBalance.reduce((sum, r) => sum + r.credit, 0).toFixed(0)}</strong>
+                        <strong>{formatAmount(syscohadaBalance.reduce((sum, r) => sum + r.credit, 0))}</strong>
                       </td>
                       <td style={tdStyle} />
                     </tr>

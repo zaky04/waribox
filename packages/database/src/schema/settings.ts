@@ -123,5 +123,7 @@ export const businessSettings = sqliteTable("business_settings", {
   // écrase l'accent partout où l'app utilise déjà var(--color-accent)/
   // var(--gradient-accent)/etc. (voir apps/web/src/lib/appearance.ts).
   appearanceAccentColor: text("appearance_accent_color"),
+  appearanceBackground: text("appearance_background"), // null (papier) | 'white' | 'grey' — thème clair seulement
+  appearanceFont: text("appearance_font"), // null (Familjen Grotesk) | 'system' | 'serif'
   appearanceShape: text("appearance_shape"), // 'rounded' (défaut) | 'square'
 });

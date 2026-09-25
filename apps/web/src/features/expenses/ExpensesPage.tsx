@@ -1,3 +1,4 @@
+import { formatAmount } from "../../lib/format";
 import {
   createExpense,
   deleteExpense,
@@ -269,7 +270,7 @@ export function ExpensesPage() {
               <tr key={expense.id}>
                 <td style={tdStyle}>{expense.expenseDate}</td>
                 <td style={tdStyle}>{expense.category}</td>
-                <td style={tdStyle}>{expense.amount.toFixed(0)}</td>
+                <td style={tdStyle}>{formatAmount(expense.amount)}</td>
                 <td style={tdStyle}>{expense.note ?? "—"}</td>
                 <td style={tdStyle}>{userName(expense.userId)}</td>
                 <td style={tdStyle}>

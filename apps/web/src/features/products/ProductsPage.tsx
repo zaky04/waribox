@@ -1,3 +1,4 @@
+import { formatAmount } from "../../lib/format";
 import {
   createCategory,
   createProduct,
@@ -370,8 +371,8 @@ export function ProductsPage() {
                 <tr key={product.id}>
                   <td style={tdStyle}>{product.name}</td>
                   <td style={tdStyle}>{category?.name ?? "—"}</td>
-                  {canViewMargins && <td style={tdStyle}>{product.purchasePrice}</td>}
-                  <td style={tdStyle}>{product.salePrice}</td>
+                  {canViewMargins && <td style={tdStyle}>{formatAmount(product.purchasePrice)}</td>}
+                  <td style={tdStyle}>{formatAmount(product.salePrice)}</td>
                   <td style={tdStyle}>
                     <span style={badgeStyle(isLow ? "warning" : "ok")}>{stock}</span>
                   </td>

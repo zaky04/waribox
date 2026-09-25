@@ -21,6 +21,8 @@ import {
   IconPercent,
   IconPill,
   IconSettings,
+  IconShield,
+  IconPalette,
   IconTicket,
   IconTruck,
   IconUsers,
@@ -48,6 +50,8 @@ export type NavTab =
   | "expenses"
   | "accounting"
   | "settings"
+  | "appearance"
+  | "advanced"
   | "users"
   | "journals";
 
@@ -81,6 +85,8 @@ const TABS: { key: NavTab; permission: Permission | null; moduleKey?: ModuleTab;
   { key: "accounting", permission: "view_accounting", icon: IconCalculator, group: "finance" },
   { key: "reports", permission: "view_reports", icon: IconBarChart, group: "finance" },
   { key: "settings", permission: "manage_settings", icon: IconSettings, group: "system" },
+  { key: "advanced", permission: "manage_settings", icon: IconShield, group: "system" },
+  { key: "appearance", permission: "manage_settings", icon: IconPalette, group: "system" },
   { key: "users", permission: "manage_users", icon: IconIdCard, group: "system" },
   { key: "journals", permission: "view_audit_logs", icon: IconList, group: "system" },
 ];
@@ -117,14 +123,38 @@ const MODULE_TABS: ModuleTab[] = [
   "promotions",
 ];
 
+// Deux initiales pour la tuile du commerce quand aucun logo n'est chargé.
+function brandInitials(name: string | null): string {
+  const words = (name ?? "").trim().split(/s+/).filter(Boolean);
+  if (words.length === 0) return "WB";
+  if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
+  return (words[0]![0]! + words[1]![0]!).toUpperCase();
+}
+
 interface NavProps {
   active: NavTab;
   onChange: (tab: NavTab) => void;
   enabledModules: Record<ModuleTab, boolean>;
   sectorType: string | null;
+  // Bloc du commerce en haut de la colonne (placement "sidebar" seulement).
+  businessName?: string | null;
+  logoDataUrl?: string | null;
+  // "header" : barre horizontale (tablette) + bouton menu (mobile), dans
+  // l'en-tête sticky. "sidebar" : colonne verticale à gauche, affichée
+  // uniquement à partir de 1024px (voir index.css) — même liste d'onglets,
+  // mêmes permissions, monté séparément par App.tsx à côté du contenu.
+  placement?: "header" | "sidebar";
 }
 
-export function Nav({ active, onChange, enabledModules, sectorType }: NavProps) {
+export function Nav({
+  active,
+  onChange,
+  enabledModules,
+  sectorType,
+  businessName = null,
+  logoDataUrl = null,
+  placement = "header",
+}: NavProps) {
   const { user } = useAuth();
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -154,15 +184,91 @@ export function Nav({ active, onChange, enabledModules, sectorType }: NavProps) 
     alignItems: "center",
     gap: 8,
     padding: "8px 16px",
-    borderRadius: 8,
+    borderRadius: "var(--radius-md)",
     border: "none",
-    background: active === tab.key ? "var(--gradient-accent)" : "transparent",
-    color: active === tab.key ? "#0f172a" : "var(--color-text)",
-    fontWeight: 600,
+    background: active === tab.key ? "var(--color-text)" : "transparent",
+    color: active === tab.key ? "var(--color-bg)" : "var(--color-text)",
+    fontWeight: active === tab.key ? 600 : 500,
     cursor: "pointer",
     whiteSpace: "nowrap",
     textAlign: "left",
   });
+
+  if (placement === "sidebar") {
+    let lastSideGroup: NavGroup | undefined;
+    return (
+      <aside className="nav-sidebar">
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "12px 8px 16px",
+            marginBottom: 6,
+            borderBottom: "1px dashed var(--color-rule-strong)",
+          }}
+        >
+          {logoDataUrl ? (
+            <img
+              src={logoDataUrl}
+              alt=""
+              style={{ width: 40, height: 40, objectFit: "contain", background: "#fff", borderRadius: 4, flexShrink: 0 }}
+            />
+          ) : (
+            <div
+              aria-hidden="true"
+              style={{
+                width: 40,
+                height: 40,
+                flexShrink: 0,
+                boxSizing: "border-box",
+                border: "2px solid var(--color-text)",
+                borderRadius: 4,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: 700,
+                fontSize: 16,
+                transform: "rotate(-4deg)",
+              }}
+            >
+              {brandInitials(businessName)}
+            </div>
+          )}
+          <span style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+            {businessName || "WariBox"}
+          </span>
+        </div>
+        {visibleTabs.map((tab) => {
+          const showGroupLabel = tab.group && tab.group !== lastSideGroup;
+          lastSideGroup = tab.group;
+          const Icon = resolveIcon(tab);
+          return (
+            <div key={tab.key}>
+              {showGroupLabel && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--color-text-muted)",
+                    margin: "14px 12px 6px",
+                  }}
+                >
+                  {t(`nav.groups.${tab.group}`)}
+                </div>
+              )}
+              <button
+                onClick={() => onChange(tab.key)}
+                style={{ ...tabButtonStyle(tab), width: "100%" }}
+              >
+                <Icon size={16} />
+                {resolveLabel(tab)}
+              </button>
+            </div>
+          );
+        })}
+      </aside>
+    );
+  }
 
   const activeTab = visibleTabs.find((tab) => tab.key === active) ?? visibleTabs[0]!;
   const ActiveIcon = resolveIcon(activeTab);
@@ -257,10 +363,7 @@ export function Nav({ active, onChange, enabledModules, sectorType }: NavProps) 
                   {showGroupLabel && (
                     <div
                       style={{
-                        fontSize: 10.5,
-                        fontWeight: 700,
-                        letterSpacing: "0.06em",
-                        textTransform: "uppercase",
+                        fontSize: 12,
                         color: "var(--color-text-muted)",
                         margin: "10px 12px 4px",
                       }}
