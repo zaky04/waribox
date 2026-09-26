@@ -1,6 +1,7 @@
 import { formatAmount, formatMoney } from "../../lib/format";
 import {
   deriveOrderStatus,
+  getControlsReport,
   getLowStockProducts,
   getSalesSummary,
   getSettings,
@@ -103,6 +104,7 @@ export function DashboardPage({ onNavigate }: { onNavigate?: (tab: NavTab) => vo
   // Sauvegardes est déjà réservé à manage_settings) — pas d'intérêt à
   // afficher cet indicateur à un rôle qui ne peut de toute façon rien y faire.
   const canManageBackups = hasPermission(user?.permissions ?? {}, "manage_settings");
+  const canViewControls = hasPermission(user?.permissions ?? {}, "view_controls");
 
   const [todayRevenue, setTodayRevenue] = useState(0);
   const [todaySaleCount, setTodaySaleCount] = useState(0);
@@ -116,6 +118,7 @@ export function DashboardPage({ onNavigate }: { onNavigate?: (tab: NavTab) => vo
   const [readyOrderCount, setReadyOrderCount] = useState(0);
   const [overdueCredits, setOverdueCredits] = useState<Credit[]>([]);
   const [backupOverdue, setBackupOverdue] = useState(false);
+  const [controlAlerts, setControlAlerts] = useState<{ count: number; danger: number }>({ count: 0, danger: 0 });
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
 
   const [stores, setStores] = useState<Awaited<ReturnType<typeof listStores>>>([]);
@@ -165,12 +168,18 @@ export function DashboardPage({ onNavigate }: { onNavigate?: (tab: NavTab) => vo
       setExpiringBatches(await listExpiringBatches(db, EXPIRY_WARNING_DAYS, storeId));
     }
     if (canViewServiceOrders) {
-      const orders = await listServiceOrders(db, { storeId });
+      const orders = (await listServiceOrders(db, { storeId })).filter((o) => !o.cancelledAt);
       setReadyOrderCount(await countReadyServiceOrders(db, orders));
     }
     if (canViewCredits) {
       const credits = await listCustomerCredits(db, storeId);
       setOverdueCredits(credits.filter((c) => isCreditOverdue(c, today)));
+    }
+    // Alertes de contrôle (30 derniers jours) : le propriétaire les voit dès l'accueil.
+    if (canViewControls) {
+      const day = (ms: number) => new Date(Date.now() - ms).toISOString().slice(0, 10);
+      const report = await getControlsReport(db, { from: day(29 * 86400000), to: day(0) }, storeId);
+      setControlAlerts({ count: report.alerts.length, danger: report.alerts.filter((a) => a.severity === "danger").length });
     }
     if (canManageBackups) {
       const [backups, settings] = await Promise.all([listBackups(db), getSettings(db)]);
@@ -188,6 +197,7 @@ export function DashboardPage({ onNavigate }: { onNavigate?: (tab: NavTab) => vo
     canViewStock,
     canViewServiceOrders,
     canViewCredits,
+    canViewControls,
     canManageBackups,
     user,
     effectiveStoreId,
@@ -234,6 +244,13 @@ export function DashboardPage({ onNavigate }: { onNavigate?: (tab: NavTab) => vo
     todos.push({ key: "ready", title: t("dashboard.readyOrders"), detail: t("dashboard.todoReadyDetail", { count: readyOrderCount }), target: "service_orders" });
   if (canViewCredits && overdueCredits.length > 0)
     todos.push({ key: "credits", title: t("dashboard.overdueCredits"), detail: t("dashboard.todoCreditsDetail", { count: overdueCredits.length }), target: "credits" });
+  if (canViewControls && controlAlerts.count > 0)
+    todos.push({
+      key: "controls",
+      title: t("dashboard.controlAlerts"),
+      detail: t("dashboard.controlAlertsDetail", { count: controlAlerts.count, danger: controlAlerts.danger }),
+      target: "controls",
+    });
   if (canManageBackups && backupOverdue)
     todos.push({
       key: "backup",

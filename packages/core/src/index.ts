@@ -24,6 +24,8 @@ export * from "./services/ReportsService";
 export * from "./services/RolesService";
 export * from "./services/SalesService";
 export * from "./services/ServiceOrdersService";
+export * from "./services/ServiceTariffsService";
+export * from "./services/DailySummaryService";
 export * from "./services/SettingsService";
 export * from "./services/StockService";
 export * from "./services/StoresService";

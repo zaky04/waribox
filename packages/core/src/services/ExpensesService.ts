@@ -2,6 +2,7 @@ import type { Database } from "@gestion-boutique/database";
 import { schema, withTransaction } from "@gestion-boutique/database";
 import { and, desc, eq, gte, like, lte, or } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { checkApproval, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { buildSyncEvent, emitSyncEvent, type ExpenseCreatedEventPayload } from "../sync/syncEvents";
 
@@ -30,6 +31,8 @@ export interface CreateExpenseInput {
   paymentMethod?: string;
   userId?: number;
   storeId?: number;
+  // Approbation d'un responsable (dépense au-delà du plafond de l'utilisateur).
+  approval?: ApprovalInput;
 }
 
 // Insère aussi une ligne dans `payments` (referenceType: "expense") pour que
@@ -44,11 +47,20 @@ export async function createExpense(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "manage_expenses");
+  // Responsable vérifié hors transaction (le compteur d'essais doit survivre à un rollback).
+  const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
 
   // Enveloppé dans withTransaction (Phase 2, voir CLAUDE.md) — jusqu'ici
   // cette fonction ne l'était pas ; prérequis pour répliquer dépense+
   // paiement miroir comme un tout atomique.
   const { expense, event } = await withTransaction(async () => {
+    const approvedBy = await checkApproval(db, {
+      kind: "expense",
+      amount: input.amount,
+      userId: input.userId,
+      actingPermissions,
+      verifiedApproverId,
+    });
     const expenseSyncId = crypto.randomUUID();
     const expense = await db
       .insert(schema.expenses)
@@ -83,7 +95,7 @@ export async function createExpense(
       action: "create_expense",
       entity: "expense",
       entityId: expense.id,
-      metadata: { category: expense.category, amount: expense.amount, expenseDate: expense.expenseDate },
+      metadata: { category: expense.category, amount: expense.amount, expenseDate: expense.expenseDate, approvedBy },
     });
 
     const payload: ExpenseCreatedEventPayload = {
@@ -120,6 +132,8 @@ export interface UpdateExpenseInput {
   note?: string;
   paymentMethod?: string;
   userId?: number; // qui effectue la modification (pour l'audit, pas forcément le créateur)
+  // Approbation d'un responsable quand la correction augmente la dépense au-delà du plafond.
+  approval?: ApprovalInput;
 }
 
 export async function updateExpense(
@@ -129,7 +143,20 @@ export async function updateExpense(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "edit_expenses");
+  const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
   const before = await db.select().from(schema.expenses).where(eq(schema.expenses.id, id)).get();
+  // Augmenter une dépense après coup est une sortie d'argent supplémentaire :
+  // seule la hausse est soumise au plafond.
+  let approvedBy: number | null = null;
+  if (before && input.amount != null && input.amount > before.amount) {
+    approvedBy = await checkApproval(db, {
+      kind: "expense",
+      amount: input.amount - before.amount,
+      userId: input.userId,
+      actingPermissions,
+      verifiedApproverId,
+    });
+  }
   const expense = await db
     .update(schema.expenses)
     .set({
@@ -171,6 +198,7 @@ export async function updateExpense(
       amount: expense.amount,
       // Ancienne valeur conservée : corriger une dépense après coup doit laisser une trace.
       before: before ? { category: before.category, amount: before.amount, expenseDate: before.expenseDate, paymentMethod: before.paymentMethod } : null,
+      approvedBy,
     },
   });
 
@@ -188,7 +216,7 @@ export async function deleteExpense(
   actingPermissions: PermissionSet,
   userId?: number,
 ) {
-  requirePermission(actingPermissions, "edit_expenses");
+  requirePermission(actingPermissions, "delete_expenses");
   const existing = await db.select().from(schema.expenses).where(eq(schema.expenses.id, id)).get();
   if (!existing) return;
 

@@ -257,6 +257,7 @@ export async function getJournalVentes(
   }
 
   for (const so of serviceOrders) {
+    if (so.cancelledAt) continue; // ticket annulé : ni produit ni encaissement
     if (storeId && so.storeId !== storeId) continue;
     if (!inRange(so.createdAt, normalized)) continue;
 

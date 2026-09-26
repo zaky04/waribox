@@ -7,7 +7,8 @@ import { withTransaction } from "@gestion-boutique/database";
 import { logAction } from "./AuditService";
 import { findOrCreateCustomerByName } from "./CustomersService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
-import { checkCreditApproval, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
+import { checkApproval, checkCreditApproval, computeUnauthorizedDiscount, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
+import { getActivePromotionsWithProducts } from "./PromotionsService";
 import { earnPoints, pointsToDiscount, redeemPoints } from "./LoyaltyService";
 import { getSettings } from "./SettingsService";
 import { consumeStockFefo, getStockLevels } from "./StockService";
@@ -44,7 +45,8 @@ export interface CreateSaleInput {
   amountPaid?: number;
   surfaceLocationId: number;
   storeId: number;
-  // Approbation d'un responsable pour une vente à crédit hors plafond.
+  // Approbation d'un responsable : vente à crédit hors plafond, ou remise /
+  // prix inférieur au catalogue non couvert par une promotion programmée.
   approval?: ApprovalInput;
 }
 
@@ -148,6 +150,53 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
       throw new Error(t("coreErrors.sales.discountExceedsTotal"));
     }
     const total = roundMoney(Math.max(0, itemsTotal - discount));
+
+    // Aucune réduction ne doit venir d'ailleurs que d'une promotion programmée
+    // (ou de l'échange de points de fidélité) sans l'approbation d'un
+    // responsable : on compare le prix vendu au catalogue et la remise aux
+    // promotions réellement en cours, côté serveur (jamais sur la foi de l'écran).
+    const variantIds = [...new Set(input.items.map((i) => i.variantId))];
+    const catalogRows = await db
+      .select({
+        variantId: schema.productVariants.id,
+        productId: schema.productVariants.productId,
+        priceOverride: schema.productVariants.priceOverride,
+        salePrice: schema.products.salePrice,
+      })
+      .from(schema.productVariants)
+      .innerJoin(schema.products, eq(schema.products.id, schema.productVariants.productId))
+      .where(inArray(schema.productVariants.id, variantIds));
+    const catalogByVariant = new Map(catalogRows.map((r) => [r.variantId, r] as const));
+    const activePromos = settings.enablePromotions ? await getActivePromotionsWithProducts(db) : [];
+    const productPromoPercent = (productId: number) =>
+      activePromos
+        .filter((p) => p.scope === "product" && p.productIds.includes(productId))
+        .reduce((best, p) => Math.max(best, p.discountPercent), 0);
+    const invoicePromoPercent = activePromos.filter((p) => p.scope === "invoice").reduce((best, p) => Math.max(best, p.discountPercent), 0);
+    const unauthorizedDiscount = computeUnauthorizedDiscount({
+      lines: input.items.map((item) => {
+        const row = catalogByVariant.get(item.variantId);
+        return {
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          discount: item.discount,
+          catalogPrice: row ? (row.priceOverride ?? row.salePrice) : item.unitPrice,
+          promoPercent: row ? productPromoPercent(row.productId) : 0,
+        };
+      }),
+      invoiceDiscount: input.discount ?? 0,
+      invoicePromoPercent,
+    });
+    let discountApprovedBy: number | null = null;
+    if (unauthorizedDiscount > 0) {
+      discountApprovedBy = await checkApproval(db, {
+        kind: "discount",
+        amount: unauthorizedDiscount,
+        userId: input.userId,
+        actingPermissions,
+        verifiedApproverId,
+      });
+    }
 
     const amountPaid = roundMoney(input.amountPaid ?? total);
     if (amountPaid < total && !customerId) {
@@ -305,7 +354,13 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
       action: "create_sale",
       entity: "sale",
       entityId: sale.id,
-      metadata: { number: sale.number, total, paymentStatus },
+      metadata: {
+        number: sale.number,
+        total,
+        paymentStatus,
+        // Remise hors promotion : montant et responsable qui l'a approuvée (pour le tableau de bord Contrôles).
+        ...(unauthorizedDiscount > 0 ? { unauthorizedDiscount, discountApprovedBy } : {}),
+      },
     });
 
     const payload: SaleCreatedEventPayload = {

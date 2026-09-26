@@ -29,6 +29,10 @@ export interface AuthenticatedUser {
   limitRefund: number | null;
   limitStock: number | null;
   limitCredit: number | null;
+  limitDiscount: number | null;
+  limitExpense: number | null;
+  limitPoints: number | null;
+  limitTicket: number | null;
   // Vrai si un code PIN est défini (jamais le hash).
   hasPin: boolean;
   // Droits particuliers (par-dessus le rôle) ; `permissions` est déjà le résultat fusionné.
@@ -53,6 +57,10 @@ async function toAuthenticatedUser(
     limitRefund: user.limitRefund,
     limitStock: user.limitStock,
     limitCredit: user.limitCredit,
+    limitDiscount: user.limitDiscount,
+    limitExpense: user.limitExpense,
+    limitPoints: user.limitPoints,
+    limitTicket: user.limitTicket,
     hasPin: !!user.pinHash,
     permissionOverrides: parseOverrides(user.permissionOverrides),
   };
@@ -107,6 +115,10 @@ export async function createUser(
     limitRefund?: number | null;
     limitStock?: number | null;
     limitCredit?: number | null;
+    limitDiscount?: number | null;
+    limitExpense?: number | null;
+    limitPoints?: number | null;
+    limitTicket?: number | null;
     permissionOverrides?: PermissionOverrides;
     createdBy?: number;
   },
@@ -151,6 +163,10 @@ export async function createUser(
       limitRefund: input.limitRefund,
       limitStock: input.limitStock,
       limitCredit: input.limitCredit,
+      limitDiscount: input.limitDiscount,
+      limitExpense: input.limitExpense,
+      limitPoints: input.limitPoints,
+      limitTicket: input.limitTicket,
       permissionOverrides: input.permissionOverrides && Object.keys(input.permissionOverrides).length > 0 ? JSON.stringify(input.permissionOverrides) : null,
     })
     .returning()
@@ -310,6 +326,8 @@ export async function changeOwnPassword(
   await db.update(schema.users).set({ passwordHash }).where(eq(schema.users.id, userId)).run();
 }
 
+const LIMIT_KEYS = ["limitRefund", "limitStock", "limitCredit", "limitDiscount", "limitExpense", "limitPoints", "limitTicket"] as const;
+
 export interface UpdateUserInput {
   fullName?: string;
   username?: string;
@@ -319,6 +337,10 @@ export interface UpdateUserInput {
   limitRefund?: number | null;
   limitStock?: number | null;
   limitCredit?: number | null;
+  limitDiscount?: number | null;
+  limitExpense?: number | null;
+  limitPoints?: number | null;
+  limitTicket?: number | null;
   // Nouveau code PIN (4 chiffres) — nécessaire pour qu'un responsable puisse
   // approuver des actions.
   pin?: string;
@@ -350,6 +372,10 @@ export async function updateUser(
   if (input.limitRefund !== undefined) updates.limitRefund = input.limitRefund;
   if (input.limitStock !== undefined) updates.limitStock = input.limitStock;
   if (input.limitCredit !== undefined) updates.limitCredit = input.limitCredit;
+  if (input.limitDiscount !== undefined) updates.limitDiscount = input.limitDiscount;
+  if (input.limitExpense !== undefined) updates.limitExpense = input.limitExpense;
+  if (input.limitPoints !== undefined) updates.limitPoints = input.limitPoints;
+  if (input.limitTicket !== undefined) updates.limitTicket = input.limitTicket;
   if (input.pin) updates.pinHash = await hashSecret(input.pin);
   const before = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get();
   if (input.permissionOverrides !== undefined) {
@@ -399,8 +425,8 @@ export async function updateUser(
         overrides: input.permissionOverrides !== undefined ? { from: before?.permissionOverrides ?? null, to: updated.permissionOverrides ?? null } : undefined,
         // Changement de rôle ou de plafonds : ancienne et nouvelle valeur.
         roleFrom: before && before.roleId !== updated.roleId ? before.roleId : undefined,
-        limits: before && (before.limitRefund !== updated.limitRefund || before.limitStock !== updated.limitStock || before.limitCredit !== updated.limitCredit)
-          ? { from: [before.limitRefund, before.limitStock, before.limitCredit], to: [updated.limitRefund, updated.limitStock, updated.limitCredit] }
+        limits: before && LIMIT_KEYS.some((k) => before[k] !== updated[k])
+          ? { from: LIMIT_KEYS.map((k) => before[k]), to: LIMIT_KEYS.map((k) => updated[k]) }
           : undefined,
       },
     });

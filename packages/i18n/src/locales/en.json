@@ -100,7 +100,9 @@
     "open": "Open",
     "recentSales": "Latest sales",
     "noSalesYet": "no sales yet",
-    "chartLabel": "Sales by hour today"
+    "chartLabel": "Sales by hour today",
+    "controlAlerts": "Control alerts",
+    "controlAlertsDetail": "{{count}} signal(s) to check over 30 days ({{danger}} serious)"
   },
   "sales": {
     "title": "Sales",
@@ -627,9 +629,13 @@
       "stock_count_start": "Stock count started",
       "stock_count_close": "Stock count closed",
       "receive_purchase": "Purchase received",
-      "approval_failed": "Approval refused",
+      "approval_failed": "Wrong approval code",
       "create_role": "Role created",
-      "update_role": "Role updated"
+      "update_role": "Role updated",
+      "approval_rejected": "Request refused by a manager",
+      "cancel_service_order": "Service ticket cancelled",
+      "create_service_tariff": "Service rate created",
+      "update_service_tariff": "Service rate changed"
     },
     "sales": {
       "searchPlaceholder": "Sale number...",
@@ -1306,6 +1312,17 @@
       "repayFailed": "Could not record the repayment.",
       "historyDescriptionRequired": "Each item must have a description.",
       "historySaveFailed": "Could not save the changes."
+    },
+    "tariff": {
+      "choose": "Rate (optional)",
+      "manual": "— Manual entry —"
+    },
+    "cancel": {
+      "button": "Cancel ticket",
+      "reason": "Cancellation reason",
+      "confirm": "Confirm cancellation",
+      "tag": "Cancelled",
+      "done": "Ticket cancelled."
     }
   },
   "auth": {
@@ -1452,7 +1469,11 @@
     "serviceOrders": {
       "itemRequired": "The ticket must contain at least one item.",
       "customerIdRequiredCredit": "Enter at least the customer's name for a credit ticket or partial payment (no need for an existing customer account).",
-      "itemNotFound": "Item not found."
+      "itemNotFound": "Item not found.",
+      "cancelled": "This ticket is cancelled: it can no longer be changed.",
+      "cancelReasonRequired": "A cancellation reason is required.",
+      "cancelPickedUp": "Cannot cancel: at least one item has already been picked up.",
+      "notFound": "Service ticket not found."
     },
     "stores": {
       "noStoreExists": "No store exists — the database migration must have failed."
@@ -1464,7 +1485,8 @@
     "approval": {
       "required": "This action ({{kind}} of {{amount}}) exceeds the limit of {{threshold}}: a manager's approval is required.",
       "invalidApprover": "This manager cannot approve this action.",
-      "wrongPin": "Incorrect manager PIN."
+      "wrongPin": "Incorrect manager PIN.",
+      "requiredPoints": "This action ({{kind}} of {{amount}} points) exceeds the {{threshold}}-point limit: a manager's approval is required."
     },
     "stock": {
       "quantityPositive": "The quantity must be greater than zero.",
@@ -1489,6 +1511,11 @@
       "notFound": "Role not found.",
       "adminLocked": "The Admin role cannot be modified.",
       "sensitiveDenied": "You cannot grant or remove a sensitive right (user management, settings, approval, log, controls) that you do not hold yourself."
+    },
+    "serviceTariffs": {
+      "nameRequired": "The service name is required.",
+      "priceInvalid": "The price must be zero or a positive number.",
+      "notFound": "This service rate could not be found."
     }
   },
   "whatsapp": {
@@ -1507,7 +1534,8 @@
     "expiringAlert": "Items expiring soon (≤ {{days}} days) — {{count}} batch(es) at {{business}}:\n{{lines}}",
     "expiringLine": "- {{name}} (batch {{lot}}): expires {{date}}",
     "overdueDebt": "Hello {{customerName}}, you have an overdue balance of {{amount}} since {{dueDate}} at {{business}} (ref. {{reference}}). Please settle it as soon as possible.",
-    "serviceOrderReady": "Hello {{customerName}}, your ticket {{orderNumber}} is ready for pickup at {{business}}."
+    "serviceOrderReady": "Hello {{customerName}}, your ticket {{orderNumber}} is ready for pickup at {{business}}.",
+    "verifyMessage": "Hello {{name}}, could you confirm your {{kind}} no. {{number}} of {{date}} for {{amount}}? Thank you!"
   },
   "documents": {
     "common": {
@@ -1810,7 +1838,11 @@
     "kinds": {
       "refund": "refund",
       "stock": "stock movement",
-      "credit": "credit sale"
+      "credit": "credit sale",
+      "discount": "discount outside a promotion",
+      "expense": "expense",
+      "points": "points adjustment",
+      "ticket": "ticket change or cancellation"
     },
     "title": "Approval required",
     "approver": "Manager",
@@ -1818,7 +1850,9 @@
     "approve": "Approve",
     "cancel": "Cancel",
     "cancelled": "Action cancelled: approval not given.",
-    "noApprover": "No manager has a PIN. Set a PIN for an Owner or Admin (Users)."
+    "noApprover": "No manager has a PIN. Set a PIN for an Owner or Admin (Users).",
+    "reject": "Refuse",
+    "rejected": "Request refused by the manager."
   },
   "inventory": {
     "movementNote": "Stock count #{{id}}",
@@ -1886,7 +1920,15 @@
       "supplierPrices": "Price by supplier (latest)",
       "kind": "Type",
       "amount": "Amount",
-      "detail": "Detail"
+      "detail": "Detail",
+      "risk": "Risk",
+      "discount": "Off-promo discounts",
+      "ticket": "Ticket",
+      "readyItems": "Ready items",
+      "value": "Value",
+      "age": "Age (days)",
+      "customer": "Customer",
+      "remaining": "Balance due"
     },
     "other": "prices changed: {{prices}} · expenses corrected: {{expenses}} · approvals refused: {{failed}} · approvals given: {{approvals}}",
     "empty": "Nothing for this period.",
@@ -1903,7 +1945,8 @@
       "cash_variance": "Cash difference",
       "price_alert": "Purchase price increase",
       "credit_approved": "Credit approved",
-      "stock_count": "Stock count"
+      "stock_count": "Stock count",
+      "discount": "Discount outside a promotion"
     },
     "flags": {
       "refund_rate": "{{value}}% of their sales were refunded (threshold {{threshold}}%).",
@@ -1915,7 +1958,14 @@
       "expense_edits": "{{value}} expenses corrected or deleted (threshold {{threshold}}).",
       "supplier_price_alert": "{{value}} purchase price increase(s) flagged.",
       "supplier_shortfall": "shortfall found at receipt: {{amount}} to claim.",
-      "supplier_same_user_receipt": "{{value}} receipt(s) made by the person who entered the invoice."
+      "supplier_same_user_receipt": "{{value}} receipt(s) made by the person who entered the invoice.",
+      "discount_rate": "discounts outside a promotion: {{value}} % of their sales (threshold {{threshold}} %).",
+      "rejected_approvals": "{{value}} requests refused by a manager.",
+      "low_tickets": "{{value}} tickets at zero or far below average.",
+      "ticket_cancels": "{{value}} cancelled tickets.",
+      "stale_tickets": "{{value}} ticket(s) ready for more than {{threshold}} days, never picked up.",
+      "unpaid_pickups": "items picked up with a balance due: {{amount}} to recover.",
+      "number_gaps": "{{value}} missing number(s) in the sales or tickets sequence (deleted or never entered)."
     },
     "integrityTitle": "Log integrity",
     "integrityHint": "Each action is chained to the previous one by a fingerprint: deleting or editing a log line breaks the chain. Note the head fingerprint from time to time: it also lets you detect a rollback.",
@@ -1928,6 +1978,46 @@
       "prev_mismatch": "a line was deleted or moved",
       "hash_mismatch": "a line's content was modified",
       "unhashed_after_chain": "a line was added outside the application"
+    },
+    "alertsTitle": "Alerts to handle first ({{count}})",
+    "alertsNone": "No alerts: nothing unusual in this period.",
+    "riskHint": "The risk score (0-100) combines refunds, losses, discounts outside a promotion, cash differences, refused approvals, manual entries and corrections. It is a reading aid, not proof.",
+    "riskLevels": {
+      "low": "low",
+      "medium": "medium",
+      "high": "high"
+    },
+    "extra": "points adjusted by hand: {{points}} · requests refused by a manager: {{rejected}}",
+    "ticketsTitle": "Service tickets to watch",
+    "staleTitle": "Ready but never picked up",
+    "unpaidTitle": "Picked up with a balance due",
+    "gapsTitle": "Missing numbers",
+    "gapKinds": {
+      "sale": "Sales",
+      "ticket": "Tickets"
+    },
+    "none": "Nothing to report.",
+    "summary": {
+      "title": "Daily summary",
+      "hint": "The day's figures and everything that needs your attention, as one message to send by WhatsApp.",
+      "date": "Day",
+      "generate": "Generate summary",
+      "send": "Send on WhatsApp",
+      "copy": "Copy",
+      "copied": "Copied.",
+      "noPhone": "No phone to notify: set it in Configuration → Business."
+    },
+    "verify": {
+      "title": "Phone check",
+      "hint": "Draws recent operations at random so you can ask the customer to confirm them. An operation they don't recognise, or at a different amount, is a strong signal.",
+      "draw": "Draw at random",
+      "anonymous": "{{percent}} % of the period's operations have no identified customer: they cannot be checked.",
+      "empty": "No recent operation with a customer and a phone number.",
+      "ask": "Ask for confirmation",
+      "kinds": {
+        "sale": "sale",
+        "ticket": "ticket"
+      }
     }
   },
   "controlsSettings": {
@@ -1941,7 +2031,16 @@
     "requireReceipt": "Two-step purchases: the invoice is entered, stock only comes in at controlled receipt (counted quantities)",
     "defaultCreditLimit": "Default customer credit limit (empty = unlimited)",
     "approverHint": "Tip: the Owner and Admin can approve. Set a PIN for them (Users → Edit).",
-    "invalid": "A control limit must be empty or a positive number."
+    "invalid": "A control limit must be empty or a positive number.",
+    "approvalDiscount": "Discount or price below catalogue, outside a scheduled promotion, above — 0 = every discount must be approved by the owner",
+    "approvalExpense": "Expense above — 0 = every expense must be approved",
+    "approvalPoints": "Manual loyalty points adjustment above (points) — 0 = every adjustment must be approved",
+    "alertHeading": "Control dashboard alert thresholds",
+    "alertRefund": "Alert when refunds exceed (% of the employee's sales)",
+    "alertLoss": "Alert when declared losses exceed (% of the employee's sales)",
+    "alertDiscount": "Alert when off-promotion discounts exceed (% of the employee's sales)",
+    "approvalTicket": "Ticket: price cut after payment, cancellation, pickup with balance due, undo — above (0 = everything must be approved)",
+    "staleTicketDays": "Flag a « ready » ticket not picked up for (days)"
   },
   "approvalRoles": {
     "title": "Roles and permissions",
@@ -1958,7 +2057,11 @@
     "limitCredit": "Max credit sale without approval",
     "newPin": "New PIN (4 digits)",
     "pinSet": "PIN set",
-    "pinMissing": "No PIN"
+    "pinMissing": "No PIN",
+    "limitDiscount": "Max off-promotion discount without approval",
+    "limitExpense": "Max expense without approval",
+    "limitPoints": "Max points adjustment without approval",
+    "limitTicket": "Max ticket change/cancellation without approval"
   },
   "permissions": {
     "view_margins": "See margins",
@@ -1978,7 +2081,7 @@
     "manage_credits": "Collect receivables",
     "manage_debts": "Pay supplier debts",
     "manage_expenses": "Enter expenses",
-    "edit_expenses": "Correct/delete expenses",
+    "edit_expenses": "Correct expenses",
     "view_reports": "See reports",
     "view_accounting": "See accounting",
     "manage_settings": "Manage settings",
@@ -1986,18 +2089,28 @@
     "view_audit_logs": "See the action log",
     "switch_store": "Switch store",
     "view_controls": "See the Controls dashboard",
-    "approve_actions": "Approve actions above limits",
+    "approve_actions": "Approve everything (all areas)",
     "categories": {
       "sales": "Sales and register",
       "stock": "Products and stock",
       "people": "Customers, suppliers and purchases",
       "finance": "Money: receivables, debts, expenses, margins",
       "reports": "Reports, log and controls",
-      "admin": "Administration and approvals"
+      "admin": "Administration",
+      "approvals": "Approvals (who can validate what)"
     },
     "checkAll": "Check all",
     "uncheckAll": "Uncheck all",
-    "sensitive": "sensitive right"
+    "sensitive": "sensitive right",
+    "delete_expenses": "Delete expenses",
+    "adjust_loyalty_points": "Adjust loyalty points by hand",
+    "approve_refunds": "Approve refunds",
+    "approve_stock": "Approve stock movements",
+    "approve_credit": "Approve sales on credit",
+    "approve_discounts": "Approve discounts outside a promotion",
+    "approve_expenses": "Approve expenses",
+    "approve_points": "Approve points adjustments",
+    "approve_tickets": "Approve ticket changes"
   },
   "purchasesControls": {
     "invoiceReference": "Supplier invoice number",
@@ -2036,5 +2149,34 @@
     "roleLacks": "the role does not grant it",
     "effective": "Effective rights: {{count}} of {{total}}",
     "reset": "Reset everything to “per role”"
+  },
+  "dailySummary": {
+    "title": "Summary for {{date}} — {{business}}",
+    "sales": "Sales: {{count}} for {{total}}",
+    "tickets": "Service tickets: {{count}} for {{total}}",
+    "expenses": "Expenses: {{count}} for {{total}}",
+    "watchTitle": "To watch:",
+    "discounts": "Discounts outside a promotion: {{count}} ({{total}})",
+    "refunds": "Refunds: {{count}} ({{total}})",
+    "losses": "Stock losses: {{count}} (value {{total}})",
+    "entries": "Manual stock entries: {{count}} (value {{total}})",
+    "cancelled": "Cancelled tickets: {{count}}",
+    "cash": "Cash: {{count}} closing(s), total difference {{variance}}",
+    "cashNone": "Cash: no closing today",
+    "approvals": "Approvals given: {{count}}",
+    "alerts": "Open control alerts: {{count}} including {{danger}} serious",
+    "titleNoName": "Summary for {{date}}"
+  },
+  "serviceTariffs": {
+    "title": "Service rates (optional)",
+    "hint": "Record your usual services so the price is checked: a price below the rate or a discount needs your approval. Without rates, ticket entry stays fully manual.",
+    "name": "Service",
+    "price": "Price",
+    "add": "Add rate",
+    "disable": "Disable",
+    "enable": "Enable",
+    "save": "Save",
+    "none": "No rates: entry is manual.",
+    "inactive": "disabled"
   }
 }

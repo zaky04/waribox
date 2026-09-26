@@ -1,6 +1,7 @@
 import { useApproval } from "../approval/ApprovalProvider";
 import { formatAmount } from "../../lib/format";
 import {
+  cancelServiceOrder,
   createServiceOrder,
   deriveOrderStatus,
   getSettings,
@@ -8,6 +9,7 @@ import {
   listCustomerCredits,
   listCustomers,
   listServiceOrderItems,
+  listServiceTariffs,
   listServiceOrders,
   recordCreditRepayment,
   updateServiceOrder,
@@ -49,9 +51,12 @@ type Customer = typeof schema.customers.$inferSelect;
 type ServiceOrder = typeof schema.serviceOrders.$inferSelect;
 type ServiceOrderItem = typeof schema.serviceOrderItems.$inferSelect;
 type Credit = typeof schema.customerCredits.$inferSelect;
+type ServiceTariff = typeof schema.serviceTariffs.$inferSelect;
 
 interface OrderLine {
   key: number;
+  // Tarif choisi (facultatif) — le prix de référence est relu côté serveur.
+  tariffId?: number;
   description: string;
   unitPrice: number;
   quantity: number;
@@ -113,6 +118,7 @@ export function ServiceOrdersPage() {
   const [showPrinterPanel, setShowPrinterPanel] = useState(false);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [tariffs, setTariffs] = useState<ServiceTariff[]>([]);
   const [businessSettings, setBusinessSettings] = useState<Awaited<ReturnType<typeof getSettings>> | null>(
     null,
   );
@@ -148,8 +154,9 @@ export function ServiceOrdersPage() {
   const [historyError, setHistoryError] = useState<string | null>(null);
 
   const refreshCatalog = useCallback(async () => {
-    const [customersRows, settings] = await Promise.all([listCustomers(db), getSettings(db)]);
+    const [customersRows, settings, tariffRows] = await Promise.all([listCustomers(db), getSettings(db), listServiceTariffs(db, { activeOnly: true })]);
     setCustomers(customersRows);
+    setTariffs(tariffRows);
     setBusinessSettings(settings);
   }, [db]);
 
@@ -178,6 +185,21 @@ export function ServiceOrdersPage() {
         key: nextLineKey,
         description: "",
         unitPrice: 0,
+        quantity: 1,
+        taxRate: businessSettings?.taxEnabled ? (businessSettings.defaultTaxRate ?? 0) : 0,
+      },
+    ]);
+    setNextLineKey((k) => k + 1);
+  };
+
+  const addTariffLine = (tariff: ServiceTariff) => {
+    setLines((prev) => [
+      ...prev,
+      {
+        key: nextLineKey,
+        tariffId: tariff.id,
+        description: tariff.name,
+        unitPrice: tariff.price,
         quantity: 1,
         taxRate: businessSettings?.taxEnabled ? (businessSettings.defaultTaxRate ?? 0) : 0,
       },
@@ -236,6 +258,7 @@ export function ServiceOrdersPage() {
           quantity: l.quantity,
           unitPrice: l.unitPrice,
           taxRate: l.taxRate,
+          tariffId: l.tariffId,
         })),
         promisedDate: promisedDate || undefined,
         notes: notes.trim() || undefined,
@@ -304,9 +327,17 @@ export function ServiceOrdersPage() {
     }
   };
 
+  const [trackError, setTrackError] = useState<string | null>(null);
+
   const handleStatusChange = async (item: ServiceOrderItem, status: ServiceOrderItemStatus) => {
     if (!user) return;
-    await updateServiceOrderItemStatus(db, { itemId: item.id, status, userId: user.id }, user.permissions);
+    setTrackError(null);
+    try {
+      // Retrait avec un solde dû, ou retour arrière d'un retrait : approbation d'un responsable.
+      await approval.run((a) => updateServiceOrderItemStatus(db, { itemId: item.id, status, userId: user.id, approval: a }, user.permissions));
+    } catch (err) {
+      setTrackError(err instanceof Error ? err.message : t("serviceOrders.errors.saveFailed"));
+    }
     const items = await listServiceOrderItems(db, item.serviceOrderId);
     setItemsByOrder((prev) => ({ ...prev, [item.serviceOrderId]: items }));
     await refreshTrack();
@@ -359,18 +390,23 @@ export function ServiceOrdersPage() {
         user.id,
         user.permissions,
       );
-      for (const item of editItems) {
-        await updateServiceOrderItem(
-          db,
-          item.id,
-          {
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            taxRate: item.taxRate,
-          },
-          user.id,
-          user.permissions,
+      // Seules les lignes réellement modifiées sont envoyées ; baisser le total
+      // d'un ticket déjà encaissé exige l'approbation d'un responsable.
+      const original = itemsByOrder[orderId] ?? [];
+      const changed = editItems.filter((item) => {
+        const o = original.find((x) => x.id === item.id);
+        return !o || o.description !== item.description || o.quantity !== item.quantity || o.unitPrice !== item.unitPrice || o.taxRate !== item.taxRate;
+      });
+      for (const item of changed) {
+        await approval.run((a) =>
+          updateServiceOrderItem(
+            db,
+            item.id,
+            { description: item.description, quantity: item.quantity, unitPrice: item.unitPrice, taxRate: item.taxRate },
+            user.id,
+            user.permissions,
+            a,
+          ),
         );
       }
       const items = await listServiceOrderItems(db, orderId);
@@ -381,6 +417,24 @@ export function ServiceOrdersPage() {
       setHistoryError(err instanceof Error ? err.message : t("serviceOrders.errors.historySaveFailed"));
     } finally {
       setSavingHistory(false);
+    }
+  };
+
+  const [cancelOrderId, setCancelOrderId] = useState<number | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  const handleCancel = async (orderId: number) => {
+    if (!user) return;
+    setCancelError(null);
+    try {
+      await approval.run((a) => cancelServiceOrder(db, { orderId, userId: user.id, reason: cancelReason, approval: a }, user.permissions));
+      setCancelOrderId(null);
+      setCancelReason("");
+      setExpandedOrderId(null);
+      await refreshTrack();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : t("serviceOrders.errors.saveFailed"));
     }
   };
 
@@ -536,6 +590,26 @@ export function ServiceOrdersPage() {
               <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
                 {t("serviceOrders.freeEntryHint")}
               </p>
+              {tariffs.length > 0 && (
+                <label>
+                  {t("serviceOrders.tariff.choose")}
+                  <select
+                    style={inputStyle}
+                    value=""
+                    onChange={(e) => {
+                      const tariff = tariffs.find((x) => String(x.id) === e.target.value);
+                      if (tariff) addTariffLine(tariff);
+                    }}
+                  >
+                    <option value="">{t("serviceOrders.tariff.manual")}</option>
+                    {tariffs.map((tf) => (
+                      <option key={tf.id} value={tf.id}>
+                        {tf.name} — {formatAmount(tf.price)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               {lines.length === 0 ? (
                 <p style={{ color: "var(--color-text-muted)" }}>{t("serviceOrders.emptyItems")}</p>
@@ -704,6 +778,7 @@ export function ServiceOrdersPage() {
 
       {view === "track" && (
         <div style={cardStyle}>
+          {trackError && <p style={{ color: "var(--color-danger)", margin: 0 }}>{trackError}</p>}
           <div className="table-scroll">
             <table style={tableStyle}>
               <thead>
@@ -716,7 +791,7 @@ export function ServiceOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {orders.map((order) => {
+                {orders.filter((o) => !o.cancelledAt).map((order) => {
                   const items = itemsByOrder[order.id] ?? [];
                   const summary = deriveOrderStatus(items);
                   const credit = creditForOrder(order.id);
@@ -876,7 +951,10 @@ export function ServiceOrdersPage() {
                   return (
                     <Fragment key={order.id}>
                       <tr>
-                        <td style={tdStyle}>{order.number}</td>
+                        <td style={tdStyle}>
+                          {order.number}{" "}
+                          {order.cancelledAt && <span style={badgeStyle("danger")}>{t("serviceOrders.cancel.tag")}</span>}
+                        </td>
                         <td style={tdStyle}>{customerName(order.customerId)}</td>
                         <td style={tdStyle}>{formatAmount(order.total)}</td>
                         <td style={tdStyle}>
@@ -887,6 +965,7 @@ export function ServiceOrdersPage() {
                         <td style={tdStyle}>
                           <button
                             style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                            disabled={!!order.cancelledAt}
                             onClick={() => historyToggleExpand(order)}
                           >
                             {expanded ? t("serviceOrders.close") : t("serviceOrders.correct")}
@@ -995,6 +1074,42 @@ export function ServiceOrdersPage() {
                               >
                                 {savingHistory ? t("serviceOrders.saving") : t("serviceOrders.save")}
                               </button>
+
+                              {cancelOrderId === order.id ? (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px dashed var(--color-rule-strong)", paddingTop: 12 }}>
+                                  <label>
+                                    {t("serviceOrders.cancel.reason")}
+                                    <input style={inputStyle} value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+                                  </label>
+                                  {cancelError && <p style={{ color: "var(--color-danger)", margin: 0 }}>{cancelError}</p>}
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                                    <button
+                                      style={{ ...primaryButtonStyle, background: "var(--color-danger)" }}
+                                      disabled={!cancelReason.trim()}
+                                      onClick={() => handleCancel(order.id)}
+                                    >
+                                      {t("serviceOrders.cancel.confirm")}
+                                    </button>
+                                    <button
+                                      style={{ ...primaryButtonStyle, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)" }}
+                                      onClick={() => setCancelOrderId(null)}
+                                    >
+                                      {t("serviceOrders.close")}
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  style={{ ...primaryButtonStyle, background: "transparent", border: "1px solid var(--color-danger)", color: "var(--color-danger)", alignSelf: "flex-start" }}
+                                  onClick={() => {
+                                    setCancelOrderId(order.id);
+                                    setCancelReason("");
+                                    setCancelError(null);
+                                  }}
+                                >
+                                  {t("serviceOrders.cancel.button")}
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

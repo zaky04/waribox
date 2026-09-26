@@ -132,8 +132,22 @@ export const businessSettings = sqliteTable("business_settings", {
   // pas de contrôle ; 0 = toute action de ce type exige une approbation. Un
   // plafond propre à l'utilisateur (users.limit*) prime sur ces valeurs.
   approvalRefundThreshold: real("approval_refund_threshold"),
-  approvalStockThreshold: real("approval_stock_threshold"), // valeur au coût d'une perte / entrée manuelle
+  approvalStockThreshold: real("approval_stock_threshold").default(0), // valeur au coût d'une entrée (manuelle, achat) ou sortie (perte) — 0 par défaut
   approvalCreditThreshold: real("approval_credit_threshold"),
+  // Remise hors promotion programmée (ou prix de vente sous le catalogue),
+  // dépense, ajustement manuel de points : 0 par défaut = tout exige une
+  // approbation ; NULL = pas de contrôle.
+  approvalDiscountThreshold: real("approval_discount_threshold").default(0),
+  approvalExpenseThreshold: real("approval_expense_threshold").default(0),
+  approvalPointsThreshold: real("approval_points_threshold").default(0),
+  // Modification d'un ticket encaissé, annulation, retour arrière d'un retrait (0 par défaut).
+  approvalTicketThreshold: real("approval_ticket_threshold").default(0),
+  // Un ticket « prêt » non retiré depuis ce nombre de jours est signalé.
+  staleTicketDays: integer("stale_ticket_days").notNull().default(30),
+  // Seuils de signalement du tableau de bord Contrôles (en %).
+  alertRefundPercent: real("alert_refund_percent").notNull().default(5),
+  alertLossPercent: real("alert_loss_percent").notNull().default(2),
+  alertDiscountPercent: real("alert_discount_percent").notNull().default(5),
   // Écart de caisse (|compté - attendu|) à partir duquel une clôture est
   // signalée. NULL = tout écart non nul est signalé.
   cashVarianceThreshold: real("cash_variance_threshold"),

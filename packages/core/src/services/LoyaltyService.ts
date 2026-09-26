@@ -3,6 +3,7 @@ import { schema } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
 import { desc, eq } from "drizzle-orm";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
+import { requireApproval, type ApprovalInput } from "./ApprovalService";
 import { logAction } from "./AuditService";
 import { getSettings } from "./SettingsService";
 
@@ -161,6 +162,8 @@ export interface AdjustPointsInput {
   pointsDelta: number;
   userId: number;
   reason?: string;
+  // Approbation d'un responsable quand l'ajustement dépasse le plafond de l'utilisateur.
+  approval?: ApprovalInput;
 }
 
 // Ajustement manuel (bonus/correction depuis Clients → Ajuster points) —
@@ -172,7 +175,7 @@ export interface AdjustPointsInput {
 // quel client, en contournant la restriction purement visuelle de l'onglet
 // Clients (voir audit du 2026-08-18).
 export async function adjustPoints(db: Database, input: AdjustPointsInput, actingPermissions: PermissionSet) {
-  requirePermission(actingPermissions, "manage_customers");
+  requirePermission(actingPermissions, "adjust_loyalty_points");
   const customer = await db
     .select()
     .from(schema.customers)
@@ -184,6 +187,15 @@ export async function adjustPoints(db: Database, input: AdjustPointsInput, actin
   if (input.pointsDelta === 0) {
     throw new Error(t("coreErrors.loyalty.deltaNonZero"));
   }
+  // Des points se convertissent en remises réelles : au-delà du plafond, un
+  // responsable doit approuver (voir ApprovalService).
+  const approvedBy = await requireApproval(db, {
+    kind: "points",
+    amount: Math.abs(input.pointsDelta),
+    userId: input.userId,
+    actingPermissions,
+    approval: input.approval,
+  });
   const newBalance = customer.loyaltyPoints + input.pointsDelta;
   if (newBalance < 0) {
     throw new Error(t("coreErrors.common.insufficientLoyaltyPoints", { points: customer.loyaltyPoints }));
@@ -215,7 +227,7 @@ export async function adjustPoints(db: Database, input: AdjustPointsInput, actin
     action: "adjust_loyalty_points",
     entity: "customer",
     entityId: input.customerId,
-    metadata: { pointsDelta: input.pointsDelta, reason: input.reason, newBalance },
+    metadata: { pointsDelta: input.pointsDelta, reason: input.reason, newBalance, approvedBy },
   });
 
   return updated;

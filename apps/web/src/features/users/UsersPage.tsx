@@ -55,6 +55,10 @@ export function UsersPage() {
   const [limitRefund, setLimitRefund] = useState("");
   const [limitStock, setLimitStock] = useState("");
   const [limitCredit, setLimitCredit] = useState("");
+  const [limitDiscount, setLimitDiscount] = useState("");
+  const [limitExpense, setLimitExpense] = useState("");
+  const [limitPoints, setLimitPoints] = useState("");
+  const [limitTicket, setLimitTicket] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [impersonateError, setImpersonateError] = useState<string | null>(null);
@@ -94,6 +98,10 @@ export function UsersPage() {
     setLimitRefund("");
     setLimitStock("");
     setLimitCredit("");
+    setLimitDiscount("");
+    setLimitExpense("");
+    setLimitPoints("");
+    setLimitTicket("");
     setOverrides({});
     setEditingUserId(null);
     setError(null);
@@ -118,6 +126,10 @@ export function UsersPage() {
     setLimitRefund(target.limitRefund == null ? "" : String(target.limitRefund));
     setLimitStock(target.limitStock == null ? "" : String(target.limitStock));
     setLimitCredit(target.limitCredit == null ? "" : String(target.limitCredit));
+    setLimitDiscount(target.limitDiscount == null ? "" : String(target.limitDiscount));
+    setLimitExpense(target.limitExpense == null ? "" : String(target.limitExpense));
+    setLimitPoints(target.limitPoints == null ? "" : String(target.limitPoints));
+    setLimitTicket(target.limitTicket == null ? "" : String(target.limitTicket));
     setError(null);
     setShowForm(true);
   };
@@ -151,7 +163,15 @@ export function UsersPage() {
       const n = Number(v);
       return Number.isNaN(n) || n < 0 ? undefined : n;
     };
-    const limits = { limitRefund: parseLimit(limitRefund), limitStock: parseLimit(limitStock), limitCredit: parseLimit(limitCredit) };
+    const limits = {
+      limitRefund: parseLimit(limitRefund),
+      limitStock: parseLimit(limitStock),
+      limitCredit: parseLimit(limitCredit),
+      limitDiscount: parseLimit(limitDiscount),
+      limitExpense: parseLimit(limitExpense),
+      limitPoints: parseLimit(limitPoints),
+      limitTicket: parseLimit(limitTicket),
+    };
     if (Object.values(limits).some((v) => v === undefined)) {
       setError(t("users.errors.limitFormat"));
       return;
@@ -176,6 +196,10 @@ export function UsersPage() {
             limitRefund: limits.limitRefund,
             limitStock: limits.limitStock,
             limitCredit: limits.limitCredit,
+            limitDiscount: limits.limitDiscount,
+            limitExpense: limits.limitExpense,
+            limitPoints: limits.limitPoints,
+            limitTicket: limits.limitTicket,
           },
           user?.permissions ?? {},
           user?.id,
@@ -195,6 +219,10 @@ export function UsersPage() {
             limitRefund: limits.limitRefund,
             limitStock: limits.limitStock,
             limitCredit: limits.limitCredit,
+            limitDiscount: limits.limitDiscount,
+            limitExpense: limits.limitExpense,
+            limitPoints: limits.limitPoints,
+            limitTicket: limits.limitTicket,
             createdBy: user?.id,
           },
           user?.permissions ?? {},
@@ -350,6 +378,22 @@ export function UsersPage() {
           <label>
             {t("approvalRoles.limitCredit")}
             <input style={inputStyle} type="number" step="any" min={0} value={limitCredit} onChange={(e) => setLimitCredit(e.target.value)} />
+          </label>
+          <label>
+            {t("approvalRoles.limitDiscount")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitDiscount} onChange={(e) => setLimitDiscount(e.target.value)} />
+          </label>
+          <label>
+            {t("approvalRoles.limitExpense")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitExpense} onChange={(e) => setLimitExpense(e.target.value)} />
+          </label>
+          <label>
+            {t("approvalRoles.limitPoints")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitPoints} onChange={(e) => setLimitPoints(e.target.value)} />
+          </label>
+          <label>
+            {t("approvalRoles.limitTicket")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitTicket} onChange={(e) => setLimitTicket(e.target.value)} />
           </label>
 
           {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}

@@ -5,6 +5,7 @@ import { t } from "@gestion-boutique/i18n";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requireAnyPermission, requirePermission, type PermissionSet } from "../domain/permissions";
+import { checkApproval, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
 import { getSettings } from "./SettingsService";
 import { createBatch, listLocations, recordMovement } from "./StockService";
 
@@ -67,6 +68,9 @@ export interface CreatePurchaseInput {
   amountPaid?: number;
   dueDate?: string;
   storeId: number;
+  // Approbation d'un responsable : de la marchandise qui entre en stock doit
+  // être validée (au-delà du plafond « mouvement de stock »).
+  approval?: ApprovalInput;
 }
 
 export async function createPurchase(
@@ -98,6 +102,8 @@ export async function createPurchase(
   // réception contrôlée (receivePurchase).
   const twoStep = settings.requirePurchaseReceipt;
   const priceRefs = await getPriceReferences(db, input.items.map((i) => i.variantId));
+  // Responsable vérifié hors transaction (le compteur d'essais doit survivre à un rollback).
+  const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
 
   // Même raisonnement que SalesService.createSale/RefundsService.createRefund :
   // toute la séquence lecture-validation-écriture doit être atomique, pas
@@ -112,6 +118,12 @@ export async function createPurchase(
 
     const total = roundMoney(input.items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0));
     const amountPaid = roundMoney(input.amountPaid ?? total);
+
+    // Le stock n'entre tout de suite qu'en achat simple : c'est alors l'entrée
+    // en stock qui est approuvée (en deux temps, ce sera à la réception).
+    const approvedBy = twoStep
+      ? null
+      : await checkApproval(db, { kind: "stock", amount: total, userId: input.userId, actingPermissions, verifiedApproverId });
 
     const number = await nextPurchaseNumber(db);
 
@@ -174,6 +186,7 @@ export async function createPurchase(
         referenceId: purchase.id,
         batchId: batch.id,
         userId: input.userId,
+        approvedBy: approvedBy ?? undefined,
       });
     }
 
@@ -205,7 +218,7 @@ export async function createPurchase(
       action: "create_purchase",
       entity: "purchase",
       entityId: purchase.id,
-      metadata: { number: purchase.number, total, invoiceReference, awaitingReceipt: twoStep, priceAlerts },
+      metadata: { number: purchase.number, total, invoiceReference, awaitingReceipt: twoStep, priceAlerts, approvedBy },
     });
 
     return purchase;
@@ -218,6 +231,7 @@ export interface ReceivePurchaseInput {
   // Quantité réellement comptée pour chaque ligne de la facture.
   lines: { purchaseItemId: number; receivedQuantity: number }[];
   note?: string;
+  approval?: ApprovalInput;
 }
 
 // Réception contrôlée d'un achat saisi en deux temps : le stock n'entre que pour
@@ -236,7 +250,11 @@ export async function receivePurchase(db: Database, input: ReceivePurchaseInput,
     if (rq == null || rq < 0) throw new Error(t("coreErrors.purchases.receiptQuantityRequired"));
   }
 
+  const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
   const result = await withTransaction(async () => {
+    // Valeur de ce qui entre réellement en stock (quantités comptées).
+    const receivedValue = roundMoney(items.reduce((sum, item) => sum + (receivedById.get(item.id) ?? 0) * item.unitCost, 0));
+    const approvedBy = await checkApproval(db, { kind: "stock", amount: receivedValue, userId: input.userId, actingPermissions, verifiedApproverId });
     const locations = await listLocations(db, purchase.storeId ?? undefined);
     const reserve = locations.find((l) => l.type === "reserve" || l.type.startsWith("reserve#"));
     if (!reserve) throw new Error(t("coreErrors.purchases.reserveLocationNotFound"));
@@ -271,6 +289,7 @@ export async function receivePurchase(db: Database, input: ReceivePurchaseInput,
         batchId: batch.id,
         userId: input.userId,
         note: input.note?.trim() || undefined,
+        approvedBy: approvedBy ?? undefined,
       });
     }
 
@@ -284,7 +303,7 @@ export async function receivePurchase(db: Database, input: ReceivePurchaseInput,
       .where(eq(schema.purchases.id, purchase.id))
       .returning()
       .get();
-    return { purchase: updated, shortfallValue: roundMoney(shortfallValue), surplusValue: roundMoney(surplusValue), discrepancies };
+    return { purchase: updated, shortfallValue: roundMoney(shortfallValue), surplusValue: roundMoney(surplusValue), discrepancies, approvedBy };
   });
 
   await logAction(db, {
@@ -299,6 +318,7 @@ export async function receivePurchase(db: Database, input: ReceivePurchaseInput,
       discrepancies: result.discrepancies,
       // Même personne à la saisie de la facture et à la réception : à surveiller.
       sameUser: purchase.userId === input.userId,
+      approvedBy: result.approvedBy,
       note: input.note?.trim() || null,
     },
   });

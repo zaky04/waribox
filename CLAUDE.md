@@ -4117,6 +4117,122 @@ Admin proposé (pas de Gérant), PIN valide → stock 5. Build + 60 tests OK.
 **Limites** : transferts de stock et réceptions d'achat non soumis à
 approbation ; approbateurs = PIN obligatoire.
 
+### 2026-09-26 — Remises, dépenses et points sous approbation ; droits par action ; score de risque
+
+**Demande** : hors promotion programmée, aucune réduction sans l'approbation du
+propriétaire ; mêmes règles pour les dépenses et les ajustements de points ;
+alertes et score de risque par employé ; tout réglable par boutique (seuils,
+plafonds par utilisateur, droits créer/modifier/approuver/supprimer).
+
+**Fait** :
+- `ApprovalKind` étendu : `discount`, `expense`, `points`. Seuils globaux
+  `approval_discount/expense/points_threshold` (**0 par défaut** = tout exige
+  une approbation ; vide = pas de contrôle) et plafonds personnels
+  `users.limit_discount/expense/points` (migration `id: 9`, aussi les seuils
+  d'alerte `alert_refund/loss/discount_percent`).
+- **Remise hors promotion** (`createSale`) : `computeUnauthorizedDiscount`
+  compare, **côté serveur**, le prix vendu au catalogue (surcharge variante ou
+  prix produit) et la remise aux promotions réellement en cours (produit +
+  facture) — jamais sur la foi de l'écran. L'échange de points de fidélité
+  n'est pas une remise manuelle (exclu). Le montant et le responsable sont
+  journalisés (`unauthorizedDiscount`, `discountApprovedBy`).
+- **Dépenses** : `createExpense` (montant) et `updateExpense` (seulement la
+  hausse) passent par l'approbation ; **points** : `adjustPoints` aussi.
+- **Droits par domaine** : nouvelles permissions `approve_refunds/stock/credit/
+  discounts/expenses/points` (en plus de `approve_actions` = tout), 
+  `delete_expenses` (séparé de `edit_expenses`), `adjust_loyalty_points`
+  (avant : ouvert à quiconque avait `manage_customers`, Vendeur compris).
+  `listApprovers(kind)` ne propose que les approbateurs du domaine ;
+  `checkApproval` revérifie le droit de l'approbateur pour CE domaine.
+  Nouvelle catégorie de droits « Approbations ».
+- Bouton **Refuser** dans la fenêtre d'approbation (`recordApprovalRejected`,
+  compte dans Contrôles).
+- **Contrôles** : score de risque 0-100 par employé (`computeRiskScore`,
+  plancher à 30 si un signal grave), colonnes Risque et Remises hors promo,
+  liste d'**alertes** triée par gravité (`report.alerts`) et carte « Alertes de
+  contrôle » sur l'Accueil (droit `view_controls`). Seuils d'alerte réglables
+  (Configuration → Contrôles de gestion).
+
+**Vérifié dans le navigateur** : dépense du gérant → « Approbation requise »,
+Refuser puis approuver avec le PIN de l'admin ; ajustement de points idem
+(message en points) ; devis converti par le caissier après hausse du prix
+catalogue → « remise hors promotion de 1 000 » ; **vente avec une vraie
+promotion 20 % → aucune approbation demandée** (pas de faux positif) ;
+un gérant avec seulement `approve_discounts` n'est pas proposé pour les points ;
+alerte + score sur Contrôles et sur l'Accueil. 95 tests.
+
+**Effets à connaître** : les seuils à 0 s'appliquent aussi aux installations
+existantes (un gérant qui saisit une dépense a besoin du PIN d'un
+Propriétaire/Admin — il doit en avoir un). Les rôles personnalisés qui avaient
+`edit_expenses` perdent la suppression tant qu'on ne leur donne pas
+`delete_expenses`. **Pas couvert** : prix libres des tickets de service (pas de
+catalogue), synchro réseau (l'événement de vente rejoué n'est pas ré-approuvé).
+
+**Suite du 2026-09-26 — entrées et sorties de stock approuvées** : le seuil
+d'approbation stock passe à **0 par défaut** (migration `id: 10` : les seuils
+vides existants sont mis à 0 ; le propriétaire peut les vider à nouveau).
+Approbation aussi pour la **marchandise qui entre par un achat** (`createPurchase`
+en achat simple, `receivePurchase` en deux temps, montant = valeur au coût de ce
+qui entre) ; le responsable est enregistré sur les mouvements (`approved_by`) et
+dans le journal. Pertes/casse/péremption/vol et entrées manuelles l'étaient déjà
+(même seuil). Vérifié : gérant → retrait de stock et achat demandent le PIN de
+l'admin, stock mis à jour après approbation. **Non gardés** : transferts entre
+emplacements (traçables, pas d'entrée/sortie réelle). **Trous repérés sur les
+tickets de service (pressing), non corrigés** : remise saisie à la création sans
+approbation ; prix d'un article modifiable après encaissement
+(`updateServiceOrderItem` recalcule le total sans rejouer paiement/créance, sans
+valeur avant/après dans le journal) ; statut d'un article réversible
+(retiré → reçu) et retrait possible sans vérifier le solde.
+
+### 2026-09-26 — Contrôles des tickets de service (pressing & autres services)
+
+**Contexte** : le propriétaire d'un service n'est ni au comptoir ni gérant.
+Trous repérés (voir entrée précédente) fermés, migration `id: 11`.
+
+- **Tarifs facultatifs** (`service_tariffs`, `ServiceTariffsService`) : le
+  propriétaire les définit s'il le souhaite (Configuration → « Tarifs des
+  services », droit `manage_settings`) ; **sans tarif la saisie reste
+  entièrement manuelle**. Une ligne choisie dans un tarif garde une copie du
+  prix de référence (`service_order_items.tariff_price`, relu côté serveur,
+  jamais du client) ; une ligne manuelle n'a pas de référence, seule sa
+  remise compte. Réduction (prix sous tarif ou remise) → approbation kind
+  `discount` (`computeTicketUnauthorizedDiscount`).
+- **Nouveau domaine d'approbation `ticket`** (`approve_tickets`,
+  `approval_ticket_threshold` = 0 par défaut, `users.limit_ticket`) pour :
+  baisse du total d'un ticket **déjà encaissé ou à crédit**
+  (`updateServiceOrderItem`, seule la baisse compte, avant/après journalisés),
+  **annulation**, **retour arrière d'un retrait**, et **retrait avec un solde
+  dû** (montant = solde). Un retrait sur un ticket soldé ne demande rien.
+- **Annulation formelle** (`cancelServiceOrder`, jamais de suppression) :
+  motif obligatoire, approbation, impossible si un article est déjà retiré ;
+  l'encaissé est remboursé par une **ligne de paiement négative** (la caisse et
+  la trésorerie se rééquilibrent seules) et les créances sont soldées. Un
+  ticket annulé est exclu du Suivi, du compte de résultat, de SYSCOHADA, de la
+  liste des tickets des Rapports et de l'Accueil.
+- **Contrôles** : tickets « prêts » jamais retirés depuis N jours
+  (`stale_ticket_days`, 30 par défaut), retraits avec solde dû, numéros
+  manquants dans les suites de ventes/tickets (`findNumberGaps`), tickets à zéro
+  ou très bas (< 30 % de la moyenne) et annulations par employé ; alertes
+  `subject: "shop"`.
+- **Résumé du jour** (`getDailySummary`/`buildDailySummaryText`) : chiffres du
+  jour + tout ce qui demande attention, à envoyer par WhatsApp au numéro
+  « à notifier » (Contrôles → Résumé du jour) ; **vérification par appel**
+  (`getVerificationSample`) : tirage au sort d'opérations avec client + téléphone,
+  message WhatsApp de confirmation, part d'opérations anonymes signalée.
+
+**Vérifié dans le navigateur** : tarif « Repassage » créé ; ticket au prix du
+tarif → aucune approbation ; à 200 au lieu de 300 → « remise hors promotion de
+100 » ; baisse 300→100 sur ticket encaissé → approbation « ticket de 200 » ;
+annulation → motif + approbation, ticket marqué Annulé et masqué du Suivi ;
+retour arrière d'un retrait → approbation ; retrait d'un ticket soldé → rien ;
+résumé du jour et tirage au sort générés. 88 tests.
+
+**Pas fait / limites** : les points de fidélité gagnés sur un ticket annulé ne
+sont pas repris ; un ticket dont le total est augmenté après encaissement ne
+crée pas de créance ; les lignes manuelles ne sont pas signalées quand des
+tarifs existent (piste : ratio lignes manuelles par employé) ; création d'un
+ticket toujours saisie du prix libre sans tarif (par choix du propriétaire).
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du

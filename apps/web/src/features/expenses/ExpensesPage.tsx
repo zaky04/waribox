@@ -23,6 +23,7 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { useApproval } from "../approval/ApprovalProvider";
 import { useAuth } from "../auth/useAuth";
 
 type Expense = typeof schema.expenses.$inferSelect;
@@ -38,6 +39,8 @@ export function ExpensesPage() {
   const { t } = useTranslation();
   const canManage = user ? hasPermission(user.permissions, "manage_expenses") : false;
   const canEdit = user ? hasPermission(user.permissions, "edit_expenses") : false;
+  const canDelete = user ? hasPermission(user.permissions, "delete_expenses") : false;
+  const approval = useApproval();
 
   const PAYMENT_METHODS: { value: string; label: string }[] = [
     { value: "cash", label: t("expenses.paymentMethods.cash") },
@@ -120,24 +123,30 @@ export function ExpensesPage() {
     setSaving(true);
     try {
       if (editingId) {
-        await updateExpense(db, editingId, {
-          category: category.trim(),
-          amount: value,
-          expenseDate,
-          paymentMethod,
-          note: note.trim() || undefined,
-          userId: user?.id,
-        }, user?.permissions ?? {});
+        await approval.run((a) =>
+          updateExpense(db, editingId, {
+            category: category.trim(),
+            amount: value,
+            expenseDate,
+            paymentMethod,
+            note: note.trim() || undefined,
+            userId: user?.id,
+            approval: a,
+          }, user?.permissions ?? {}),
+        );
       } else {
-        await createExpense(db, {
-          category: category.trim(),
-          amount: value,
-          expenseDate,
-          paymentMethod,
-          note: note.trim() || undefined,
-          userId: user?.id,
-          storeId: currentStoreId ?? undefined,
-        }, user?.permissions ?? {});
+        await approval.run((a) =>
+          createExpense(db, {
+            category: category.trim(),
+            amount: value,
+            expenseDate,
+            paymentMethod,
+            note: note.trim() || undefined,
+            userId: user?.id,
+            storeId: currentStoreId ?? undefined,
+            approval: a,
+          }, user?.permissions ?? {}),
+        );
       }
       resetForm();
       await refresh();
@@ -274,14 +283,17 @@ export function ExpensesPage() {
                 <td style={tdStyle}>{expense.note ?? "—"}</td>
                 <td style={tdStyle}>{userName(expense.userId)}</td>
                 <td style={tdStyle}>
-                  {canEdit && (
+                  {(canEdit || canDelete) && (
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      <button
-                        style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                        onClick={() => startEdit(expense)}
-                      >
-                        {t("expenses.edit")}
-                      </button>
+                      {canEdit && (
+                        <button
+                          style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                          onClick={() => startEdit(expense)}
+                        >
+                          {t("expenses.edit")}
+                        </button>
+                      )}
+                      {canDelete && (
                       <button
                         style={{
                           background: "transparent",
@@ -296,6 +308,7 @@ export function ExpensesPage() {
                       >
                         {t("expenses.delete")}
                       </button>
+                      )}
                     </div>
                   )}
                 </td>

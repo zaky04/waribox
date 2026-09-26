@@ -45,6 +45,7 @@ import type { AppearanceOptions } from "../../lib/appearance";
 import { StoresSection } from "../stores/StoresSection";
 import { runGoogleDriveBackup, runLocalBackup } from "./backupRunner";
 import { resizeImageToDataUrl } from "./imageUtils";
+import { ServiceTariffsSection } from "./ServiceTariffsSection";
 import { SyscohadaAccountsSection } from "./SyscohadaAccountsSection";
 import { isDesktopTauriRuntime } from "./tauriRuntime";
 
@@ -167,6 +168,14 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
   const [approvalRefund, setApprovalRefund] = useState("");
   const [approvalStock, setApprovalStock] = useState("");
   const [approvalCredit, setApprovalCredit] = useState("");
+  const [approvalDiscount, setApprovalDiscount] = useState("0");
+  const [approvalExpense, setApprovalExpense] = useState("0");
+  const [approvalPoints, setApprovalPoints] = useState("0");
+  const [approvalTicket, setApprovalTicket] = useState("0");
+  const [staleTicketDays, setStaleTicketDays] = useState("30");
+  const [alertRefund, setAlertRefund] = useState("5");
+  const [alertLoss, setAlertLoss] = useState("2");
+  const [alertDiscount, setAlertDiscount] = useState("5");
   const [cashVariance, setCashVariance] = useState("");
   const [priceAlert, setPriceAlert] = useState("10");
   const [requireReceipt, setRequireReceipt] = useState(false);
@@ -284,6 +293,14 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
     setApprovalRefund(opt(settings.approvalRefundThreshold));
     setApprovalStock(opt(settings.approvalStockThreshold));
     setApprovalCredit(opt(settings.approvalCreditThreshold));
+    setApprovalDiscount(opt(settings.approvalDiscountThreshold));
+    setApprovalExpense(opt(settings.approvalExpenseThreshold));
+    setApprovalPoints(opt(settings.approvalPointsThreshold));
+    setApprovalTicket(opt(settings.approvalTicketThreshold));
+    setStaleTicketDays(String(settings.staleTicketDays));
+    setAlertRefund(String(settings.alertRefundPercent));
+    setAlertLoss(String(settings.alertLossPercent));
+    setAlertDiscount(String(settings.alertDiscountPercent));
     setCashVariance(opt(settings.cashVarianceThreshold));
     setPriceAlert(String(settings.priceAlertPercent));
     setRequireReceipt(settings.requirePurchaseReceipt);
@@ -367,11 +384,24 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
       approvalRefundThreshold: optNumber(approvalRefund),
       approvalStockThreshold: optNumber(approvalStock),
       approvalCreditThreshold: optNumber(approvalCredit),
+      approvalDiscountThreshold: optNumber(approvalDiscount),
+      approvalExpenseThreshold: optNumber(approvalExpense),
+      approvalPointsThreshold: optNumber(approvalPoints),
+      approvalTicketThreshold: optNumber(approvalTicket),
       cashVarianceThreshold: optNumber(cashVariance),
       defaultCreditLimit: optNumber(defaultCreditLimit),
     };
     const priceAlertValue = Number(priceAlert);
-    if (Object.values(controlValues).some((v) => v === undefined) || Number.isNaN(priceAlertValue) || priceAlertValue < 0) {
+    const alertValues = [Number(alertRefund), Number(alertLoss), Number(alertDiscount)];
+    const staleDaysValue = Number(staleTicketDays);
+    if (
+      Object.values(controlValues).some((v) => v === undefined) ||
+      Number.isNaN(priceAlertValue) ||
+      priceAlertValue < 0 ||
+      alertValues.some((n) => Number.isNaN(n) || n < 0) ||
+      !Number.isInteger(staleDaysValue) ||
+      staleDaysValue < 1
+    ) {
       setError(t("controlsSettings.invalid"));
       return;
     }
@@ -435,6 +465,14 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
           approvalRefundThreshold: controlValues.approvalRefundThreshold,
           approvalStockThreshold: controlValues.approvalStockThreshold,
           approvalCreditThreshold: controlValues.approvalCreditThreshold,
+          approvalDiscountThreshold: controlValues.approvalDiscountThreshold,
+          approvalExpenseThreshold: controlValues.approvalExpenseThreshold,
+          approvalPointsThreshold: controlValues.approvalPointsThreshold,
+          approvalTicketThreshold: controlValues.approvalTicketThreshold,
+          staleTicketDays: staleDaysValue,
+          alertRefundPercent: alertValues[0],
+          alertLossPercent: alertValues[1],
+          alertDiscountPercent: alertValues[2],
           cashVarianceThreshold: controlValues.cashVarianceThreshold,
           defaultCreditLimit: controlValues.defaultCreditLimit,
           priceAlertPercent: priceAlertValue,
@@ -1390,6 +1428,26 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
           <input style={inputStyle} type="number" step="any" min={0} value={approvalCredit} onChange={(e) => setApprovalCredit(e.target.value)} />
         </label>
         <label>
+          {t("controlsSettings.approvalDiscount")}
+          <input style={inputStyle} type="number" step="any" min={0} value={approvalDiscount} onChange={(e) => setApprovalDiscount(e.target.value)} />
+        </label>
+        <label>
+          {t("controlsSettings.approvalExpense")}
+          <input style={inputStyle} type="number" step="any" min={0} value={approvalExpense} onChange={(e) => setApprovalExpense(e.target.value)} />
+        </label>
+        <label>
+          {t("controlsSettings.approvalPoints")}
+          <input style={inputStyle} type="number" step="any" min={0} value={approvalPoints} onChange={(e) => setApprovalPoints(e.target.value)} />
+        </label>
+        <label>
+          {t("controlsSettings.approvalTicket")}
+          <input style={inputStyle} type="number" step="any" min={0} value={approvalTicket} onChange={(e) => setApprovalTicket(e.target.value)} />
+        </label>
+        <label>
+          {t("controlsSettings.staleTicketDays")}
+          <input style={inputStyle} type="number" min={1} value={staleTicketDays} onChange={(e) => setStaleTicketDays(e.target.value)} />
+        </label>
+        <label>
           {t("controlsSettings.defaultCreditLimit")}
           <input style={inputStyle} type="number" step="any" min={0} value={defaultCreditLimit} onChange={(e) => setDefaultCreditLimit(e.target.value)} />
         </label>
@@ -1405,8 +1463,23 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
           <input type="checkbox" checked={requireReceipt} onChange={(e) => setRequireReceipt(e.target.checked)} />
           {t("controlsSettings.requireReceipt")}
         </label>
+        <strong style={{ fontSize: 14 }}>{t("controlsSettings.alertHeading")}</strong>
+        <label>
+          {t("controlsSettings.alertRefund")}
+          <input style={inputStyle} type="number" step="any" min={0} value={alertRefund} onChange={(e) => setAlertRefund(e.target.value)} />
+        </label>
+        <label>
+          {t("controlsSettings.alertLoss")}
+          <input style={inputStyle} type="number" step="any" min={0} value={alertLoss} onChange={(e) => setAlertLoss(e.target.value)} />
+        </label>
+        <label>
+          {t("controlsSettings.alertDiscount")}
+          <input style={inputStyle} type="number" step="any" min={0} value={alertDiscount} onChange={(e) => setAlertDiscount(e.target.value)} />
+        </label>
         <p style={{ color: "var(--color-text-muted)", fontSize: 12.5, margin: 0 }}>{t("controlsSettings.approverHint")}</p>
       </div>
+
+      {enableServiceOrders && <ServiceTariffsSection />}
 
       <div style={cardStyle}>
         <strong>{t("settings.security.heading")}</strong>

@@ -23,6 +23,7 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { useApproval } from "../approval/ApprovalProvider";
 import { useAuth } from "../auth/useAuth";
 
 type Customer = typeof schema.customers.$inferSelect;
@@ -31,6 +32,7 @@ type Credit = typeof schema.customerCredits.$inferSelect;
 export function CustomersPage() {
   const db = useDatabase();
   const { user } = useAuth();
+  const approval = useApproval();
   const { t } = useTranslation();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -172,15 +174,18 @@ export function CustomersPage() {
 
     setAdjusting(true);
     try {
-      await adjustPoints(
-        db,
-        {
-          customerId: customer.id,
-          pointsDelta: delta,
-          userId: user.id,
-          reason: pointsReason.trim() || undefined,
-        },
-        user.permissions,
+      await approval.run((a) =>
+        adjustPoints(
+          db,
+          {
+            customerId: customer.id,
+            pointsDelta: delta,
+            userId: user.id,
+            reason: pointsReason.trim() || undefined,
+            approval: a,
+          },
+          user.permissions,
+        ),
       );
       setAdjustingId(null);
       await refresh();
@@ -280,19 +285,21 @@ export function CustomersPage() {
                         {t("customers.edit")}
                       </button>
                     )}
-                    <button
-                      style={{
-                        ...primaryButtonStyle,
-                        padding: "6px 12px",
-                        fontSize: 14,
-                        background: "transparent",
-                        border: "1px solid var(--color-border)",
-                        color: "var(--color-text)",
-                      }}
-                      onClick={() => startAdjust(c)}
-                    >
-                      {t("customers.adjustPoints")}
-                    </button>
+                    {user && hasPermission(user.permissions, "adjust_loyalty_points") && (
+                      <button
+                        style={{
+                          ...primaryButtonStyle,
+                          padding: "6px 12px",
+                          fontSize: 14,
+                          background: "transparent",
+                          border: "1px solid var(--color-border)",
+                          color: "var(--color-text)",
+                        }}
+                        onClick={() => startAdjust(c)}
+                      >
+                        {t("customers.adjustPoints")}
+                      </button>
+                    )}
                   </div>
                   {adjustingId === c.id && (
                     <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>

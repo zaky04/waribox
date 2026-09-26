@@ -3,8 +3,9 @@ import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { withTransaction } from "@gestion-boutique/database";
 import { logAction } from "./AuditService";
-import { checkCreditApproval, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
+import { checkApproval, checkCreditApproval, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { findOrCreateCustomerByNameAndPhone } from "./CustomersService";
 import { earnPoints } from "./LoyaltyService";
@@ -27,6 +28,9 @@ export interface ServiceOrderItemInput {
   unitPrice: number;
   discount?: number;
   taxRate?: number;
+  // Tarif choisi (facultatif) : le prix de référence est relu côté serveur, jamais
+  // pris du client. Sans tarif = saisie manuelle.
+  tariffId?: number;
 }
 
 export type ServiceOrderPaymentMethod = "cash" | "card" | "mobile_money" | "credit";
@@ -58,6 +62,41 @@ function computeTaxAmount(grossTtc: number, taxRate: number): number {
   return grossTtc * (taxRate / (100 + taxRate));
 }
 
+// Part de réduction d'un ticket qui exige l'approbation du propriétaire : pour une
+// ligne issue d'un tarif, la baisse sous le tarif ; pour toute ligne, la remise
+// saisie. Une ligne manuelle (sans tarif) n'a pas de prix de référence, seule sa
+// remise compte.
+export function computeTicketUnauthorizedDiscount(
+  items: { quantity: number; unitPrice: number; discount?: number; tariffPrice?: number | null }[],
+): number {
+  let total = 0;
+  for (const item of items) {
+    const priceCut = item.tariffPrice != null ? Math.max(0, item.quantity * (item.tariffPrice - item.unitPrice)) : 0;
+    total += priceCut + (item.discount ?? 0);
+  }
+  const rounded = roundMoney(total);
+  return rounded <= 0.01 ? 0 : rounded;
+}
+
+// Somme réellement encaissée sur un ticket (les remboursements d'annulation sont
+// des lignes négatives, donc déjà déduits).
+async function getPaidTotal(db: Database, orderId: number): Promise<number> {
+  const rows = await db
+    .select({ amount: schema.payments.amount })
+    .from(schema.payments)
+    .where(and(eq(schema.payments.referenceType, "service_order"), eq(schema.payments.referenceId, orderId)));
+  return roundMoney(rows.reduce((sum, r) => sum + r.amount, 0));
+}
+
+// Solde encore dû sur un ticket (créances non soldées).
+export async function getServiceOrderOpenBalance(db: Database, orderId: number): Promise<number> {
+  const rows = await db
+    .select({ remaining: schema.customerCredits.remainingBalance, status: schema.customerCredits.status })
+    .from(schema.customerCredits)
+    .where(eq(schema.customerCredits.serviceOrderId, orderId));
+  return roundMoney(rows.filter((r) => r.status !== "settled").reduce((sum, r) => sum + r.remaining, 0));
+}
+
 export async function createServiceOrder(
   db: Database,
   input: CreateServiceOrderInput,
@@ -68,6 +107,31 @@ export async function createServiceOrder(
     throw new Error(t("coreErrors.serviceOrders.itemRequired"));
   }
   const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
+
+  return withTransaction(async () => {
+  // Prix de référence des lignes issues d'un tarif (relu ici, jamais du client).
+  const tariffRows = await db.select().from(schema.serviceTariffs);
+  const tariffById = new Map(tariffRows.map((r) => [r.id, r] as const));
+  const tariffPriceOf = (item: ServiceOrderItemInput): number | null => {
+    if (item.tariffId == null) return null;
+    const tariff = tariffById.get(item.tariffId);
+    if (!tariff) throw new Error(t("coreErrors.serviceTariffs.notFound"));
+    return tariff.price;
+  };
+  const unauthorizedDiscount = computeTicketUnauthorizedDiscount(
+    input.items.map((item) => ({ quantity: item.quantity, unitPrice: item.unitPrice, discount: item.discount, tariffPrice: tariffPriceOf(item) })),
+  );
+  // Aucune réduction (remise ou prix sous le tarif) sans approbation du responsable.
+  let discountApprovedBy: number | null = null;
+  if (unauthorizedDiscount > 0) {
+    discountApprovedBy = await checkApproval(db, {
+      kind: "discount",
+      amount: unauthorizedDiscount,
+      userId: input.userId,
+      actingPermissions,
+      verifiedApproverId,
+    });
+  }
 
   const trimmedName = input.newCustomerName?.trim();
   let customerId = input.customerId ?? null;
@@ -138,6 +202,7 @@ export async function createServiceOrder(
       discount: item.discount ?? 0,
       taxRate: item.taxRate ?? 0,
       total: computeItemTotal(item),
+      tariffPrice: tariffPriceOf(item),
     });
   }
 
@@ -174,10 +239,19 @@ export async function createServiceOrder(
     action: "create_service_order",
     entity: "service_order",
     entityId: order.id,
-    metadata: { number: order.number, total, paymentStatus },
+    metadata: {
+      number: order.number,
+      total,
+      paymentStatus,
+      // Lignes issues d'un tarif / saisies à la main, et réduction approuvée le cas échéant.
+      tariffLines: input.items.filter((i) => i.tariffId != null).length,
+      manualLines: input.items.filter((i) => i.tariffId == null).length,
+      ...(unauthorizedDiscount > 0 ? { unauthorizedDiscount, discountApprovedBy } : {}),
+    },
   });
 
   return order;
+  });
 }
 
 export interface ServiceOrderFilters {
@@ -256,6 +330,8 @@ export interface UpdateServiceOrderItemStatusInput {
   itemId: number;
   status: ServiceOrderItemStatus;
   userId: number;
+  // Responsable : retrait avec un solde dû, ou retour arrière d'un retrait.
+  approval?: ApprovalInput;
 }
 
 export async function updateServiceOrderItemStatus(
@@ -265,6 +341,25 @@ export async function updateServiceOrderItemStatus(
 ) {
   requirePermission(actingPermissions, "manage_service_orders");
   const now = new Date().toISOString();
+
+  const current = await db.select().from(schema.serviceOrderItems).where(eq(schema.serviceOrderItems.id, input.itemId)).get();
+  if (!current) throw new Error(t("coreErrors.serviceOrders.itemNotFound"));
+  const order = await db.select().from(schema.serviceOrders).where(eq(schema.serviceOrders.id, current.serviceOrderId)).get();
+  if (order?.cancelledAt) throw new Error(t("coreErrors.serviceOrders.cancelled"));
+  const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
+  // Un article ne part pas tant que le ticket n'est pas soldé, et un retrait
+  // enregistré ne se défait pas sans un responsable : sinon il suffirait de
+  // « reprendre » l'article après avoir gardé l'argent.
+  let approvedBy: number | null = null;
+  let openBalance = 0;
+  if (input.status === "picked_up" && current.status !== "picked_up") {
+    openBalance = await getServiceOrderOpenBalance(db, current.serviceOrderId);
+    if (openBalance > 0.01) {
+      approvedBy = await checkApproval(db, { kind: "ticket", amount: openBalance, userId: input.userId, actingPermissions, verifiedApproverId });
+    }
+  } else if (current.status === "picked_up" && input.status !== "picked_up") {
+    approvedBy = await checkApproval(db, { kind: "ticket", amount: order?.total ?? current.total, userId: input.userId, actingPermissions, verifiedApproverId });
+  }
 
   const item = await db
     .update(schema.serviceOrderItems)
@@ -292,7 +387,7 @@ export async function updateServiceOrderItemStatus(
     action: "update_service_order_item_status",
     entity: "service_order_item",
     entityId: input.itemId,
-    metadata: { status: input.status },
+    metadata: { from: current.status, status: input.status, openBalance, approvedBy },
   });
 
   return item;
@@ -315,6 +410,8 @@ export async function updateServiceOrder(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "edit_service_orders");
+  const before = await db.select().from(schema.serviceOrders).where(eq(schema.serviceOrders.id, orderId)).get();
+  if (before?.cancelledAt) throw new Error(t("coreErrors.serviceOrders.cancelled"));
   const order = await db
     .update(schema.serviceOrders)
     .set(input)
@@ -327,6 +424,11 @@ export async function updateServiceOrder(
     action: "update_service_order",
     entity: "service_order",
     entityId: orderId,
+    // Avant / après : corriger un ticket doit laisser une trace.
+    metadata: {
+      before: before ? { customerId: before.customerId, promisedDate: before.promisedDate, notes: before.notes } : null,
+      after: { customerId: order.customerId, promisedDate: order.promisedDate, notes: order.notes },
+    },
   });
 
   return order;
@@ -351,8 +453,10 @@ export async function updateServiceOrderItem(
   input: UpdateServiceOrderItemInput,
   userId: number,
   actingPermissions: PermissionSet,
+  approval?: ApprovalInput,
 ) {
   requirePermission(actingPermissions, "edit_service_orders");
+  const verifiedApproverId = await verifyApprovalInput(db, userId, approval);
   const current = await db
     .select()
     .from(schema.serviceOrderItems)
@@ -370,6 +474,22 @@ export async function updateServiceOrderItem(
     taxRate: input.taxRate ?? current.taxRate,
   };
   const total = computeItemTotal(merged);
+
+  const orderBefore = await db.select().from(schema.serviceOrders).where(eq(schema.serviceOrders.id, current.serviceOrderId)).get();
+  if (orderBefore?.cancelledAt) throw new Error(t("coreErrors.serviceOrders.cancelled"));
+  // Baisser le total d'un ticket déjà encaissé (ou à crédit) est le moyen
+  // classique d'empocher l'écart : la baisse exige l'approbation d'un responsable.
+  const allBefore = await listServiceOrderItems(db, current.serviceOrderId);
+  const totalBefore = roundMoney(allBefore.reduce((sum, i) => sum + i.total, 0));
+  const totalAfter = roundMoney(allBefore.reduce((sum, i) => sum + (i.id === itemId ? total : i.total), 0));
+  const decrease = roundMoney(totalBefore - totalAfter);
+  let approvedBy: number | null = null;
+  if (decrease > 0.01) {
+    const hasMoney = (await getPaidTotal(db, current.serviceOrderId)) > 0 || (await getServiceOrderOpenBalance(db, current.serviceOrderId)) > 0;
+    if (hasMoney) {
+      approvedBy = await checkApproval(db, { kind: "ticket", amount: decrease, userId, actingPermissions, verifiedApproverId });
+    }
+  }
 
   await db
     .update(schema.serviceOrderItems)
@@ -394,5 +514,72 @@ export async function updateServiceOrderItem(
     action: "update_service_order_item",
     entity: "service_order_item",
     entityId: itemId,
+    // Anciennes et nouvelles valeurs : un prix corrigé après coup doit se voir.
+    metadata: {
+      before: { description: current.description, quantity: current.quantity, unitPrice: current.unitPrice, discount: current.discount, total: current.total },
+      after: { description: merged.description, quantity: merged.quantity, unitPrice: merged.unitPrice, discount: merged.discount ?? 0, total },
+      orderTotal: { from: totalBefore, to: totalAfter },
+      approvedBy,
+    },
+  });
+}
+
+export interface CancelServiceOrderInput {
+  orderId: number;
+  userId: number;
+  reason: string;
+  approval?: ApprovalInput;
+}
+
+// Annulation formelle d'un ticket (jamais de suppression) : motif obligatoire,
+// approbation d'un responsable, remboursement de ce qui avait été encaissé
+// (ligne négative, donc la caisse et la trésorerie se rééquilibrent d'elles-
+// mêmes) et clôture des créances liées. Impossible si un article est déjà retiré.
+export async function cancelServiceOrder(db: Database, input: CancelServiceOrderInput, actingPermissions: PermissionSet) {
+  requirePermission(actingPermissions, "edit_service_orders");
+  const reason = input.reason.trim();
+  if (!reason) throw new Error(t("coreErrors.serviceOrders.cancelReasonRequired"));
+  const order = await db.select().from(schema.serviceOrders).where(eq(schema.serviceOrders.id, input.orderId)).get();
+  if (!order) throw new Error(t("coreErrors.serviceOrders.notFound"));
+  if (order.cancelledAt) throw new Error(t("coreErrors.serviceOrders.cancelled"));
+  const items = await listServiceOrderItems(db, order.id);
+  if (items.some((i) => i.status === "picked_up")) throw new Error(t("coreErrors.serviceOrders.cancelPickedUp"));
+  const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
+
+  const approvedBy = await withTransaction(async () => {
+    const approver = await checkApproval(db, { kind: "ticket", amount: order.total, userId: input.userId, actingPermissions, verifiedApproverId });
+    const paid = await getPaidTotal(db, order.id);
+    if (paid > 0.01) {
+      const firstPayment = await db
+        .select()
+        .from(schema.payments)
+        .where(and(eq(schema.payments.referenceType, "service_order"), eq(schema.payments.referenceId, order.id)))
+        .get();
+      await db.insert(schema.payments).values({
+        referenceType: "service_order",
+        referenceId: order.id,
+        method: firstPayment?.method ?? "cash",
+        amount: -paid,
+        receivedBy: input.userId,
+        storeId: order.storeId,
+      });
+    }
+    await db
+      .update(schema.customerCredits)
+      .set({ remainingBalance: 0, status: "settled" })
+      .where(eq(schema.customerCredits.serviceOrderId, order.id));
+    await db
+      .update(schema.serviceOrders)
+      .set({ cancelledAt: new Date().toISOString().replace("T", " ").slice(0, 19), cancelReason: reason, cancelledBy: input.userId })
+      .where(eq(schema.serviceOrders.id, order.id));
+    return { approver, paid };
+  });
+
+  await logAction(db, {
+    userId: input.userId,
+    action: "cancel_service_order",
+    entity: "service_order",
+    entityId: order.id,
+    metadata: { number: order.number, total: order.total, refunded: approvedBy.paid, reason, approvedBy: approvedBy.approver },
   });
 }

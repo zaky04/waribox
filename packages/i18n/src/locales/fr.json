@@ -100,7 +100,9 @@
     "open": "Ouvrir",
     "recentSales": "Dernières ventes",
     "noSalesYet": "aucune vente pour l'instant",
-    "chartLabel": "Ventes par heure aujourd'hui"
+    "chartLabel": "Ventes par heure aujourd'hui",
+    "controlAlerts": "Alertes de contrôle",
+    "controlAlertsDetail": "{{count}} signal(s) à vérifier sur 30 jours ({{danger}} grave(s))"
   },
   "sales": {
     "title": "Ventes",
@@ -627,9 +629,13 @@
       "stock_count_start": "Inventaire démarré",
       "stock_count_close": "Inventaire clôturé",
       "receive_purchase": "Achat réceptionné",
-      "approval_failed": "Approbation refusée",
+      "approval_failed": "Code d'approbation incorrect",
       "create_role": "Rôle créé",
-      "update_role": "Rôle modifié"
+      "update_role": "Rôle modifié",
+      "approval_rejected": "Demande refusée par un responsable",
+      "cancel_service_order": "Ticket de service annulé",
+      "create_service_tariff": "Tarif de service créé",
+      "update_service_tariff": "Tarif de service modifié"
     },
     "sales": {
       "searchPlaceholder": "Numéro de vente...",
@@ -1306,6 +1312,17 @@
       "repayFailed": "Impossible d'enregistrer le remboursement.",
       "historyDescriptionRequired": "Chaque article doit avoir une description.",
       "historySaveFailed": "Impossible d'enregistrer les modifications."
+    },
+    "tariff": {
+      "choose": "Tarif (facultatif)",
+      "manual": "— Saisie manuelle —"
+    },
+    "cancel": {
+      "button": "Annuler le ticket",
+      "reason": "Motif de l'annulation",
+      "confirm": "Confirmer l'annulation",
+      "tag": "Annulé",
+      "done": "Ticket annulé."
     }
   },
   "auth": {
@@ -1452,7 +1469,11 @@
     "serviceOrders": {
       "itemRequired": "Le ticket doit contenir au moins un article.",
       "customerIdRequiredCredit": "Indique au moins le nom du client pour un ticket à crédit ou un paiement partiel (pas besoin d'un compte client existant).",
-      "itemNotFound": "Article introuvable."
+      "itemNotFound": "Article introuvable.",
+      "cancelled": "Ce ticket est annulé : il ne peut plus être modifié.",
+      "cancelReasonRequired": "Le motif d'annulation est obligatoire.",
+      "cancelPickedUp": "Impossible d'annuler : au moins un article a déjà été retiré.",
+      "notFound": "Ticket de service introuvable."
     },
     "stores": {
       "noStoreExists": "Aucune boutique n'existe — la migration de la base a dû échouer."
@@ -1464,7 +1485,8 @@
     "approval": {
       "required": "Cette action ({{kind}} de {{amount}}) dépasse le plafond de {{threshold}} : l'approbation d'un responsable est requise.",
       "invalidApprover": "Ce responsable ne peut pas approuver cette action.",
-      "wrongPin": "Code PIN du responsable incorrect."
+      "wrongPin": "Code PIN du responsable incorrect.",
+      "requiredPoints": "Cette action ({{kind}} de {{amount}} points) dépasse le plafond de {{threshold}} points : l'approbation d'un responsable est requise."
     },
     "stock": {
       "quantityPositive": "La quantité doit être supérieure à zéro.",
@@ -1489,6 +1511,11 @@
       "notFound": "Rôle introuvable.",
       "adminLocked": "Le rôle Admin ne peut pas être modifié.",
       "sensitiveDenied": "Tu ne peux pas accorder ou retirer un droit sensible (gestion des utilisateurs, paramètres, approbation, journal, contrôles) que tu ne détiens pas toi-même."
+    },
+    "serviceTariffs": {
+      "nameRequired": "Le nom du service est obligatoire.",
+      "priceInvalid": "Le prix doit être un nombre positif ou nul.",
+      "notFound": "Ce tarif de service est introuvable."
     }
   },
   "whatsapp": {
@@ -1507,7 +1534,8 @@
     "expiringAlert": "Péremptions proches (≤ {{days}} jours) — {{count}} lot(s) chez {{business}} :\n{{lines}}",
     "expiringLine": "- {{name}} (lot {{lot}}) : expire le {{date}}",
     "overdueDebt": "Bonjour {{customerName}}, vous avez une créance de {{amount}} en retard depuis le {{dueDate}} chez {{business}} (réf. {{reference}}). Merci de bien vouloir régulariser dès que possible.",
-    "serviceOrderReady": "Bonjour {{customerName}}, votre ticket {{orderNumber}} est prêt à récupérer chez {{business}}."
+    "serviceOrderReady": "Bonjour {{customerName}}, votre ticket {{orderNumber}} est prêt à récupérer chez {{business}}.",
+    "verifyMessage": "Bonjour {{name}}, pouvez-vous confirmer votre {{kind}} n°{{number}} du {{date}} d'un montant de {{amount}} ? Merci !"
   },
   "documents": {
     "common": {
@@ -1810,7 +1838,11 @@
     "kinds": {
       "refund": "remboursement",
       "stock": "mouvement de stock",
-      "credit": "vente à crédit"
+      "credit": "vente à crédit",
+      "discount": "remise hors promotion",
+      "expense": "dépense",
+      "points": "ajustement de points",
+      "ticket": "modification ou annulation de ticket"
     },
     "title": "Approbation requise",
     "approver": "Responsable",
@@ -1818,7 +1850,9 @@
     "approve": "Approuver",
     "cancel": "Annuler",
     "cancelled": "Action annulée : approbation non donnée.",
-    "noApprover": "Aucun responsable n'a de code PIN. Définis un PIN pour un Propriétaire ou un Admin (Utilisateurs)."
+    "noApprover": "Aucun responsable n'a de code PIN. Définis un PIN pour un Propriétaire ou un Admin (Utilisateurs).",
+    "reject": "Refuser",
+    "rejected": "Demande refusée par le responsable."
   },
   "inventory": {
     "movementNote": "Inventaire n°{{id}}",
@@ -1886,7 +1920,15 @@
       "supplierPrices": "Prix par fournisseur (dernier prix)",
       "kind": "Type",
       "amount": "Montant",
-      "detail": "Détail"
+      "detail": "Détail",
+      "risk": "Risque",
+      "discount": "Remises hors promo",
+      "ticket": "Ticket",
+      "readyItems": "Articles prêts",
+      "value": "Valeur",
+      "age": "Âge (jours)",
+      "customer": "Client",
+      "remaining": "Solde dû"
     },
     "other": "prix modifiés : {{prices}} · dépenses corrigées : {{expenses}} · approbations refusées : {{failed}} · approbations données : {{approvals}}",
     "empty": "Rien sur la période.",
@@ -1903,7 +1945,8 @@
       "cash_variance": "Écart de caisse",
       "price_alert": "Hausse de prix d'achat",
       "credit_approved": "Crédit approuvé",
-      "stock_count": "Inventaire"
+      "stock_count": "Inventaire",
+      "discount": "Remise hors promotion"
     },
     "flags": {
       "refund_rate": "{{value}} % de ses ventes ont été remboursées (seuil {{threshold}} %).",
@@ -1915,7 +1958,14 @@
       "expense_edits": "{{value}} dépenses corrigées ou supprimées (seuil {{threshold}}).",
       "supplier_price_alert": "{{value}} hausse(s) de prix d'achat signalée(s).",
       "supplier_shortfall": "manquant constaté à la réception : {{amount}} à réclamer.",
-      "supplier_same_user_receipt": "{{value}} réception(s) faite(s) par la personne qui a saisi la facture."
+      "supplier_same_user_receipt": "{{value}} réception(s) faite(s) par la personne qui a saisi la facture.",
+      "discount_rate": "remises hors promotion : {{value}} % de ses ventes (seuil {{threshold}} %).",
+      "rejected_approvals": "{{value}} demandes refusées par un responsable.",
+      "low_tickets": "{{value}} tickets à zéro ou très inférieurs à la moyenne.",
+      "ticket_cancels": "{{value}} tickets annulés.",
+      "stale_tickets": "{{value}} ticket(s) prêt(s) depuis plus de {{threshold}} jours, jamais retirés.",
+      "unpaid_pickups": "articles retirés avec un solde dû : {{amount}} à récupérer.",
+      "number_gaps": "{{value}} numéro(s) manquant(s) dans la suite des ventes ou tickets (ligne supprimée ou jamais saisie)."
     },
     "integrityTitle": "Intégrité du journal",
     "integrityHint": "Chaque action est chaînée à la précédente par une empreinte : supprimer ou modifier une ligne du journal casse la chaîne. Note l'empreinte de tête de temps en temps : elle permet de détecter aussi un retour en arrière.",
@@ -1928,6 +1978,46 @@
       "prev_mismatch": "une ligne a été supprimée ou déplacée",
       "hash_mismatch": "le contenu d'une ligne a été modifié",
       "unhashed_after_chain": "une ligne a été ajoutée hors de l'application"
+    },
+    "alertsTitle": "Alertes à traiter en priorité ({{count}})",
+    "alertsNone": "Aucune alerte : rien d'anormal sur la période.",
+    "riskHint": "Le score de risque (0-100) combine remboursements, pertes, remises hors promotion, écarts de caisse, refus d'approbation, entrées manuelles et corrections. C'est un repère de lecture, pas une preuve.",
+    "riskLevels": {
+      "low": "faible",
+      "medium": "moyen",
+      "high": "élevé"
+    },
+    "extra": "points ajustés à la main : {{points}} · demandes refusées par un responsable : {{rejected}}",
+    "ticketsTitle": "Tickets de service à surveiller",
+    "staleTitle": "Prêts mais jamais retirés",
+    "unpaidTitle": "Retirés avec un solde dû",
+    "gapsTitle": "Numéros manquants",
+    "gapKinds": {
+      "sale": "Ventes",
+      "ticket": "Tickets"
+    },
+    "none": "Rien à signaler.",
+    "summary": {
+      "title": "Résumé du jour",
+      "hint": "Les chiffres de la journée et tout ce qui demande votre attention, en un message à envoyer par WhatsApp.",
+      "date": "Jour",
+      "generate": "Générer le résumé",
+      "send": "Envoyer sur WhatsApp",
+      "copy": "Copier",
+      "copied": "Copié.",
+      "noPhone": "Aucun téléphone à notifier : renseigne-le dans Configuration → Entreprise."
+    },
+    "verify": {
+      "title": "Vérification par appel",
+      "hint": "Tire au sort des opérations récentes et demande au client de les confirmer. Une opération qu'il ne reconnaît pas, ou à un autre montant, est un signal fort.",
+      "draw": "Tirer au sort",
+      "anonymous": "{{percent}} % des opérations de la période n'ont pas de client identifié : elles ne peuvent pas être vérifiées.",
+      "empty": "Aucune opération récente avec un client et un téléphone.",
+      "ask": "Demander confirmation",
+      "kinds": {
+        "sale": "vente",
+        "ticket": "ticket"
+      }
     }
   },
   "controlsSettings": {
@@ -1941,7 +2031,16 @@
     "requireReceipt": "Achats en deux temps : la facture est saisie, le stock n'entre qu'à la réception contrôlée (quantités comptées)",
     "defaultCreditLimit": "Plafond de crédit par défaut d'un client (vide = illimité)",
     "approverHint": "Astuce : le Propriétaire et l'Admin peuvent approuver. Il faut leur définir un code PIN (Utilisateurs → Modifier).",
-    "invalid": "Un seuil de contrôle doit être vide ou un nombre positif."
+    "invalid": "Un seuil de contrôle doit être vide ou un nombre positif.",
+    "approvalDiscount": "Remise ou prix inférieur au catalogue, hors promotion programmée, au-delà de — 0 = toute remise doit être approuvée par le propriétaire",
+    "approvalExpense": "Dépense au-delà de — 0 = toute dépense doit être approuvée",
+    "approvalPoints": "Ajustement manuel de points de fidélité au-delà de (points) — 0 = tout ajustement doit être approuvé",
+    "alertHeading": "Seuils d'alerte du tableau de bord Contrôles",
+    "alertRefund": "Alerte si les remboursements dépassent (% des ventes de l'employé)",
+    "alertLoss": "Alerte si les pertes déclarées dépassent (% des ventes de l'employé)",
+    "alertDiscount": "Alerte si les remises hors promotion dépassent (% des ventes de l'employé)",
+    "approvalTicket": "Ticket : baisse de prix après encaissement, annulation, retrait avec solde dû, retour arrière — au-delà de (0 = tout doit être approuvé)",
+    "staleTicketDays": "Signaler un ticket « prêt » non retiré depuis (jours)"
   },
   "approvalRoles": {
     "title": "Rôles et permissions",
@@ -1958,7 +2057,11 @@
     "limitCredit": "Vente à crédit max sans approbation",
     "newPin": "Nouveau code PIN (4 chiffres)",
     "pinSet": "Code PIN défini",
-    "pinMissing": "Pas de code PIN"
+    "pinMissing": "Pas de code PIN",
+    "limitDiscount": "Remise hors promotion max sans approbation",
+    "limitExpense": "Dépense max sans approbation",
+    "limitPoints": "Ajustement de points max sans approbation",
+    "limitTicket": "Modification/annulation de ticket max sans approbation"
   },
   "permissions": {
     "view_margins": "Voir les marges",
@@ -1978,7 +2081,7 @@
     "manage_credits": "Encaisser les créances",
     "manage_debts": "Payer les dettes fournisseurs",
     "manage_expenses": "Saisir des dépenses",
-    "edit_expenses": "Corriger/supprimer des dépenses",
+    "edit_expenses": "Corriger des dépenses",
     "view_reports": "Voir les rapports",
     "view_accounting": "Voir la comptabilité",
     "manage_settings": "Gérer les paramètres",
@@ -1986,18 +2089,28 @@
     "view_audit_logs": "Voir le journal des actions",
     "switch_store": "Changer de boutique",
     "view_controls": "Voir le tableau de bord Contrôles",
-    "approve_actions": "Approuver les actions au-dessus des plafonds",
+    "approve_actions": "Tout approuver (tous les domaines)",
     "categories": {
       "sales": "Ventes et caisse",
       "stock": "Produits et stock",
       "people": "Clients, fournisseurs et achats",
       "finance": "Argent : créances, dettes, dépenses, marges",
       "reports": "Rapports, journal et contrôles",
-      "admin": "Administration et approbations"
+      "admin": "Administration",
+      "approvals": "Approbations (qui peut valider quoi)"
     },
     "checkAll": "Tout cocher",
     "uncheckAll": "Tout décocher",
-    "sensitive": "droit sensible"
+    "sensitive": "droit sensible",
+    "delete_expenses": "Supprimer des dépenses",
+    "adjust_loyalty_points": "Ajuster à la main les points de fidélité",
+    "approve_refunds": "Approuver les remboursements",
+    "approve_stock": "Approuver les mouvements de stock",
+    "approve_credit": "Approuver les ventes à crédit",
+    "approve_discounts": "Approuver les remises hors promotion",
+    "approve_expenses": "Approuver les dépenses",
+    "approve_points": "Approuver les ajustements de points",
+    "approve_tickets": "Approuver les modifications de tickets"
   },
   "purchasesControls": {
     "invoiceReference": "N° de facture du fournisseur",
@@ -2036,5 +2149,34 @@
     "roleLacks": "le rôle ne l'accorde pas",
     "effective": "Droits effectifs : {{count}} sur {{total}}",
     "reset": "Remettre tout « selon le rôle »"
+  },
+  "dailySummary": {
+    "title": "Résumé du {{date}} — {{business}}",
+    "sales": "Ventes : {{count}} pour {{total}}",
+    "tickets": "Tickets de service : {{count}} pour {{total}}",
+    "expenses": "Dépenses : {{count}} pour {{total}}",
+    "watchTitle": "À surveiller :",
+    "discounts": "Remises hors promotion : {{count}} ({{total}})",
+    "refunds": "Remboursements : {{count}} ({{total}})",
+    "losses": "Pertes de stock : {{count}} (valeur {{total}})",
+    "entries": "Entrées de stock manuelles : {{count}} (valeur {{total}})",
+    "cancelled": "Tickets annulés : {{count}}",
+    "cash": "Caisse : {{count}} clôture(s), écart cumulé {{variance}}",
+    "cashNone": "Caisse : aucune clôture aujourd'hui",
+    "approvals": "Approbations données : {{count}}",
+    "alerts": "Alertes de contrôle ouvertes : {{count}} dont {{danger}} grave(s)",
+    "titleNoName": "Résumé du {{date}}"
+  },
+  "serviceTariffs": {
+    "title": "Tarifs des services (facultatif)",
+    "hint": "Enregistre tes services courants pour que le prix soit contrôlé : un prix sous le tarif ou une remise exige ton approbation. Sans tarif, la saisie des tickets reste entièrement manuelle.",
+    "name": "Service",
+    "price": "Prix",
+    "add": "Ajouter le tarif",
+    "disable": "Désactiver",
+    "enable": "Réactiver",
+    "save": "Enregistrer",
+    "none": "Aucun tarif : la saisie est manuelle.",
+    "inactive": "désactivé"
   }
 }

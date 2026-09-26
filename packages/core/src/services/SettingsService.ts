@@ -102,6 +102,14 @@ export interface UpdateSettingsInput {
   approvalRefundThreshold?: number | null;
   approvalStockThreshold?: number | null;
   approvalCreditThreshold?: number | null;
+  approvalDiscountThreshold?: number | null;
+  approvalExpenseThreshold?: number | null;
+  approvalPointsThreshold?: number | null;
+  approvalTicketThreshold?: number | null;
+  staleTicketDays?: number;
+  alertRefundPercent?: number;
+  alertLossPercent?: number;
+  alertDiscountPercent?: number;
   cashVarianceThreshold?: number | null;
   priceAlertPercent?: number;
   requirePurchaseReceipt?: boolean;

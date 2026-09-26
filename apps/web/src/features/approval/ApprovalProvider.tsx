@@ -2,12 +2,14 @@ import {
   ApprovalDeniedError,
   ApprovalRequiredError,
   listApprovers,
+  recordApprovalRejected,
   type ApprovalInput,
 } from "@gestion-boutique/core";
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { cardStyle, inputStyle, primaryButtonStyle } from "../../components/sharedStyles";
+import { useAuth } from "../auth/useAuth";
 
 // Approbation d'un responsable pour les actions qui dépassent un plafond
 // (remboursement, mouvement de stock, vente à crédit — voir ApprovalService).
@@ -35,6 +37,7 @@ interface PromptState {
 export function ApprovalProvider({ children }: { children: ReactNode }) {
   const db = useDatabase();
   const { t } = useTranslation();
+  const { user } = useAuth();
   const [prompt, setPrompt] = useState<PromptState | null>(null);
   const [approverId, setApproverId] = useState("");
   const [pin, setPin] = useState("");
@@ -42,7 +45,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
 
   const ask = useCallback(
     async (info: ApprovalRequiredError, error: string | null): Promise<ApprovalInput | null> => {
-      const approvers = await listApprovers(db);
+      const approvers = await listApprovers(db, info.kind);
       setApproverId(approvers[0] ? String(approvers[0].id) : "");
       setPin("");
       setPrompt({ info, error, approvers });
@@ -52,6 +55,20 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
     },
     [db],
   );
+
+  // Le responsable refuse : la demande est tracée (elle compte dans les signaux
+  // de Contrôles pour l'employé qui l'a faite), puis l'action est annulée.
+  const reject = () => {
+    if (prompt) {
+      void recordApprovalRejected(db, {
+        userId: user?.id ?? null,
+        approverId: approverId ? Number(approverId) : null,
+        kind: prompt.info.kind,
+        amount: prompt.info.amount,
+      });
+    }
+    finish(null);
+  };
 
   const finish = (value: ApprovalInput | null) => {
     setPrompt(null);
@@ -159,6 +176,22 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
               >
                 {t("approval.cancel")}
               </button>
+              {prompt.approvers.length > 0 && (
+                <button
+                  type="button"
+                  style={{
+                    background: "transparent",
+                    color: "var(--color-danger)",
+                    border: "1px solid var(--color-danger)",
+                    borderRadius: "var(--radius-md)",
+                    padding: "10px 16px",
+                    cursor: "pointer",
+                  }}
+                  onClick={reject}
+                >
+                  {t("approval.reject")}
+                </button>
+              )}
             </div>
           </form>
         </div>

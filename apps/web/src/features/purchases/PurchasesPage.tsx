@@ -33,6 +33,7 @@ import {
 } from "../../components/sharedStyles";
 import { IconX } from "../../components/icons";
 import { saveGeneratedFile } from "../../lib/saveFile";
+import { useApproval } from "../approval/ApprovalProvider";
 import { useAuth } from "../auth/useAuth";
 
 function timestampForFilename(): string {
@@ -62,6 +63,7 @@ const REORDER_WINDOW_DAYS = 30;
 export function PurchasesPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
+  const approval = useApproval();
   const { t } = useTranslation();
 
   const PAYMENT_METHODS: { value: PurchasePaymentMethod; label: string }[] = [
@@ -150,14 +152,17 @@ export function PurchasesPage() {
     setReceiveError(null);
     setReceiveSaving(true);
     try {
-      const result = await receivePurchase(
-        db,
-        {
-          purchaseId: receiving.id,
-          userId: user.id,
-          lines: receiveItems.map((i) => ({ purchaseItemId: i.id, receivedQuantity: Number(receivedInputs[i.id] ?? "") })),
-        },
-        user.permissions,
+      const result = await approval.run((a) =>
+        receivePurchase(
+          db,
+          {
+            purchaseId: receiving.id,
+            userId: user.id,
+            lines: receiveItems.map((i) => ({ purchaseItemId: i.id, receivedQuantity: Number(receivedInputs[i.id] ?? "") })),
+            approval: a,
+          },
+          user.permissions,
+        ),
       );
       setReceiveResult(
         result.shortfallValue > 0
@@ -267,20 +272,23 @@ export function PurchasesPage() {
     setSaving(true);
     try {
       const paidValue = amountPaid === "" ? total : Number(amountPaid);
-      const purchase = await createPurchase(db, {
-        invoiceReference: invoiceReference.trim() || undefined,
-        userId: user.id,
-        supplierId: Number(supplierId),
-        items: cart.map((line) => ({
-          variantId: line.variantId,
-          quantity: line.quantity,
-          unitCost: line.unitCost,
-        })),
-        paymentMethod,
-        amountPaid: paidValue,
-        dueDate: dueDate || undefined,
-        storeId: currentStoreId,
-      }, user.permissions);
+      const purchase = await approval.run((a) =>
+        createPurchase(db, {
+          invoiceReference: invoiceReference.trim() || undefined,
+          userId: user.id,
+          supplierId: Number(supplierId),
+          items: cart.map((line) => ({
+            variantId: line.variantId,
+            quantity: line.quantity,
+            unitCost: line.unitCost,
+          })),
+          paymentMethod,
+          amountPaid: paidValue,
+          dueDate: dueDate || undefined,
+          storeId: currentStoreId,
+          approval: a,
+        }, user.permissions),
+      );
 
       setLastPurchaseNumber(purchase.number);
       setInvoiceReference("");

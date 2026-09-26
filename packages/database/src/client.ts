@@ -259,6 +259,54 @@ export const MIGRATIONS: Migration[] = [
     id: 8,
     statements: ["ALTER TABLE users ADD COLUMN permission_overrides TEXT"],
   },
+  // Approbation des remises hors promotion, des dépenses et des ajustements de
+  // points (seuil 0 par défaut : tout exige l'approbation d'un responsable tant
+  // que le propriétaire n'a pas relevé le seuil), plafonds personnels, et seuils
+  // d'alerte du tableau de bord Contrôles.
+  {
+    id: 9,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN approval_discount_threshold REAL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN approval_expense_threshold REAL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN approval_points_threshold REAL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN alert_refund_percent REAL NOT NULL DEFAULT 5",
+      "ALTER TABLE business_settings ADD COLUMN alert_loss_percent REAL NOT NULL DEFAULT 2",
+      "ALTER TABLE business_settings ADD COLUMN alert_discount_percent REAL NOT NULL DEFAULT 5",
+      "ALTER TABLE users ADD COLUMN limit_discount REAL",
+      "ALTER TABLE users ADD COLUMN limit_expense REAL",
+      "ALTER TABLE users ADD COLUMN limit_points REAL",
+    ],
+  },
+  // Entrées (manuelles, achats) et sorties (pertes, casse, péremption, vol) de
+  // stock : approbation d'un responsable par défaut (seuil 0). Le seuil vide
+  // (aucun contrôle) était le défaut ; le propriétaire peut le remettre à vide.
+  {
+    id: 10,
+    statements: ["UPDATE business_settings SET approval_stock_threshold = 0 WHERE approval_stock_threshold IS NULL"],
+  },
+  // Contrôles des tickets de service : approbation des modifications/annulations
+  // (seuil 0 par défaut), tarifs de services FACULTATIFS (le propriétaire les
+  // définit s'il le souhaite, sinon la saisie reste manuelle), annulation
+  // formelle d'un ticket, seuil « prêt mais jamais retiré ».
+  {
+    id: 11,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN approval_ticket_threshold REAL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN stale_ticket_days INTEGER NOT NULL DEFAULT 30",
+      "ALTER TABLE users ADD COLUMN limit_ticket REAL",
+      "ALTER TABLE service_orders ADD COLUMN cancelled_at TEXT",
+      "ALTER TABLE service_orders ADD COLUMN cancel_reason TEXT",
+      "ALTER TABLE service_orders ADD COLUMN cancelled_by INTEGER",
+      "ALTER TABLE service_order_items ADD COLUMN tariff_price REAL",
+      `CREATE TABLE service_tariffs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        price REAL NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+    ],
+  },
 ];
 
 async function runMigrations(): Promise<void> {

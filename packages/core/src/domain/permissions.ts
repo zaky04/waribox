@@ -31,6 +31,19 @@ export const PERMISSIONS = [
   // utilisateur (remboursement, perte de stock, crédit). Un utilisateur qui la
   // possède n'a lui-même besoin d'aucune approbation.
   "approve_actions",
+  // Approbation par domaine : permet de confier, par exemple, l'approbation des
+  // remises à un gérant de confiance sans lui donner celle du stock.
+  "approve_refunds",
+  "approve_stock",
+  "approve_credit",
+  "approve_discounts",
+  "approve_expenses",
+  "approve_points",
+  "approve_tickets",
+  // Supprimer une dépense (distinct de la modifier) et ajuster à la main les
+  // points de fidélité d'un client (jusque-là ouvert à quiconque gérait les clients).
+  "delete_expenses",
+  "adjust_loyalty_points",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -43,10 +56,11 @@ export type PermissionOverrides = Partial<Record<Permission, boolean>>;
 export const PERMISSION_CATEGORIES: { key: string; permissions: Permission[] }[] = [
   { key: "sales", permissions: ["manage_sales", "manage_refunds", "manage_quotes", "edit_quotes", "manage_service_orders", "edit_service_orders", "manage_promotions"] },
   { key: "stock", permissions: ["manage_products", "manage_stock"] },
-  { key: "people", permissions: ["manage_customers", "edit_customers", "manage_suppliers", "edit_suppliers"] },
-  { key: "finance", permissions: ["manage_credits", "manage_debts", "manage_expenses", "edit_expenses", "view_margins", "view_accounting"] },
+  { key: "people", permissions: ["manage_customers", "edit_customers", "adjust_loyalty_points", "manage_suppliers", "edit_suppliers"] },
+  { key: "finance", permissions: ["manage_credits", "manage_debts", "manage_expenses", "edit_expenses", "delete_expenses", "view_margins", "view_accounting"] },
   { key: "reports", permissions: ["view_reports", "view_controls", "view_audit_logs"] },
-  { key: "admin", permissions: ["manage_settings", "manage_users", "switch_store", "approve_actions"] },
+  { key: "approvals", permissions: ["approve_actions", "approve_refunds", "approve_stock", "approve_credit", "approve_discounts", "approve_expenses", "approve_points", "approve_tickets"] },
+  { key: "admin", permissions: ["manage_settings", "manage_users", "switch_store"] },
 ];
 
 // Permissions "de pouvoir" : on ne peut les accorder ou les retirer (à un rôle ou
@@ -57,6 +71,14 @@ export const SENSITIVE_PERMISSIONS: Permission[] = [
   "manage_users",
   "manage_settings",
   "approve_actions",
+  "approve_refunds",
+  "approve_stock",
+  "approve_credit",
+  "approve_discounts",
+  "approve_expenses",
+  "approve_points",
+  "approve_tickets",
+  "adjust_loyalty_points",
   "view_audit_logs",
   "view_controls",
   "switch_store",
@@ -195,6 +217,8 @@ export const DEFAULT_ROLES: Record<DefaultRoleKey, { name: string; permissions: 
       manage_debts: true,
       manage_expenses: true,
       edit_expenses: true,
+      delete_expenses: true,
+      adjust_loyalty_points: true,
       view_reports: true,
       view_accounting: true,
     },

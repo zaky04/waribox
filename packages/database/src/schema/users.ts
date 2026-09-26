@@ -45,6 +45,10 @@ export const users = sqliteTable("users", {
   permissionOverrides: text("permission_overrides"),
   limitRefund: real("limit_refund"),
   limitStock: real("limit_stock"),
+  limitDiscount: real("limit_discount"),
+  limitExpense: real("limit_expense"),
+  limitPoints: real("limit_points"),
+  limitTicket: real("limit_ticket"),
   limitCredit: real("limit_credit"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

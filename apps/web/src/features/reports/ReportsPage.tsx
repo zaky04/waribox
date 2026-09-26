@@ -183,7 +183,7 @@ export function ReportsPage() {
     setServiceOrdersEnabled(settings?.enableServiceOrders ?? false);
     setBusinessSettings(settings ?? null);
     setCustomers(customerRows);
-    setServiceOrders(orderRows);
+    setServiceOrders(orderRows.filter((o) => !o.cancelledAt));
     setTaxSummary(tax);
     setCashSessions(sessions);
     setUsers(userRows);
