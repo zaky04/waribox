@@ -34,7 +34,7 @@ export async function openSession(
   input: OpenSessionInput,
   actingPermissions: PermissionSet,
 ) {
-  requirePermission(actingPermissions, "manage_sales");
+  requirePermission(actingPermissions, "open_close_cash");
   const existing = await getActiveSession(db, input.userId, input.storeId);
   if (existing) return existing;
 
@@ -118,7 +118,7 @@ export async function closeSession(
   input: CloseSessionInput,
   actingPermissions: PermissionSet,
 ) {
-  requirePermission(actingPermissions, "manage_sales");
+  requirePermission(actingPermissions, "open_close_cash");
   const current = await db
     .select()
     .from(schema.cashSessions)

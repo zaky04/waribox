@@ -1,5 +1,6 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { eq } from "drizzle-orm";
 import { roundMoney } from "../domain/money";
 import { getStockCountReport } from "./InventoryService";
 import { getSettings } from "./SettingsService";
@@ -37,6 +38,7 @@ export type ControlFlagCode =
   | "stale_tickets"
   | "unpaid_pickups"
   | "number_gaps"
+  | "pending_approvals"
   | "supplier_price_alert"
   | "supplier_shortfall"
   | "supplier_same_user_receipt";
@@ -429,6 +431,8 @@ export async function getControlsReport(db: Database, range: ControlsRange, stor
       if (meta.discountApprovedBy != null) emp(meta.discountApprovedBy).approvalsGiven++;
       events.push({ at: a.createdAt, kind: "discount", userId: a.userId, amount: meta.unauthorizedDiscount, detail: meta.number ?? "" });
     } else if (a.action === "approval_rejected" && a.userId != null) emp(a.userId).approvalsRejected++;
+    else if (a.action === "approval_request_rejected" && meta.requestedBy != null) emp(meta.requestedBy).approvalsRejected++;
+    else if (a.action === "approval_request_approved" && a.userId != null) emp(a.userId).approvalsGiven++;
     else if (a.action === "cancel_service_order" && a.userId != null) {
       emp(a.userId).ticketCancels++;
       if (meta.approvedBy != null) emp(meta.approvedBy).approvalsGiven++;
@@ -557,12 +561,20 @@ export async function getControlsReport(db: Database, range: ControlsRange, stor
     { kind: "ticket" as const, missing: findNumberGaps(serviceOrders.filter((x) => storeOk(x.storeId)).map((x) => x.number)).slice(0, 20) },
   ].filter((g) => g.missing.length > 0);
 
+  // Demandes d'approbation qui attendent trop longtemps : ce n'est pas un signal
+  // contre un employé mais un blocage possible du commerce — à débloquer.
+  const pendingHours = settings.approvalPendingAlertHours;
+  const pendingRows = pendingHours > 0 ? await db.select().from(schema.approvalRequests).where(eq(schema.approvalRequests.status, "pending")) : [];
+  const oldPending = pendingRows.filter((r) => (nowMs - Date.parse(r.createdAt.replace(" ", "T") + "Z")) / 3600000 >= pendingHours && storeOk(r.storeId));
+  const oldestPendingHours = oldPending.reduce((max, r) => Math.max(max, (nowMs - Date.parse(r.createdAt.replace(" ", "T") + "Z")) / 3600000), 0);
+
   const supplierList = [...supplierMap.values()].sort((a, b) => b.flags.length - a.flags.length || b.purchasesTotal - a.purchasesTotal);
   const alerts: ControlAlert[] = [
     ...employees.flatMap((e) => e.flags.map((f) => ({ subject: "employee" as const, id: e.userId, name: e.name, code: f.code, severity: f.severity, value: f.value }))),
     ...supplierList.flatMap((sp) => sp.flags.map((f) => ({ subject: "supplier" as const, id: sp.supplierId, name: sp.name, code: f.code, severity: f.severity, value: f.value }))),
     ...(staleTickets.length > 0 ? [{ subject: "shop" as const, id: 0, name: "", code: "stale_tickets" as const, severity: "warning" as const, value: staleTickets.length }] : []),
     ...(unpaidPickups.length > 0 ? [{ subject: "shop" as const, id: 0, name: "", code: "unpaid_pickups" as const, severity: "danger" as const, value: unpaidPickups.reduce((sum, u) => sum + u.remaining, 0) }] : []),
+    ...(oldPending.length > 0 ? [{ subject: "shop" as const, id: 0, name: "", code: "pending_approvals" as const, severity: oldestPendingHours >= pendingHours * 3 ? ("danger" as const) : ("warning" as const), value: oldPending.length }] : []),
     ...(numberGaps.length > 0 ? [{ subject: "shop" as const, id: 0, name: "", code: "number_gaps" as const, severity: "danger" as const, value: numberGaps.reduce((sum, g) => sum + g.missing.length, 0) }] : []),
   ].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "danger" ? -1 : 1));
 

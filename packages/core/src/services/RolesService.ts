@@ -6,6 +6,7 @@ import {
   DEFAULT_ROLES,
   PERMISSIONS,
   assertCanChangePermissions,
+  inheritSplitPermissions,
   mergeMissingPermissions,
   requirePermission,
   type DefaultRoleKey,
@@ -34,7 +35,10 @@ export async function ensureDefaultRoles(db: Database): Promise<Record<DefaultRo
     if (existing) {
       result[key] = existing.id;
       const currentPermissions = JSON.parse(existing.permissions) as PermissionSet;
-      const { merged, changed } = mergeMissingPermissions(currentPermissions, role.permissions);
+      const inherited = inheritSplitPermissions(currentPermissions);
+      const { merged: mergedDefaults, changed: defaultsChanged } = mergeMissingPermissions(inherited.merged, role.permissions);
+      const merged = mergedDefaults;
+      const changed = inherited.changed || defaultsChanged;
       if (changed) {
         await db
           .update(schema.roles)
@@ -46,11 +50,19 @@ export async function ensureDefaultRoles(db: Database): Promise<Record<DefaultRo
 
     const created = await db
       .insert(schema.roles)
-      .values({ name: role.name, permissions: JSON.stringify(role.permissions) })
+      .values({ name: role.name, permissions: JSON.stringify(inheritSplitPermissions(role.permissions).merged) })
       .returning()
       .get();
 
     result[key] = created.id;
+  }
+
+  // Rôles sur mesure : rattrape les droits découpés depuis leur droit d'origine.
+  const custom = await db.select().from(schema.roles);
+  for (const r of custom) {
+    if ((Object.values(DEFAULT_ROLES) as { name: string }[]).some((d) => d.name === r.name)) continue;
+    const { merged, changed } = inheritSplitPermissions(JSON.parse(r.permissions) as PermissionSet);
+    if (changed) await db.update(schema.roles).set({ permissions: JSON.stringify(merged) }).where(eq(schema.roles.id, r.id));
   }
 
   return result;

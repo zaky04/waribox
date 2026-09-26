@@ -3,7 +3,7 @@ import { schema } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
 import { desc, eq } from "drizzle-orm";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
-import { requireApproval, type ApprovalInput } from "./ApprovalService";
+import { ApprovalQueuedError, createApprovalRequest, requireApprovalDeferrable, type ApprovalInput } from "./ApprovalService";
 import { logAction } from "./AuditService";
 import { getSettings } from "./SettingsService";
 
@@ -189,13 +189,33 @@ export async function adjustPoints(db: Database, input: AdjustPointsInput, actin
   }
   // Des points se convertissent en remises réelles : au-delà du plafond, un
   // responsable doit approuver (voir ApprovalService).
-  const approvedBy = await requireApproval(db, {
+  const { approvedBy, deferred } = await requireApprovalDeferrable(db, {
     kind: "points",
     amount: Math.abs(input.pointsDelta),
     userId: input.userId,
     actingPermissions,
     approval: input.approval,
   });
+  if (deferred) {
+    const request = await createApprovalRequest(db, {
+      kind: "points",
+      amount: Math.abs(input.pointsDelta),
+      requestedBy: input.userId,
+      summary: t("approvalRequests.summary.points", { customer: customer.fullName, points: input.pointsDelta, reason: input.reason ?? "" }),
+      payload: { input: { customerId: input.customerId, pointsDelta: input.pointsDelta, userId: input.userId, reason: input.reason } },
+    });
+    throw new ApprovalQueuedError(request.id);
+  }
+  return applyPointsAdjustment(db, input, approvedBy);
+}
+
+// Applique l'ajustement (revalide le solde à l'instant de l'application) : appelée
+// directement, ou quand un responsable approuve une demande mise en file.
+export async function applyPointsAdjustment(db: Database, input: AdjustPointsInput, approvedBy: number | null) {
+  const customer = await db.select().from(schema.customers).where(eq(schema.customers.id, input.customerId)).get();
+  if (!customer) {
+    throw new Error(t("coreErrors.loyalty.customerNotFound"));
+  }
   const newBalance = customer.loyaltyPoints + input.pointsDelta;
   if (newBalance < 0) {
     throw new Error(t("coreErrors.common.insufficientLoyaltyPoints", { points: customer.loyaltyPoints }));

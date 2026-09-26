@@ -98,6 +98,7 @@ export function ReportsPage() {
   const { user, currentStoreId } = useAuth();
   const { t } = useTranslation();
   const canViewMargins = user ? hasPermission(user.permissions, "view_margins") : false;
+  const canExport = user ? hasPermission(user.permissions, "export_reports") : false;
 
   const PAYMENT_STATUS_LABELS: Record<string, string> = {
     paid: t("common.paymentStatus.paid"),
@@ -407,10 +408,10 @@ export function ReportsPage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24, flexWrap: "wrap", gap: 8 }}>
             <strong>{t("reports.topProducts")}</strong>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              <button style={secondaryButtonStyle} onClick={exportSalesPdf}>
+              <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportSalesPdf}>
                 {t("reports.exportPdf")}
               </button>
-              <button style={secondaryButtonStyle} onClick={exportSalesExcel}>
+              <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportSalesExcel}>
                 {t("reports.exportExcel")}
               </button>
             </div>
@@ -470,10 +471,10 @@ export function ReportsPage() {
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-            <button style={secondaryButtonStyle} onClick={exportMarginsPdf}>
+            <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportMarginsPdf}>
               {t("reports.exportPdf")}
             </button>
-            <button style={secondaryButtonStyle} onClick={exportMarginsExcel}>
+            <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportMarginsExcel}>
               {t("reports.exportExcel")}
             </button>
           </div>
@@ -563,10 +564,10 @@ export function ReportsPage() {
               </div>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-                <button style={secondaryButtonStyle} onClick={exportCashFlowPdf}>
+                <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportCashFlowPdf}>
                   {t("reports.exportPdf")}
                 </button>
-                <button style={secondaryButtonStyle} onClick={exportCashFlowExcel}>
+                <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportCashFlowExcel}>
                   {t("reports.exportExcel")}
                 </button>
               </div>
@@ -629,10 +630,10 @@ export function ReportsPage() {
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-            <button style={secondaryButtonStyle} onClick={exportTaxPdf}>
+            <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportTaxPdf}>
               {t("reports.exportPdf")}
             </button>
-            <button style={secondaryButtonStyle} onClick={exportTaxExcel}>
+            <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportTaxExcel}>
               {t("reports.exportExcel")}
             </button>
           </div>
@@ -642,10 +643,10 @@ export function ReportsPage() {
       {subTab === "cash" && (
         <>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 24 }}>
-            <button style={secondaryButtonStyle} onClick={exportCashSessionsPdf}>
+            <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportCashSessionsPdf}>
               {t("reports.exportPdf")}
             </button>
-            <button style={secondaryButtonStyle} onClick={exportCashSessionsExcel}>
+            <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportCashSessionsExcel}>
               {t("reports.exportExcel")}
             </button>
           </div>

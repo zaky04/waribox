@@ -1,14 +1,15 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema, withTransaction } from "@gestion-boutique/database";
-import { t } from "@gestion-boutique/i18n";
+import { formatMoneyPlain, t } from "@gestion-boutique/i18n";
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { DEFAULT_LOCATIONS, type DefaultLocationKey } from "../domain/stock";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
-import { requireApproval, type ApprovalInput } from "./ApprovalService";
+import { buildApprovalRequestCreatedEvent, createApprovalRequest, describeVariant, requireApproval, requireApprovalDeferrable, type ApprovalInput } from "./ApprovalService";
 import { logAction } from "./AuditService";
 import {
   buildSyncEvent,
   emitSyncEvent,
+  type SyncEvent,
   type StockEntryCreatedEventPayload,
   type StockLossCreatedEventPayload,
   type StockTransferCreatedEventPayload,
@@ -167,7 +168,7 @@ export async function transferStock(
   input: TransferStockInput,
   actingPermissions: PermissionSet,
 ) {
-  requirePermission(actingPermissions, "manage_stock");
+  requirePermission(actingPermissions, "transfer_stock");
   if (input.quantity <= 0) throw new Error(t("coreErrors.stock.quantityPositive"));
   if (input.fromLocationId === input.toLocationId) throw new Error(t("coreErrors.stock.sameLocation"));
   const available = await getLocationBalance(db, input.variantId, input.fromLocationId);
@@ -479,17 +480,21 @@ export async function addManualStockEntry(
   if (input.quantity <= 0) throw new Error(t("coreErrors.stock.quantityPositive"));
   if (!input.note.trim()) throw new Error(t("coreErrors.stock.noteRequired"));
   const value = await valueAtCost(db, input.variantId, input.quantity);
-  const approvedBy = await requireApproval(db, {
+  // Entrée sous le mode « à valider ensuite » : appliquée tout de suite, la demande
+  // sert au propriétaire à la valider (ou la contester) après coup.
+  const { approvedBy, deferred } = await requireApprovalDeferrable(db, {
     kind: "stock",
     amount: value,
     userId: input.userId,
     actingPermissions,
     approval: input.approval,
   });
+  const productName = await describeVariant(db, input.variantId);
   const balanceBefore = await getLocationBalance(db, input.variantId, input.locationId);
 
   // Enveloppé dans withTransaction (Phase 2, voir CLAUDE.md) — prérequis
   // pour répliquer lot+mouvement comme un seul événement atomique.
+  let requestEvent: SyncEvent | undefined;
   const event = await withTransaction(async () => {
     let batchId: number | undefined;
     let batchPayload: StockEntryCreatedEventPayload["batch"];
@@ -524,6 +529,17 @@ export async function addManualStockEntry(
       approvedBy: approvedBy ?? undefined,
     });
 
+    if (deferred) {
+      const request = await createApprovalRequest(db, {
+        kind: "stock",
+        amount: value,
+        requestedBy: input.userId,
+        summary: t("approvalRequests.summary.stockEntry", { quantity: input.quantity, product: productName, value: formatMoneyPlain(value), note: input.note.trim() }),
+        payload: { movementIds: [movement.id], movementSyncIds: [movement.syncId] },
+      });
+      requestEvent = buildApprovalRequestCreatedEvent(request);
+    }
+
     return buildSyncEvent<StockEntryCreatedEventPayload>("stockEntry.created", {
       batch: batchPayload,
       movement: {
@@ -539,6 +555,7 @@ export async function addManualStockEntry(
   });
 
   emitSyncEvent(event);
+  if (requestEvent) emitSyncEvent(requestEvent);
 
   await logAction(db, {
     userId: input.userId ?? null,
@@ -576,22 +593,24 @@ export async function recordStockLoss(
   input: RecordStockLossInput,
   actingPermissions: PermissionSet,
 ) {
-  requirePermission(actingPermissions, "manage_stock");
+  requirePermission(actingPermissions, "record_stock_losses");
   if (input.quantity <= 0) throw new Error(t("coreErrors.stock.quantityPositive"));
   const balanceBefore = await getLocationBalance(db, input.variantId, input.locationId);
   if (input.quantity > balanceBefore) throw new Error(t("coreErrors.stock.insufficient", { available: balanceBefore }));
   const value = await valueAtCost(db, input.variantId, input.quantity);
-  const approvedBy = await requireApproval(db, {
+  const { approvedBy, deferred } = await requireApprovalDeferrable(db, {
     kind: "stock",
     amount: value,
     userId: input.userId,
     actingPermissions,
     approval: input.approval,
   });
+  const productName = await describeVariant(db, input.variantId);
 
   // Enveloppé dans withTransaction (Phase 2, voir CLAUDE.md) — une seule
   // écriture ici, mais la cohérence de convention avec les autres
   // opérations réplicables importe plus que la brièveté.
+  let requestEvent: SyncEvent | undefined;
   const event = await withTransaction(async () => {
     const movement = await recordMovement(db, {
       variantId: input.variantId,
@@ -603,6 +622,17 @@ export async function recordStockLoss(
       note: input.note?.trim() || undefined,
       approvedBy: approvedBy ?? undefined,
     });
+
+    if (deferred) {
+      const request = await createApprovalRequest(db, {
+        kind: "stock",
+        amount: value,
+        requestedBy: input.userId,
+        summary: t("approvalRequests.summary.stockLoss", { quantity: input.quantity, product: productName, value: formatMoneyPlain(value), reason: t(`journals.lossReasons.${input.reason}`, { defaultValue: input.reason }) }),
+        payload: { movementIds: [movement.id], movementSyncIds: [movement.syncId] },
+      });
+      requestEvent = buildApprovalRequestCreatedEvent(request);
+    }
 
     return buildSyncEvent<StockLossCreatedEventPayload>("stockLoss.created", {
       movement: {
@@ -618,6 +648,7 @@ export async function recordStockLoss(
   });
 
   emitSyncEvent(event);
+  if (requestEvent) emitSyncEvent(requestEvent);
 
   await logAction(db, {
     userId: input.userId ?? null,

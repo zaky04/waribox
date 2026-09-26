@@ -205,6 +205,7 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
 
     // Plafond de crédit du client et seuil d'approbation : lève
     // ApprovalRequiredError si la part à crédit les dépasse sans approbation.
+    if (amountPaid < total) requirePermission(actingPermissions, "sell_on_credit");
     let creditApprovedBy: number | null = null;
     if (amountPaid < total) {
       creditApprovedBy = await checkCreditApproval(db, {

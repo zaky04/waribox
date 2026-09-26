@@ -3,6 +3,7 @@ import { schema } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
 import { eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { requireApproval, type ApprovalInput } from "./ApprovalService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 
 export interface CategoryInput {
@@ -111,6 +112,7 @@ export interface UpdateProductInput {
   lowStockThreshold?: number;
   trackExpiry?: boolean;
   updatedBy?: number;
+  approval?: ApprovalInput;
 }
 
 export async function updateProduct(
@@ -121,6 +123,15 @@ export async function updateProduct(
 ) {
   requirePermission(actingPermissions, "manage_products");
   const before = await db.select().from(schema.products).where(eq(schema.products.id, productId)).get();
+  // Changer un prix (vente ou achat) : droit dédié et, au-delà du seuil, approbation.
+  let priceApprovedBy: number | null = null;
+  const saleDelta = input.salePrice !== undefined && before ? Math.abs(input.salePrice - before.salePrice) : 0;
+  const purchaseDelta = input.purchasePrice !== undefined && before ? Math.abs(input.purchasePrice - before.purchasePrice) : 0;
+  const priceDelta = Math.max(saleDelta, purchaseDelta);
+  if (priceDelta > 0.001) {
+    requirePermission(actingPermissions, "edit_product_prices");
+    priceApprovedBy = await requireApproval(db, { kind: "price", amount: priceDelta, userId: input.updatedBy, actingPermissions, approval: input.approval });
+  }
   const updates: Partial<typeof schema.products.$inferInsert> = {};
   if (input.name !== undefined) updates.name = input.name;
   if (input.categoryId !== undefined) updates.categoryId = input.categoryId;
@@ -152,6 +163,7 @@ export async function updateProduct(
       metadata: {
         name: updated.name,
         salePrice: updated.salePrice,
+        ...(priceApprovedBy != null ? { approvedBy: priceApprovedBy } : {}),
         changes: diffFields(before, updated, ["name", "categoryId", "unit", "purchasePrice", "salePrice", "taxRate", "lowStockThreshold", "trackExpiry"]),
       },
     });

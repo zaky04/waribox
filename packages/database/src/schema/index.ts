@@ -20,3 +20,4 @@ export * from "./promotions";
 export * from "./syscohada";
 export * from "./sync";
 export * from "./fne";
+export * from "./approvals";

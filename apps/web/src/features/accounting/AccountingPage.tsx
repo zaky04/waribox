@@ -1,4 +1,5 @@
 import { formatAmount } from "../../lib/format";
+import { useAuth } from "../auth/useAuth";
 import {
   buildBalanceSheetReportExcel,
   buildBalanceSheetReportPdf,
@@ -13,6 +14,7 @@ import {
   getBalanceGenerale,
   getBalanceSheet,
   getIncomeStatement,
+  hasPermission,
   getJournalAchats,
   getJournalTresorerie,
   getJournalVentes,
@@ -47,6 +49,8 @@ const secondaryButtonStyle = {
 export function AccountingPage() {
   const db = useDatabase();
   const { t } = useTranslation();
+  const { user: authUser } = useAuth();
+  const canExport = hasPermission(authUser?.permissions ?? {}, "export_reports");
 
   const [subTab, setSubTab] = useState<SubTab>("income");
 
@@ -232,10 +236,10 @@ export function AccountingPage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24, flexWrap: "wrap", gap: 8 }}>
                 <strong>{t("accounting.expensesByCategory")}</strong>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  <button style={secondaryButtonStyle} onClick={exportIncomePdf}>
+                  <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportIncomePdf}>
                     {t("accounting.exportPdf")}
                   </button>
-                  <button style={secondaryButtonStyle} onClick={exportIncomeExcel}>
+                  <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportIncomeExcel}>
                     {t("accounting.exportExcel")}
                   </button>
                 </div>
@@ -309,10 +313,10 @@ export function AccountingPage() {
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-            <button style={secondaryButtonStyle} onClick={exportBalancePdf}>
+            <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportBalancePdf}>
               {t("accounting.exportPdf")}
             </button>
-            <button style={secondaryButtonStyle} onClick={exportBalanceExcel}>
+            <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportBalanceExcel}>
               {t("accounting.exportExcel")}
             </button>
           </div>
@@ -376,10 +380,10 @@ export function AccountingPage() {
               ))}
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              <button style={secondaryButtonStyle} onClick={exportSyscohadaPdf}>
+              <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportSyscohadaPdf}>
                 {t("accounting.exportPdf")}
               </button>
-              <button style={secondaryButtonStyle} onClick={exportSyscohadaExcel}>
+              <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportSyscohadaExcel}>
                 {t("accounting.exportExcel")}
               </button>
             </div>

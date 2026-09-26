@@ -33,6 +33,8 @@ export interface AuthenticatedUser {
   limitExpense: number | null;
   limitPoints: number | null;
   limitTicket: number | null;
+  // Montant max que cette personne peut approuver (null = illimité).
+  limitApprove: number | null;
   // Vrai si un code PIN est défini (jamais le hash).
   hasPin: boolean;
   // Droits particuliers (par-dessus le rôle) ; `permissions` est déjà le résultat fusionné.
@@ -61,6 +63,7 @@ async function toAuthenticatedUser(
     limitExpense: user.limitExpense,
     limitPoints: user.limitPoints,
     limitTicket: user.limitTicket,
+    limitApprove: user.limitApprove,
     hasPin: !!user.pinHash,
     permissionOverrides: parseOverrides(user.permissionOverrides),
   };
@@ -119,6 +122,7 @@ export async function createUser(
     limitExpense?: number | null;
     limitPoints?: number | null;
     limitTicket?: number | null;
+    limitApprove?: number | null;
     permissionOverrides?: PermissionOverrides;
     createdBy?: number;
   },
@@ -167,6 +171,7 @@ export async function createUser(
       limitExpense: input.limitExpense,
       limitPoints: input.limitPoints,
       limitTicket: input.limitTicket,
+      limitApprove: input.limitApprove,
       permissionOverrides: input.permissionOverrides && Object.keys(input.permissionOverrides).length > 0 ? JSON.stringify(input.permissionOverrides) : null,
     })
     .returning()
@@ -326,7 +331,7 @@ export async function changeOwnPassword(
   await db.update(schema.users).set({ passwordHash }).where(eq(schema.users.id, userId)).run();
 }
 
-const LIMIT_KEYS = ["limitRefund", "limitStock", "limitCredit", "limitDiscount", "limitExpense", "limitPoints", "limitTicket"] as const;
+const LIMIT_KEYS = ["limitRefund", "limitStock", "limitCredit", "limitDiscount", "limitExpense", "limitPoints", "limitTicket", "limitApprove"] as const;
 
 export interface UpdateUserInput {
   fullName?: string;
@@ -341,6 +346,7 @@ export interface UpdateUserInput {
   limitExpense?: number | null;
   limitPoints?: number | null;
   limitTicket?: number | null;
+  limitApprove?: number | null;
   // Nouveau code PIN (4 chiffres) — nécessaire pour qu'un responsable puisse
   // approuver des actions.
   pin?: string;
@@ -376,6 +382,7 @@ export async function updateUser(
   if (input.limitExpense !== undefined) updates.limitExpense = input.limitExpense;
   if (input.limitPoints !== undefined) updates.limitPoints = input.limitPoints;
   if (input.limitTicket !== undefined) updates.limitTicket = input.limitTicket;
+  if (input.limitApprove !== undefined) updates.limitApprove = input.limitApprove;
   if (input.pin) updates.pinHash = await hashSecret(input.pin);
   const before = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get();
   if (input.permissionOverrides !== undefined) {

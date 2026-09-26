@@ -1,4 +1,5 @@
 import {
+  ApprovalQueuedError,
   ApprovalDeniedError,
   ApprovalRequiredError,
   listApprovers,
@@ -39,13 +40,15 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const [prompt, setPrompt] = useState<PromptState | null>(null);
+  // Information (pas une erreur) : « demande envoyée au responsable ».
+  const [notice, setNotice] = useState<string | null>(null);
   const [approverId, setApproverId] = useState("");
   const [pin, setPin] = useState("");
   const resolverRef = useRef<((value: ApprovalInput | null) => void) | null>(null);
 
   const ask = useCallback(
     async (info: ApprovalRequiredError, error: string | null): Promise<ApprovalInput | null> => {
-      const approvers = await listApprovers(db, info.kind);
+      const approvers = await listApprovers(db, info.kind, info.amount);
       setApproverId(approvers[0] ? String(approvers[0].id) : "");
       setPin("");
       setPrompt({ info, error, approvers });
@@ -85,6 +88,12 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
         try {
           return await action(approval);
         } catch (err) {
+          if (err instanceof ApprovalQueuedError) {
+            // Action mise en file (dépense, points) : rien n'est enregistré ; on informe.
+            setNotice(err.message);
+            window.setTimeout(() => setNotice(null), 7000);
+            return undefined as T;
+          }
           if (err instanceof ApprovalRequiredError) {
             info = err;
             deniedMessage = null;
@@ -105,6 +114,29 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
   return (
     <ApprovalContext.Provider value={{ run }}>
       {children}
+      {notice && (
+        <div
+          role="status"
+          style={{
+            position: "fixed",
+            top: "calc(env(safe-area-inset-top) + 12px)",
+            left: "50%",
+            transform: "translateX(-50%)",
+            maxWidth: "min(560px, 92vw)",
+            zIndex: 1100,
+            background: "var(--color-surface, #fff)",
+            color: "var(--color-text)",
+            border: "1px solid var(--color-warning)",
+            borderRadius: "var(--radius-md)",
+            padding: "10px 14px",
+            boxShadow: "0 4px 18px rgba(0,0,0,0.18)",
+            cursor: "pointer",
+          }}
+          onClick={() => setNotice(null)}
+        >
+          {notice}
+        </div>
+      )}
       {prompt && (
         <div
           role="dialog"

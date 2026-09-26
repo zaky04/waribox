@@ -20,6 +20,7 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { useApproval } from "../approval/ApprovalProvider";
 import { useAuth } from "../auth/useAuth";
 
 type Debt = typeof schema.supplierDebts.$inferSelect;
@@ -32,6 +33,7 @@ type Product = typeof schema.products.$inferSelect;
 export function DebtsPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
+  const approval = useApproval();
   const { t } = useTranslation();
 
   const STATUS_LABELS: Record<string, string> = {
@@ -108,7 +110,7 @@ export function DebtsPage() {
 
     setSaving(true);
     try {
-      await recordDebtPayment(db, { debtId: debt.id, amount: value, userId: user.id }, user.permissions);
+      await approval.run((a) => recordDebtPayment(db, { debtId: debt.id, amount: value, userId: user.id, approval: a }, user.permissions));
       setPayingId(null);
       setAmount("");
       await refresh();

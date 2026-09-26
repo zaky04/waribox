@@ -1,11 +1,11 @@
 import { roundMoney } from "../domain/money";
 import type { Database } from "@gestion-boutique/database";
 import { schema, withTransaction } from "@gestion-boutique/database";
-import { t } from "@gestion-boutique/i18n";
+import { formatMoneyPlain, t } from "@gestion-boutique/i18n";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requireAnyPermission, requirePermission, type PermissionSet } from "../domain/permissions";
-import { checkApproval, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
+import { checkApprovalDeferrable, createApprovalRequest, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
 import { getSettings } from "./SettingsService";
 import { createBatch, listLocations, recordMovement } from "./StockService";
 
@@ -78,7 +78,7 @@ export async function createPurchase(
   input: CreatePurchaseInput,
   actingPermissions: PermissionSet,
 ) {
-  requirePermission(actingPermissions, "manage_suppliers");
+  requirePermission(actingPermissions, "manage_purchases");
   if (input.items.length === 0) {
     throw new Error(t("coreErrors.purchases.itemRequired"));
   }
@@ -121,9 +121,11 @@ export async function createPurchase(
 
     // Le stock n'entre tout de suite qu'en achat simple : c'est alors l'entrée
     // en stock qui est approuvée (en deux temps, ce sera à la réception).
-    const approvedBy = twoStep
-      ? null
-      : await checkApproval(db, { kind: "stock", amount: total, userId: input.userId, actingPermissions, verifiedApproverId });
+    const approval = twoStep
+      ? { approvedBy: null as number | null, deferred: false }
+      : await checkApprovalDeferrable(db, { kind: "stock", amount: total, userId: input.userId, actingPermissions, verifiedApproverId });
+    const approvedBy = approval.approvedBy;
+    const movementIds: number[] = [];
 
     const number = await nextPurchaseNumber(db);
 
@@ -177,7 +179,7 @@ export async function createPurchase(
         unitCost: item.unitCost,
       });
 
-      await recordMovement(db, {
+      const purchaseMovement = await recordMovement(db, {
         variantId: item.variantId,
         locationId: reserve.id,
         quantityDelta: item.quantity,
@@ -187,6 +189,19 @@ export async function createPurchase(
         batchId: batch.id,
         userId: input.userId,
         approvedBy: approvedBy ?? undefined,
+      });
+      movementIds.push(purchaseMovement.id);
+    }
+
+    // Mode « à valider ensuite » : le stock est déjà entré, la demande attend le propriétaire.
+    if (approval.deferred && movementIds.length > 0) {
+      await createApprovalRequest(db, {
+        kind: "stock",
+        amount: total,
+        requestedBy: input.userId,
+        storeId: input.storeId,
+        summary: t("approvalRequests.summary.purchase", { number: purchase.number, total: formatMoneyPlain(total) }),
+        payload: { movementIds, purchaseId: purchase.id },
       });
     }
 
@@ -238,7 +253,7 @@ export interface ReceivePurchaseInput {
 // les quantités RÉELLEMENT comptées. L'écart avec la facture (manquant à
 // réclamer au fournisseur) est valorisé et tracé, pas absorbé.
 export async function receivePurchase(db: Database, input: ReceivePurchaseInput, actingPermissions: PermissionSet) {
-  requireAnyPermission(actingPermissions, ["manage_stock", "manage_suppliers"]);
+  requirePermission(actingPermissions, "receive_purchases");
   const purchase = await db.select().from(schema.purchases).where(eq(schema.purchases.id, input.purchaseId)).get();
   if (!purchase) throw new Error(t("coreErrors.purchases.notFound"));
   if (purchase.status !== "ordered") throw new Error(t("coreErrors.purchases.notAwaitingReceipt"));
@@ -254,7 +269,9 @@ export async function receivePurchase(db: Database, input: ReceivePurchaseInput,
   const result = await withTransaction(async () => {
     // Valeur de ce qui entre réellement en stock (quantités comptées).
     const receivedValue = roundMoney(items.reduce((sum, item) => sum + (receivedById.get(item.id) ?? 0) * item.unitCost, 0));
-    const approvedBy = await checkApproval(db, { kind: "stock", amount: receivedValue, userId: input.userId, actingPermissions, verifiedApproverId });
+    const approval = await checkApprovalDeferrable(db, { kind: "stock", amount: receivedValue, userId: input.userId, actingPermissions, verifiedApproverId });
+    const approvedBy = approval.approvedBy;
+    const receiptMovementIds: number[] = [];
     const locations = await listLocations(db, purchase.storeId ?? undefined);
     const reserve = locations.find((l) => l.type === "reserve" || l.type.startsWith("reserve#"));
     if (!reserve) throw new Error(t("coreErrors.purchases.reserveLocationNotFound"));
@@ -279,7 +296,7 @@ export async function receivePurchase(db: Database, input: ReceivePurchaseInput,
         expiryDate: undefined,
         unitCost: item.unitCost,
       });
-      await recordMovement(db, {
+      const receiptMovement = await recordMovement(db, {
         variantId: item.variantId,
         locationId: reserve.id,
         quantityDelta: received,
@@ -290,6 +307,18 @@ export async function receivePurchase(db: Database, input: ReceivePurchaseInput,
         userId: input.userId,
         note: input.note?.trim() || undefined,
         approvedBy: approvedBy ?? undefined,
+      });
+      receiptMovementIds.push(receiptMovement.id);
+    }
+
+    if (approval.deferred && receiptMovementIds.length > 0) {
+      await createApprovalRequest(db, {
+        kind: "stock",
+        amount: receivedValue,
+        requestedBy: input.userId,
+        storeId: purchase.storeId,
+        summary: t("approvalRequests.summary.receipt", { number: purchase.number, total: formatMoneyPlain(receivedValue) }),
+        payload: { movementIds: receiptMovementIds, purchaseId: purchase.id },
       });
     }
 

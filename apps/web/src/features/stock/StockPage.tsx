@@ -47,6 +47,8 @@ export function StockPage() {
   const { user, currentStoreId } = useAuth();
   const { t } = useTranslation();
   const canManage = hasPermission(user?.permissions ?? {}, "manage_stock");
+  const canTransfer = hasPermission(user?.permissions ?? {}, "transfer_stock");
+  const canLoss = hasPermission(user?.permissions ?? {}, "record_stock_losses");
 
   const LOSS_REASONS: { value: string; label: string }[] = [
     { value: "expiry", label: t("journals.lossReasons.expiry") },
@@ -549,6 +551,7 @@ export function StockPage() {
             </button>
           </div>
 
+          {canTransfer && (
           <div style={cardStyle}>
             <strong>{t("stock.transfer.heading")}</strong>
             <label>
@@ -609,7 +612,9 @@ export function StockPage() {
               {transferSaving ? t("stock.transfer.transferring") : t("stock.transfer.submit")}
             </button>
           </div>
+          )}
 
+          {canLoss && (
           <div style={{ ...cardStyle, borderLeft: "4px solid var(--color-danger)" }}>
             <strong>{t("stock.loss.heading")}</strong>
             <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("stock.loss.hint")}</p>
@@ -677,6 +682,7 @@ export function StockPage() {
               {lossSaving ? t("stock.loss.saving") : t("stock.loss.submit")}
             </button>
           </div>
+          )}
         </>
       )}
     </main>

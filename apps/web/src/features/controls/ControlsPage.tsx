@@ -2,6 +2,8 @@ import {
   CONTROL_THRESHOLDS,
   buildDailySummaryText,
   getControlsReport,
+  getControlsReviewStatus,
+  markControlsReviewed,
   getDailySummary,
   getVerificationSample,
   getSettings,
@@ -11,6 +13,7 @@ import {
   type AuditChainResult,
   type ControlFlag,
   type ControlsReport,
+  type ControlsReviewStatus,
   type PriceComparisonRow,
   type VerificationSample,
 } from "@gestion-boutique/core";
@@ -31,7 +34,7 @@ function isoDay(d: Date): string {
 // de départ pour vérifier (ticket, caméra, discussion), avec ses seuils affichés.
 export function ControlsPage() {
   const db = useDatabase();
-  const { currentStoreId } = useAuth();
+  const { currentStoreId, user } = useAuth();
   const { t } = useTranslation();
 
   const [from, setFrom] = useState(() => isoDay(new Date(Date.now() - 29 * 86400000)));
@@ -41,7 +44,10 @@ export function ControlsPage() {
   const [userNames, setUserNames] = useState<Map<number, string>>(new Map());
   const [chain, setChain] = useState<AuditChainResult | null>(null);
   // Seuils d'alerte réglés dans Configuration → Contrôles de gestion.
-  const [th, setTh] = useState({ refund: 5, loss: 2, discount: 5, staleDays: 30 });
+  const [th, setTh] = useState({ refund: 5, loss: 2, discount: 5, staleDays: 30, pendingHours: 48 });
+  const [review, setReview] = useState<ControlsReviewStatus | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewing, setReviewing] = useState(false);
   const [shop, setShop] = useState<{ phone: string; countryCode: string | null; name: string | null }>({ phone: "", countryCode: null, name: null });
   const [summaryDate, setSummaryDate] = useState(() => isoDay(new Date()));
   const [summaryText, setSummaryText] = useState("");
@@ -56,7 +62,8 @@ export function ControlsPage() {
       listUsers(db),
       getSettings(db),
     ]);
-    setTh({ refund: settings.alertRefundPercent, loss: settings.alertLossPercent, discount: settings.alertDiscountPercent, staleDays: settings.staleTicketDays });
+    setTh({ refund: settings.alertRefundPercent, loss: settings.alertLossPercent, discount: settings.alertDiscountPercent, staleDays: settings.staleTicketDays, pendingHours: settings.approvalPendingAlertHours });
+    setReview(await getControlsReviewStatus(db));
     setShop({ phone: settings.lowStockAlertPhone ?? "", countryCode: settings.whatsappCountryCode ?? null, name: settings.businessName ?? null });
     setReport(r);
     setPrices(p.filter((row) => row.suppliers.length >= 2));
@@ -73,6 +80,7 @@ export function ControlsPage() {
     if (flag.code === "loss_rate") params.threshold = th.loss;
     if (flag.code === "discount_rate") params.threshold = th.discount;
     if (flag.code === "stale_tickets") params.threshold = th.staleDays;
+    if (flag.code === "pending_approvals") params.threshold = th.pendingHours;
     if (flag.code === "manual_entries") params.threshold = CONTROL_THRESHOLDS.manualEntryCount;
     if (flag.code === "failed_approvals") params.threshold = CONTROL_THRESHOLDS.failedApprovals;
     if (flag.code === "price_changes") params.threshold = CONTROL_THRESHOLDS.priceChanges;
@@ -101,6 +109,25 @@ export function ControlsPage() {
     setSample(await getVerificationSample(db, { days: 7, count: 5, storeId: currentStoreId ?? undefined }));
   };
 
+  const markReviewed = async () => {
+    if (!user) return;
+    setReviewing(true);
+    try {
+      await markControlsReviewed(db, user.id, user.permissions, reviewNote);
+      setReviewNote("");
+      await refresh();
+    } finally {
+      setReviewing(false);
+    }
+  };
+
+  // Recentre la période sur ce qui s'est passé depuis le dernier contrôle.
+  const showSinceReview = () => {
+    if (!review?.reviewedAt) return;
+    setFrom(review.reviewedAt.slice(0, 10));
+    setTo(isoDay(new Date()));
+  };
+
   const verify = async () => {
     setChecking(true);
     try {
@@ -117,6 +144,34 @@ export function ControlsPage() {
     <main style={pageStyle}>
       <h1>{t("controls.title")}</h1>
       <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("controls.hint")}</p>
+
+      {review && (
+        <div style={cardStyle}>
+          <strong>{t("controls.review.title")}</strong>
+          <p style={{ margin: 0, fontSize: 13.5 }}>
+            {review.reviewedAt
+              ? t("controls.review.last", { date: review.reviewedAt.slice(0, 16), name: review.reviewedByName ?? "—" })
+              : t("controls.review.never")}
+          </p>
+          <p style={{ margin: 0, fontSize: 13.5 }}>
+            {t("controls.review.since", { events: review.eventsSince, pending: review.pendingRequests })}
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end" }}>
+            <label style={{ flex: "1 1 220px" }}>
+              {t("controls.review.note")}
+              <input style={inputStyle} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} />
+            </label>
+            <button style={primaryButtonStyle} disabled={reviewing} onClick={markReviewed}>
+              {t("controls.review.mark")}
+            </button>
+            {review.reviewedAt && (
+              <button style={{ ...primaryButtonStyle, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)" }} onClick={showSinceReview}>
+                {t("controls.review.showSince")}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
         <label>

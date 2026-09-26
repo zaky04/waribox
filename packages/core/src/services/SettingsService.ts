@@ -106,7 +106,13 @@ export interface UpdateSettingsInput {
   approvalExpenseThreshold?: number | null;
   approvalPointsThreshold?: number | null;
   approvalTicketThreshold?: number | null;
+  approvalPriceThreshold?: number | null;
+  approvalPaymentThreshold?: number | null;
+  approvalModeStock?: "pin" | "later";
+  approvalModeExpense?: "pin" | "later";
+  approvalModePoints?: "pin" | "later";
   staleTicketDays?: number;
+  approvalPendingAlertHours?: number;
   alertRefundPercent?: number;
   alertLossPercent?: number;
   alertDiscountPercent?: number;
@@ -134,7 +140,7 @@ export const ADVANCED_SETTING_KEYS = [
 
 // Colonnes qu'aucun appel public ne doit pouvoir écrire (elles ont leur
 // propre chemin : setMaintenanceCode / checkMaintenanceCode).
-const NEVER_WRITABLE_KEYS = ["id", "maintenanceCodeHash", "maintenanceCodeFailedAttempts", "maintenanceCodeLockedUntil"];
+const NEVER_WRITABLE_KEYS = ["id", "maintenanceCodeHash", "maintenanceCodeFailedAttempts", "maintenanceCodeLockedUntil", "controlsReviewedAt", "controlsReviewedBy"];
 
 // Champs avancés que `input` change réellement par rapport à `current`
 // (une valeur identique n'est pas un changement — la page renvoie tous ses

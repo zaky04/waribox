@@ -50,5 +50,8 @@ export const users = sqliteTable("users", {
   limitPoints: real("limit_points"),
   limitTicket: real("limit_ticket"),
   limitCredit: real("limit_credit"),
+  // Montant maximal que cette personne peut approuver (elle-même ou chez les
+  // autres) ; au-dessus, il faut un responsable de niveau supérieur. NULL = illimité.
+  limitApprove: real("limit_approve"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

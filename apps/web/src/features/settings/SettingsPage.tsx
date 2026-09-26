@@ -1,7 +1,10 @@
 import {
+  CONTROL_PROFILE_IDS,
   emitFneQueued,
+  getControlProfile,
   FNE_TEST_BASE_URL,
   getSettings,
+  hasPermission,
   hasMaintenanceCode,
   listBackups,
   listPendingFneCertifications,
@@ -11,6 +14,7 @@ import {
   updateSettings,
   verifyMaintenanceCode,
   type BackupDestination,
+  type ControlProfileId,
 } from "@gestion-boutique/core";
 import { exportDatabaseFile, schema } from "@gestion-boutique/database";
 import {
@@ -91,6 +95,7 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
   const vis = (name: SettingsSection): React.CSSProperties => ({ display: section === name ? "contents" : "none" });
   const db = useDatabase();
   const { user } = useAuth();
+  const canBackup = hasPermission(user?.permissions ?? {}, "manage_backups");
   const { t } = useTranslation();
   const theme = useThemeStore((s) => s.theme);
 
@@ -172,7 +177,32 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
   const [approvalExpense, setApprovalExpense] = useState("0");
   const [approvalPoints, setApprovalPoints] = useState("0");
   const [approvalTicket, setApprovalTicket] = useState("0");
+  const [approvalPrice, setApprovalPrice] = useState("0");
+  const [approvalPayment, setApprovalPayment] = useState("0");
+  const [modeStock, setModeStock] = useState<"pin" | "later">("pin");
+  const [modeExpense, setModeExpense] = useState<"pin" | "later">("pin");
+  const [modePoints, setModePoints] = useState<"pin" | "later">("pin");
   const [staleTicketDays, setStaleTicketDays] = useState("30");
+  const [pendingAlertHours, setPendingAlertHours] = useState("48");
+  // Remplit les champs de contrôle avec un profil ; rien n'est enregistré avant « Enregistrer ».
+  const applyProfile = (id: ControlProfileId) => {
+    const p = getControlProfile(id, currency);
+    setApprovalRefund(String(p.approvalRefundThreshold));
+    setApprovalStock(String(p.approvalStockThreshold));
+    setApprovalCredit(String(p.approvalCreditThreshold));
+    setApprovalDiscount(String(p.approvalDiscountThreshold));
+    setApprovalExpense(String(p.approvalExpenseThreshold));
+    setApprovalPoints(String(p.approvalPointsThreshold));
+    setApprovalTicket(String(p.approvalTicketThreshold));
+    setApprovalPrice(String(p.approvalPriceThreshold));
+    setApprovalPayment(String(p.approvalPaymentThreshold));
+    setModeStock(p.approvalModeStock);
+    setModeExpense(p.approvalModeExpense);
+    setModePoints(p.approvalModePoints);
+    setPendingAlertHours(String(p.approvalPendingAlertHours));
+    setAppliedProfile(id);
+  };
+  const [appliedProfile, setAppliedProfile] = useState<ControlProfileId | null>(null);
   const [alertRefund, setAlertRefund] = useState("5");
   const [alertLoss, setAlertLoss] = useState("2");
   const [alertDiscount, setAlertDiscount] = useState("5");
@@ -297,7 +327,13 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
     setApprovalExpense(opt(settings.approvalExpenseThreshold));
     setApprovalPoints(opt(settings.approvalPointsThreshold));
     setApprovalTicket(opt(settings.approvalTicketThreshold));
+    setApprovalPrice(opt(settings.approvalPriceThreshold));
+    setApprovalPayment(opt(settings.approvalPaymentThreshold));
+    setModeStock(settings.approvalModeStock === "later" ? "later" : "pin");
+    setModeExpense(settings.approvalModeExpense === "later" ? "later" : "pin");
+    setModePoints(settings.approvalModePoints === "later" ? "later" : "pin");
     setStaleTicketDays(String(settings.staleTicketDays));
+    setPendingAlertHours(String(settings.approvalPendingAlertHours));
     setAlertRefund(String(settings.alertRefundPercent));
     setAlertLoss(String(settings.alertLossPercent));
     setAlertDiscount(String(settings.alertDiscountPercent));
@@ -388,12 +424,22 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
       approvalExpenseThreshold: optNumber(approvalExpense),
       approvalPointsThreshold: optNumber(approvalPoints),
       approvalTicketThreshold: optNumber(approvalTicket),
+      approvalPriceThreshold: optNumber(approvalPrice),
+      approvalPaymentThreshold: optNumber(approvalPayment),
       cashVarianceThreshold: optNumber(cashVariance),
       defaultCreditLimit: optNumber(defaultCreditLimit),
     };
     const priceAlertValue = Number(priceAlert);
     const alertValues = [Number(alertRefund), Number(alertLoss), Number(alertDiscount)];
     const staleDaysValue = Number(staleTicketDays);
+    const pendingHoursValue = Number(pendingAlertHours);
+    if (
+      !Number.isInteger(pendingHoursValue) ||
+      pendingHoursValue < 0
+    ) {
+      setError(t("controlsSettings.invalid"));
+      return;
+    }
     if (
       Object.values(controlValues).some((v) => v === undefined) ||
       Number.isNaN(priceAlertValue) ||
@@ -469,7 +515,13 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
           approvalExpenseThreshold: controlValues.approvalExpenseThreshold,
           approvalPointsThreshold: controlValues.approvalPointsThreshold,
           approvalTicketThreshold: controlValues.approvalTicketThreshold,
+          approvalPriceThreshold: controlValues.approvalPriceThreshold,
+          approvalPaymentThreshold: controlValues.approvalPaymentThreshold,
+          approvalModeStock: modeStock,
+          approvalModeExpense: modeExpense,
+          approvalModePoints: modePoints,
           staleTicketDays: staleDaysValue,
+          approvalPendingAlertHours: pendingHoursValue,
           alertRefundPercent: alertValues[0],
           alertLossPercent: alertValues[1],
           alertDiscountPercent: alertValues[2],
@@ -1415,6 +1467,28 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
       <div style={cardStyle}>
         <strong>{t("controlsSettings.heading")}</strong>
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("controlsSettings.hint")}</p>
+        <strong style={{ fontSize: 14 }}>{t("controlsSettings.profilesHeading")}</strong>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 12.5, margin: 0 }}>{t("controlsSettings.profilesHint")}</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {CONTROL_PROFILE_IDS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              style={{
+                ...primaryButtonStyle,
+                ...(appliedProfile === id ? {} : { background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)" }),
+              }}
+              onClick={() => applyProfile(id)}
+            >
+              {t(`controlsSettings.profiles.${id}.name`)}
+            </button>
+          ))}
+        </div>
+        {appliedProfile && (
+          <p style={{ margin: 0, fontSize: 12.5 }}>
+            <strong>{t(`controlsSettings.profiles.${appliedProfile}.name`)}</strong> — {t(`controlsSettings.profiles.${appliedProfile}.description`)} {t("controlsSettings.profileApplied")}
+          </p>
+        )}
         <label>
           {t("controlsSettings.approvalRefund")}
           <input style={inputStyle} type="number" step="any" min={0} value={approvalRefund} onChange={(e) => setApprovalRefund(e.target.value)} />
@@ -1444,6 +1518,14 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
           <input style={inputStyle} type="number" step="any" min={0} value={approvalTicket} onChange={(e) => setApprovalTicket(e.target.value)} />
         </label>
         <label>
+          {t("controlsSettings.approvalPrice")}
+          <input style={inputStyle} type="number" step="any" min={0} value={approvalPrice} onChange={(e) => setApprovalPrice(e.target.value)} />
+        </label>
+        <label>
+          {t("controlsSettings.approvalPayment")}
+          <input style={inputStyle} type="number" step="any" min={0} value={approvalPayment} onChange={(e) => setApprovalPayment(e.target.value)} />
+        </label>
+        <label>
           {t("controlsSettings.staleTicketDays")}
           <input style={inputStyle} type="number" min={1} value={staleTicketDays} onChange={(e) => setStaleTicketDays(e.target.value)} />
         </label>
@@ -1463,6 +1545,27 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
           <input type="checkbox" checked={requireReceipt} onChange={(e) => setRequireReceipt(e.target.checked)} />
           {t("controlsSettings.requireReceipt")}
         </label>
+        <label>
+          {t("controlsSettings.pendingAlertHours")}
+          <input style={inputStyle} type="number" min={0} value={pendingAlertHours} onChange={(e) => setPendingAlertHours(e.target.value)} />
+        </label>
+        <strong style={{ fontSize: 14 }}>{t("controlsSettings.modeHeading")}</strong>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 12.5, margin: 0 }}>{t("controlsSettings.modeHint")}</p>
+        {(
+          [
+            ["modeStock", modeStock, setModeStock],
+            ["modeExpense", modeExpense, setModeExpense],
+            ["modePoints", modePoints, setModePoints],
+          ] as const
+        ).map(([key, value, setter]) => (
+          <label key={key}>
+            {t(`controlsSettings.${key}`)}
+            <select style={inputStyle} value={value} onChange={(e) => setter(e.target.value as "pin" | "later")}>
+              <option value="pin">{t("controlsSettings.modePin")}</option>
+              <option value="later">{t("controlsSettings.modeLater")}</option>
+            </select>
+          </label>
+        ))}
         <strong style={{ fontSize: 14 }}>{t("controlsSettings.alertHeading")}</strong>
         <label>
           {t("controlsSettings.alertRefund")}
@@ -1496,7 +1599,7 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.security.autoLockHint")}</p>
       </div>
 
-      <div style={cardStyle}>
+      <div style={canBackup ? cardStyle : { ...cardStyle, display: "none" }}>
         <strong>{t("settings.backups.heading")}</strong>
 
         <label>

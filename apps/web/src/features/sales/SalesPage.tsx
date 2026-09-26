@@ -3,6 +3,7 @@ import { getCurrency } from "@gestion-boutique/i18n";
 import { formatAmount, formatMoney } from "../../lib/format";
 import {
   createSale,
+  hasPermission,
   getActivePromotionsWithProducts,
   type CloseSessionResult,
   getSettings,
@@ -78,6 +79,7 @@ export function SalesPage() {
   const { user, currentStoreId } = useAuth();
   const { t } = useTranslation();
   const approval = useApproval();
+  const canSellOnCredit = hasPermission(user?.permissions ?? {}, "sell_on_credit");
   const { session, open, close } = useCashSession(currentStoreId);
   const printer = usePrinter();
 
@@ -85,7 +87,7 @@ export function SalesPage() {
     { value: "cash", label: t("sales.paymentMethods.cash") },
     { value: "card", label: t("sales.paymentMethods.card") },
     { value: "mobile_money", label: t("sales.paymentMethods.mobile_money") },
-    { value: "credit", label: t("sales.paymentMethods.credit") },
+    ...(canSellOnCredit ? [{ value: "credit" as const, label: t("sales.paymentMethods.credit") }] : []),
   ];
 
   const [mode, setMode] = useState<"pos" | "form">("pos");

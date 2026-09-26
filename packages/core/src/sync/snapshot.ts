@@ -1,5 +1,6 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { eq } from "drizzle-orm";
 
 // Instantané initial du catalogue — voir CLAUDE.md, mode réseau Phase 2.
 // Téléchargement à SENS UNIQUE (Master → Worker), une seule fois à la toute
@@ -27,6 +28,9 @@ export interface CatalogSnapshot {
   suppliers: Array<typeof schema.suppliers.$inferSelect>;
   roles: Array<typeof schema.roles.$inferSelect>;
   users: Array<typeof schema.users.$inferSelect>;
+  // Demandes d'approbation encore en attente au moment de l'appairage : un téléphone
+  // de propriétaire qui rejoint le réseau doit voir ce qui attend sa décision.
+  approvalRequests?: Array<typeof schema.approvalRequests.$inferSelect>;
   // Le code de maintenance protège une action desktop-only (installer une
   // mise à jour, voir MaintenanceService/tauriRuntime.isDesktopTauriRuntime)
   // sans rapport avec ce qu'un Worker a besoin de faire — l'envoyer dans
@@ -53,6 +57,7 @@ export async function buildCatalogSnapshot(db: Database): Promise<CatalogSnapsho
     roles,
     users,
     businessSettingsRows,
+    pendingRequests,
   ] = await Promise.all([
     db.select().from(schema.categories),
     db.select().from(schema.products),
@@ -65,6 +70,7 @@ export async function buildCatalogSnapshot(db: Database): Promise<CatalogSnapsho
     db.select().from(schema.roles),
     db.select().from(schema.users),
     db.select().from(schema.businessSettings),
+    db.select().from(schema.approvalRequests).where(eq(schema.approvalRequests.status, "pending")),
   ]);
 
   // Retire le secret de maintenance avant transmission (voir le commentaire
@@ -89,6 +95,7 @@ export async function buildCatalogSnapshot(db: Database): Promise<CatalogSnapsho
     suppliers,
     roles,
     users,
+    approvalRequests: pendingRequests.filter((r) => r.syncId),
     businessSettings,
   };
 }
@@ -131,6 +138,9 @@ export async function applyCatalogSnapshot(db: Database, snapshot: CatalogSnapsh
   await replaceAll(db, schema.stockBatches, snapshot.stockBatches);
   await replaceAll(db, schema.customers, snapshot.customers);
   await replaceAll(db, schema.suppliers, snapshot.suppliers);
+  if (snapshot.approvalRequests) {
+    await replaceAll(db, schema.approvalRequests, snapshot.approvalRequests.map(({ id: _id, ...rest }) => rest));
+  }
   if (snapshot.businessSettings) {
     await replaceAll(db, schema.businessSettings, [snapshot.businessSettings]);
   }

@@ -1,5 +1,8 @@
 import { formatAmount, formatMoney } from "../../lib/format";
 import {
+  canApproveAnything,
+  countPendingFor,
+  listUnseenDecisions,
   deriveOrderStatus,
   getControlsReport,
   getLowStockProducts,
@@ -118,6 +121,8 @@ export function DashboardPage({ onNavigate }: { onNavigate?: (tab: NavTab) => vo
   const [readyOrderCount, setReadyOrderCount] = useState(0);
   const [overdueCredits, setOverdueCredits] = useState<Credit[]>([]);
   const [backupOverdue, setBackupOverdue] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [unseenDecisions, setUnseenDecisions] = useState(0);
   const [controlAlerts, setControlAlerts] = useState<{ count: number; danger: number }>({ count: 0, danger: 0 });
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
 
@@ -175,6 +180,8 @@ export function DashboardPage({ onNavigate }: { onNavigate?: (tab: NavTab) => vo
       const credits = await listCustomerCredits(db, storeId);
       setOverdueCredits(credits.filter((c) => isCreditOverdue(c, today)));
     }
+    if (user && canApproveAnything(user.permissions)) setPendingApprovals(await countPendingFor(db, user.permissions));
+    if (user) setUnseenDecisions((await listUnseenDecisions(db, user.id)).length);
     // Alertes de contrôle (30 derniers jours) : le propriétaire les voit dès l'accueil.
     if (canViewControls) {
       const day = (ms: number) => new Date(Date.now() - ms).toISOString().slice(0, 10);
@@ -244,6 +251,20 @@ export function DashboardPage({ onNavigate }: { onNavigate?: (tab: NavTab) => vo
     todos.push({ key: "ready", title: t("dashboard.readyOrders"), detail: t("dashboard.todoReadyDetail", { count: readyOrderCount }), target: "service_orders" });
   if (canViewCredits && overdueCredits.length > 0)
     todos.push({ key: "credits", title: t("dashboard.overdueCredits"), detail: t("dashboard.todoCreditsDetail", { count: overdueCredits.length }), target: "credits" });
+  if (pendingApprovals > 0)
+    todos.push({
+      key: "approvals",
+      title: t("dashboard.pendingApprovals"),
+      detail: t("dashboard.pendingApprovalsDetail", { count: pendingApprovals }),
+      target: "approvals",
+    });
+  if (unseenDecisions > 0)
+    todos.push({
+      key: "decisions",
+      title: t("dashboard.decisionsToSee"),
+      detail: t("dashboard.decisionsToSeeDetail", { count: unseenDecisions }),
+      target: "approvals",
+    });
   if (canViewControls && controlAlerts.count > 0)
     todos.push({
       key: "controls",

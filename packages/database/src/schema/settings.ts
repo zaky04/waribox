@@ -142,6 +142,15 @@ export const businessSettings = sqliteTable("business_settings", {
   approvalPointsThreshold: real("approval_points_threshold").default(0),
   // Modification d'un ticket encaissé, annulation, retour arrière d'un retrait (0 par défaut).
   approvalTicketThreshold: real("approval_ticket_threshold").default(0),
+  // Changement de prix d'un produit (écart le plus grand entre ancien et nouveau prix)
+  // et paiement d'une dette fournisseur : 0 par défaut = tout doit être approuvé.
+  approvalPriceThreshold: real("approval_price_threshold").default(0),
+  approvalPaymentThreshold: real("approval_payment_threshold").default(0),
+  // Comment se fait l'approbation d'un domaine : 'pin' (le responsable saisit son
+  // code sur le moment) ou 'later' (la demande attend la validation du propriétaire).
+  approvalModeStock: text("approval_mode_stock").notNull().default("pin"),
+  approvalModeExpense: text("approval_mode_expense").notNull().default("pin"),
+  approvalModePoints: text("approval_mode_points").notNull().default("pin"),
   // Un ticket « prêt » non retiré depuis ce nombre de jours est signalé.
   staleTicketDays: integer("stale_ticket_days").notNull().default(30),
   // Seuils de signalement du tableau de bord Contrôles (en %).
@@ -159,4 +168,9 @@ export const businessSettings = sqliteTable("business_settings", {
   requirePurchaseReceipt: integer("require_purchase_receipt", { mode: "boolean" }).notNull().default(false),
   // Plafond de crédit par défaut d'un client (NULL/0 = illimité).
   defaultCreditLimit: real("default_credit_limit"),
+  // Une demande d'approbation en attente depuis plus de N heures est signalée.
+  approvalPendingAlertHours: integer("approval_pending_alert_hours").notNull().default(48),
+  // Dernier « contrôle effectué » du propriétaire (repère pour ne revoir que le neuf).
+  controlsReviewedAt: text("controls_reviewed_at"),
+  controlsReviewedBy: integer("controls_reviewed_by"),
 });

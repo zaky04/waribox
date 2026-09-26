@@ -6,6 +6,7 @@ import { verifyPin } from "../auth/AuthService";
 import { roundMoney } from "../domain/money";
 import { applyOverrides, hasPermission, parseOverrides, type Permission, type PermissionSet } from "../domain/permissions";
 import { logAction } from "./AuditService";
+import { buildSyncEvent, type ApprovalRequestCreatedEventPayload, type ApprovalRequestSnapshot, type SyncEvent } from "../sync/syncEvents";
 import { getSettings } from "./SettingsService";
 
 // Approbation d'un responsable pour les actions sensibles (remboursement, perte
@@ -13,7 +14,7 @@ import { getSettings } from "./SettingsService";
 // responsable saisit son code PIN sur l'appareil de l'employé. Les seuils
 // viennent des paramètres (globaux) ou du plafond personnel de l'utilisateur.
 // NULL = pas de contrôle ; 0 = toute action de ce type exige une approbation.
-export type ApprovalKind = "refund" | "stock" | "credit" | "discount" | "expense" | "points" | "ticket";
+export type ApprovalKind = "refund" | "stock" | "credit" | "discount" | "expense" | "points" | "ticket" | "price" | "payment";
 
 // Droit d'approuver chaque domaine (en plus du droit général approve_actions) :
 // le propriétaire peut ainsi confier, par exemple, les remises à un gérant de
@@ -26,13 +27,34 @@ export const APPROVAL_PERMISSION: Record<ApprovalKind, Permission> = {
   expense: "approve_expenses",
   points: "approve_points",
   ticket: "approve_tickets",
+  price: "approve_prices",
+  payment: "approve_payments",
 };
 
 export function canApprove(permissions: PermissionSet, kind: ApprovalKind): boolean {
   return hasPermission(permissions, "approve_actions") || hasPermission(permissions, APPROVAL_PERMISSION[kind]);
 }
 
-function canApproveAnything(permissions: PermissionSet): boolean {
+// Plafond d'approbation : montant maximal qu'une personne peut approuver (NULL =
+// illimité). Les points de fidélité ne sont pas un montant d'argent : hors plafond.
+export function withinApproveLimit(limit: number | null | undefined, kind: ApprovalKind, amount: number): boolean {
+  return kind === "points" || limit == null || amount <= limit;
+}
+
+export async function getApproveLimit(db: Database, userId: number | null | undefined): Promise<number | null> {
+  if (userId == null) return null;
+  const row = await db.select({ limit: schema.users.limitApprove }).from(schema.users).where(eq(schema.users.id, userId)).get();
+  return row?.limit ?? null;
+}
+
+// La personne a le droit d'approuver ce domaine ET le montant est dans son plafond :
+// elle n'a alors besoin de personne d'autre.
+async function canSelfApprove(db: Database, userId: number | undefined, perms: PermissionSet, kind: ApprovalKind, amount: number): Promise<boolean> {
+  if (!canApprove(perms, kind)) return false;
+  return withinApproveLimit(await getApproveLimit(db, userId), kind, amount);
+}
+
+export function canApproveAnything(permissions: PermissionSet): boolean {
   return hasPermission(permissions, "approve_actions") || (Object.values(APPROVAL_PERMISSION) as Permission[]).some((p) => hasPermission(permissions, p));
 }
 
@@ -86,14 +108,14 @@ export function exceedsThreshold(amount: number, threshold: number | null): bool
 
 async function loadApprover(db: Database, approverId: number) {
   const row = await db
-    .select({ id: schema.users.id, isActive: schema.users.isActive, permissions: schema.roles.permissions, overrides: schema.users.permissionOverrides })
+    .select({ id: schema.users.id, isActive: schema.users.isActive, permissions: schema.roles.permissions, overrides: schema.users.permissionOverrides, limit: schema.users.limitApprove })
     .from(schema.users)
     .innerJoin(schema.roles, eq(schema.roles.id, schema.users.roleId))
     .where(eq(schema.users.id, approverId))
     .get();
   if (!row || !row.isActive) return undefined;
   const perms = applyOverrides(JSON.parse(row.permissions) as PermissionSet, parseOverrides(row.overrides));
-  return canApproveAnything(perms) ? { id: row.id, perms } : undefined;
+  return canApproveAnything(perms) ? { id: row.id, perms, limit: row.limit } : undefined;
 }
 
 // Le responsable vérifié a-t-il le droit d'approuver CE domaine ? (lecture seule)
@@ -102,15 +124,36 @@ async function approverCanApprove(db: Database, approverId: number, kind: Approv
   return !!approver && canApprove(approver.perms, kind);
 }
 
+// Le responsable est-il dans son plafond d'approbation pour ce montant ?
+async function approverWithinLimit(db: Database, approverId: number, kind: ApprovalKind, amount: number): Promise<boolean> {
+  return withinApproveLimit(await getApproveLimit(db, approverId), kind, amount);
+}
+
+// Le décideur d'une décision reçue d'un autre appareil : existe, actif, a le droit
+// d'approuver ce domaine et reste dans son plafond.
+export async function assertCanDecide(db: Database, userId: number, kind: ApprovalKind, amount: number): Promise<void> {
+  const approver = await loadApprover(db, userId);
+  if (!approver || !canApprove(approver.perms, kind) || !withinApproveLimit(approver.limit, kind, amount)) {
+    throw new Error("décision de synchronisation refusée : approbateur non autorisé");
+  }
+}
+
+// Contrôle utilisé par la file de demandes : la personne qui tranche ne peut pas
+// dépasser son plafond d'approbation.
+export async function assertWithinApproveLimit(db: Database, userId: number, kind: ApprovalKind, amount: number): Promise<void> {
+  if (!(await approverWithinLimit(db, userId, kind, amount))) throw new ApprovalDeniedError(t("coreErrors.approval.overApproverLimit"));
+}
+
 // Utilisateurs actifs pouvant approuver (et ayant un code PIN) — pour la fenêtre
 // de saisie de l'approbation.
-export async function listApprovers(db: Database, kind?: ApprovalKind): Promise<{ id: number; fullName: string }[]> {
+export async function listApprovers(db: Database, kind?: ApprovalKind, amount?: number): Promise<{ id: number; fullName: string }[]> {
   const rows = await db
     .select({
       id: schema.users.id,
       fullName: schema.users.fullName,
       isActive: schema.users.isActive,
       pinHash: schema.users.pinHash,
+      limit: schema.users.limitApprove,
       permissions: schema.roles.permissions,
       overrides: schema.users.permissionOverrides,
     })
@@ -120,7 +163,8 @@ export async function listApprovers(db: Database, kind?: ApprovalKind): Promise<
     .filter((r) => {
       if (!r.isActive || !r.pinHash) return false;
       const perms = applyOverrides(JSON.parse(r.permissions) as PermissionSet, parseOverrides(r.overrides));
-      return kind ? canApprove(perms, kind) : canApproveAnything(perms);
+      if (!(kind ? canApprove(perms, kind) : canApproveAnything(perms))) return false;
+      return kind && amount != null ? withinApproveLimit(r.limit, kind, amount) : true;
     })
     .map((r) => ({ id: r.id, fullName: r.fullName }));
 }
@@ -168,7 +212,7 @@ export interface CheckApprovalInput {
 // qu'aucun responsable vérifié n'est fourni ; sinon retourne l'id du
 // responsable à enregistrer avec l'action (null si aucune approbation utile).
 export async function checkApproval(db: Database, input: CheckApprovalInput): Promise<number | null> {
-  if (canApprove(input.actingPermissions, input.kind)) return null;
+  if (await canSelfApprove(db, input.userId, input.actingPermissions, input.kind, input.amount)) return null;
 
   const settings = await getSettings(db);
   const globalThresholds: Record<ApprovalKind, number | null | undefined> = {
@@ -179,6 +223,8 @@ export async function checkApproval(db: Database, input: CheckApprovalInput): Pr
     expense: settings.approvalExpenseThreshold,
     points: settings.approvalPointsThreshold,
     ticket: settings.approvalTicketThreshold,
+    price: settings.approvalPriceThreshold,
+    payment: settings.approvalPaymentThreshold,
   };
   const globalThreshold = globalThresholds[input.kind];
 
@@ -205,6 +251,8 @@ export async function checkApproval(db: Database, input: CheckApprovalInput): Pr
       expense: user?.limitExpense,
       points: user?.limitPoints,
       ticket: user?.limitTicket,
+      price: null,
+      payment: null,
     };
     userLimit = limits[input.kind] ?? null;
   }
@@ -220,6 +268,9 @@ export async function checkApproval(db: Database, input: CheckApprovalInput): Pr
   if (!(await approverCanApprove(db, input.verifiedApproverId, input.kind))) {
     throw new ApprovalDeniedError(t("coreErrors.approval.invalidApprover"));
   }
+  if (!(await approverWithinLimit(db, input.verifiedApproverId, input.kind, input.amount))) {
+    throw new ApprovalDeniedError(t("coreErrors.approval.overApproverLimit"));
+  }
   return input.verifiedApproverId;
 }
 
@@ -233,7 +284,7 @@ export interface RequireApprovalInput {
 
 // Version tout-en-un pour les actions sans transaction englobante (stock).
 export async function requireApproval(db: Database, input: RequireApprovalInput): Promise<number | null> {
-  if (canApprove(input.actingPermissions, input.kind)) return null;
+  if (await canSelfApprove(db, input.userId, input.actingPermissions, input.kind, input.amount)) return null;
   const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
   return checkApproval(db, { ...input, verifiedApproverId });
 }
@@ -331,3 +382,130 @@ export function computeUnauthorizedDiscount(input: {
   // Tolérance d'arrondi des pourcentages calculés côté écran.
   return rounded <= 0.01 ? 0 : rounded;
 }
+
+// ---- Validation ultérieure (file de demandes) ----
+
+// Levée quand une action bloquante (dépense, points) est mise en file : rien n'a
+// été appliqué, la demande attend le responsable. L'UI l'affiche comme une
+// information (« envoyée pour validation »), pas comme une erreur.
+export class ApprovalQueuedError extends Error {
+  requestId: number;
+  constructor(requestId: number) {
+    super(t("approvalRequests.queued"));
+    this.name = "ApprovalQueuedError";
+    this.requestId = requestId;
+  }
+}
+
+type ApprovalMode = "pin" | "later";
+
+export async function getApprovalMode(db: Database, kind: ApprovalKind): Promise<ApprovalMode> {
+  const settings = await getSettings(db);
+  const mode = kind === "stock" ? settings.approvalModeStock : kind === "expense" ? settings.approvalModeExpense : kind === "points" ? settings.approvalModePoints : "pin";
+  return mode === "later" ? "later" : "pin";
+}
+
+// Comme checkApproval, mais si le domaine est en mode « validation ultérieure »
+// et qu'aucun responsable n'a approuvé sur le moment, retourne deferred: true
+// (l'appelant crée alors une demande) au lieu de lever ApprovalRequiredError.
+export async function checkApprovalDeferrable(
+  db: Database,
+  input: CheckApprovalInput,
+): Promise<{ approvedBy: number | null; deferred: boolean }> {
+  try {
+    return { approvedBy: await checkApproval(db, input), deferred: false };
+  } catch (err) {
+    if (err instanceof ApprovalRequiredError && (await getApprovalMode(db, input.kind)) === "later") {
+      return { approvedBy: null, deferred: true };
+    }
+    throw err;
+  }
+}
+
+// Version tout-en-un (vérifie le code éventuel puis décide) pour les actions sans
+// transaction englobante.
+export async function requireApprovalDeferrable(
+  db: Database,
+  input: RequireApprovalInput,
+): Promise<{ approvedBy: number | null; deferred: boolean }> {
+  if (await canSelfApprove(db, input.userId, input.actingPermissions, input.kind, input.amount)) return { approvedBy: null, deferred: false };
+  const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
+  return checkApprovalDeferrable(db, { ...input, verifiedApproverId });
+}
+
+export interface CreateApprovalRequestInput {
+  kind: ApprovalKind;
+  amount: number;
+  requestedBy?: number | null;
+  storeId?: number | null;
+  summary: string;
+  payload?: unknown;
+}
+
+export async function createApprovalRequest(db: Database, input: CreateApprovalRequestInput) {
+  const created = await db
+    .insert(schema.approvalRequests)
+    .values({
+      syncId: crypto.randomUUID(),
+      kind: input.kind,
+      amount: input.amount,
+      requestedBy: input.requestedBy ?? null,
+      storeId: input.storeId ?? null,
+      summary: input.summary,
+      payload: input.payload === undefined ? null : JSON.stringify(input.payload),
+    })
+    .returning()
+    .get();
+  await logAction(db, {
+    userId: input.requestedBy ?? null,
+    action: "approval_request_created",
+    entity: "approval_request",
+    entityId: created.id,
+    metadata: { kind: input.kind, amount: input.amount, summary: input.summary },
+  });
+  return created;
+}
+
+// Nom lisible d'une variante pour le résumé d'une demande.
+export async function describeVariant(db: Database, variantId: number): Promise<string> {
+  const row = await db
+    .select({ name: schema.products.name })
+    .from(schema.productVariants)
+    .innerJoin(schema.products, eq(schema.products.id, schema.productVariants.productId))
+    .where(eq(schema.productVariants.id, variantId))
+    .get();
+  return row?.name ?? `#${variantId}`;
+}
+
+// ---- Réplication des demandes vers les autres appareils ----
+
+type ApprovalRequestRow = typeof schema.approvalRequests.$inferSelect;
+
+// Une demande n'est répliquée vers les autres appareils que si son effet l'est aussi :
+// les dépenses et les mouvements de stock manuels (avec leurs identifiants universels).
+// Les points, achats et inventaires restent propres à l'appareil qui les a créés.
+export function isReplicableRequest(kind: string, payload: Record<string, any>): boolean {
+  if (kind === "expense") return true;
+  return kind === "stock" && Array.isArray(payload.movementSyncIds) && payload.movementSyncIds.length > 0;
+}
+
+export function snapshotApprovalRequest(row: ApprovalRequestRow): ApprovalRequestSnapshot {
+  return {
+    syncId: row.syncId!,
+    kind: row.kind,
+    amount: row.amount,
+    requestedBy: row.requestedBy,
+    storeId: row.storeId,
+    summary: row.summary,
+    payload: row.payload,
+    createdAt: row.createdAt,
+  };
+}
+
+// Événement « demande créée », à émettre APRÈS validation de la transaction qui l'a créée.
+export function buildApprovalRequestCreatedEvent(row: ApprovalRequestRow): SyncEvent<ApprovalRequestCreatedEventPayload> | undefined {
+  const payload = row.payload ? (JSON.parse(row.payload) as Record<string, any>) : {};
+  if (!row.syncId || !isReplicableRequest(row.kind, payload)) return undefined;
+  return buildSyncEvent<ApprovalRequestCreatedEventPayload>("approvalRequest.created", { request: snapshotApprovalRequest(row) });
+}
+

@@ -2,7 +2,8 @@ import type { Database } from "@gestion-boutique/database";
 import { schema, withTransaction } from "@gestion-boutique/database";
 import { and, desc, eq, gte, like, lte, or } from "drizzle-orm";
 import { logAction } from "./AuditService";
-import { checkApproval, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
+import { formatMoneyPlain, t } from "@gestion-boutique/i18n";
+import { ApprovalQueuedError, buildApprovalRequestCreatedEvent, checkApproval, createApprovalRequest, requireApproval, requireApprovalDeferrable, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { buildSyncEvent, emitSyncEvent, type ExpenseCreatedEventPayload } from "../sync/syncEvents";
 
@@ -47,21 +48,45 @@ export async function createExpense(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "manage_expenses");
-  // Responsable vérifié hors transaction (le compteur d'essais doit survivre à un rollback).
-  const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
+  const { approvedBy, deferred } = await requireApprovalDeferrable(db, {
+    kind: "expense",
+    amount: input.amount,
+    userId: input.userId,
+    actingPermissions,
+    approval: input.approval,
+  });
+  // Mode « validation ultérieure » : rien n'est enregistré tant que le propriétaire
+  // n'a pas approuvé — la demande contient de quoi rejouer la dépense.
+  if (deferred) {
+    const { approval: _approval, ...replayable } = input;
+    const request = await createApprovalRequest(db, {
+      kind: "expense",
+      amount: input.amount,
+      requestedBy: input.userId,
+      storeId: input.storeId,
+      summary: t("approvalRequests.summary.expense", { category: input.category, amount: formatMoneyPlain(input.amount), note: input.note ?? "" }),
+      payload: { input: replayable },
+    });
+    const createdEvent = buildApprovalRequestCreatedEvent(request);
+    if (createdEvent) emitSyncEvent(createdEvent);
+    throw new ApprovalQueuedError(request.id);
+  }
+  return insertExpense(db, input, approvedBy);
+}
 
+// Écrit la dépense (et son paiement miroir) : appelée directement, ou au moment où
+// un responsable approuve une demande mise en file.
+export async function insertExpense(
+  db: Database,
+  input: CreateExpenseInput,
+  approvedBy: number | null,
+  syncIds?: { expense: string; payment: string },
+) {
   // Enveloppé dans withTransaction (Phase 2, voir CLAUDE.md) — jusqu'ici
   // cette fonction ne l'était pas ; prérequis pour répliquer dépense+
   // paiement miroir comme un tout atomique.
   const { expense, event } = await withTransaction(async () => {
-    const approvedBy = await checkApproval(db, {
-      kind: "expense",
-      amount: input.amount,
-      userId: input.userId,
-      actingPermissions,
-      verifiedApproverId,
-    });
-    const expenseSyncId = crypto.randomUUID();
+    const expenseSyncId = syncIds?.expense ?? crypto.randomUUID();
     const expense = await db
       .insert(schema.expenses)
       .values({
@@ -77,7 +102,7 @@ export async function createExpense(
       .returning()
       .get();
 
-    const paymentSyncId = crypto.randomUUID();
+    const paymentSyncId = syncIds?.payment ?? crypto.randomUUID();
     const paymentCreatedAt = `${input.expenseDate} 12:00:00`;
     await db.insert(schema.payments).values({
       syncId: paymentSyncId,
@@ -215,10 +240,14 @@ export async function deleteExpense(
   id: number,
   actingPermissions: PermissionSet,
   userId?: number,
+  approval?: ApprovalInput,
 ) {
   requirePermission(actingPermissions, "delete_expenses");
   const existing = await db.select().from(schema.expenses).where(eq(schema.expenses.id, id)).get();
   if (!existing) return;
+  // Supprimer une dépense est le moyen classique d'effacer une sortie d'argent :
+  // même seuil d'approbation que la saisie d'une dépense de ce montant.
+  const approvedBy = await requireApproval(db, { kind: "expense", amount: existing.amount, userId, actingPermissions, approval });
 
   await db
     .delete(schema.payments)
@@ -230,7 +259,7 @@ export async function deleteExpense(
     action: "delete_expense",
     entity: "expense",
     entityId: id,
-    metadata: { category: existing.category, amount: existing.amount, expenseDate: existing.expenseDate },
+    metadata: { category: existing.category, amount: existing.amount, expenseDate: existing.expenseDate, approvedBy },
   });
 }
 

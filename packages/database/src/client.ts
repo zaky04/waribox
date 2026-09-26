@@ -307,6 +307,56 @@ export const MIGRATIONS: Migration[] = [
       )`,
     ],
   },
+  // File des demandes d'approbation + mode par domaine (PIN sur le moment, ou
+  // validation ultérieure par le propriétaire — sur l'appareil ou à distance).
+  {
+    id: 12,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN approval_mode_stock TEXT NOT NULL DEFAULT 'pin'",
+      "ALTER TABLE business_settings ADD COLUMN approval_mode_expense TEXT NOT NULL DEFAULT 'pin'",
+      "ALTER TABLE business_settings ADD COLUMN approval_mode_points TEXT NOT NULL DEFAULT 'pin'",
+      `CREATE TABLE approval_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sync_id TEXT,
+        kind TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        amount REAL NOT NULL DEFAULT 0,
+        requested_by INTEGER,
+        store_id INTEGER,
+        summary TEXT NOT NULL,
+        payload TEXT,
+        decided_by INTEGER,
+        decided_at TEXT,
+        decision_note TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_approval_requests_sync_id ON approval_requests(sync_id) WHERE sync_id IS NOT NULL",
+    ],
+  },
+  // Plafond d'approbation par personne, alerte de demande en attente, et repère
+  // « contrôle effectué » du propriétaire.
+  {
+    id: 13,
+    statements: [
+      "ALTER TABLE users ADD COLUMN limit_approve REAL",
+      "ALTER TABLE business_settings ADD COLUMN approval_pending_alert_hours INTEGER NOT NULL DEFAULT 48",
+      "ALTER TABLE business_settings ADD COLUMN controls_reviewed_at TEXT",
+      "ALTER TABLE business_settings ADD COLUMN controls_reviewed_by INTEGER",
+    ],
+  },
+  // Approbation des changements de prix produit et des paiements fournisseurs.
+  {
+    id: 14,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN approval_price_threshold REAL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN approval_payment_threshold REAL DEFAULT 0",
+    ],
+  },
+  // Le demandeur est prévenu quand sa demande a été tranchée.
+  {
+    id: 15,
+    statements: ["ALTER TABLE approval_requests ADD COLUMN decision_seen INTEGER NOT NULL DEFAULT 1"],
+  },
 ];
 
 async function runMigrations(): Promise<void> {

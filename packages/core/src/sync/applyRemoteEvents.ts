@@ -2,7 +2,10 @@ import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { eq, sql } from "drizzle-orm";
 import { computeSaleItemTotal, computeTaxAmount } from "../services/SalesService";
+import { applyApprovalRequestCreated, applyApprovalRequestDecided } from "../services/ApprovalRequestsService";
 import type {
+  ApprovalRequestCreatedEventPayload,
+  ApprovalRequestDecidedEventPayload,
   ExpenseCreatedEventPayload,
   SaleCreatedEventPayload,
   StockEntryCreatedEventPayload,
@@ -506,5 +509,9 @@ export async function applyRemoteSyncEvent(db: Database, event: SyncEvent): Prom
       return applyStockTransferCreated(db, event.payload as StockTransferCreatedEventPayload);
     case "expense.created":
       return applyExpenseCreated(db, event.payload as ExpenseCreatedEventPayload);
+    case "approvalRequest.created":
+      return applyApprovalRequestCreated(db, event.payload as ApprovalRequestCreatedEventPayload);
+    case "approvalRequest.decided":
+      return applyApprovalRequestDecided(db, event.payload as ApprovalRequestDecidedEventPayload);
   }
 }

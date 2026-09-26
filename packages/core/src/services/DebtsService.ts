@@ -4,6 +4,7 @@ import { schema } from "@gestion-boutique/database";
 import { formatAmount, t } from "@gestion-boutique/i18n";
 import { desc, eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { requireApproval, type ApprovalInput } from "./ApprovalService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 
 export async function listSupplierDebts(db: Database, storeId?: number) {
@@ -23,6 +24,7 @@ export interface RecordDebtPaymentInput {
   debtId: number;
   amount: number;
   userId: number;
+  approval?: ApprovalInput;
 }
 
 export async function recordDebtPayment(
@@ -31,6 +33,8 @@ export async function recordDebtPayment(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "manage_debts");
+  // Un paiement fournisseur est une sortie d'argent : seuil d'approbation dédié.
+  const approvedBy = await requireApproval(db, { kind: "payment", amount: input.amount, userId: input.userId, actingPermissions, approval: input.approval });
   const debt = await db
     .select()
     .from(schema.supplierDebts)
@@ -68,7 +72,7 @@ export async function recordDebtPayment(
     action: "record_debt_payment",
     entity: "supplier_debt",
     entityId: debt.id,
-    metadata: { amount: input.amount, remainingBalance },
+    metadata: { amount: input.amount, remainingBalance, approvedBy },
   });
 
   return updated;

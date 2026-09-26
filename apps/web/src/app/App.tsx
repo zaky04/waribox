@@ -1,4 +1,5 @@
 import { InventoryPage } from "../features/inventory/InventoryPage";
+import { ApprovalsPage } from "../features/approval/ApprovalsPage";
 import { ControlsPage } from "../features/controls/ControlsPage";
 import { ApprovalProvider } from "../features/approval/ApprovalProvider";
 import { getSettings, listStores } from "@gestion-boutique/core";
@@ -176,6 +177,7 @@ function MainContent() {
       {tab === "debts" && <DebtsPage />}
       {tab === "reports" && <ReportsPage />}
       {tab === "controls" && <ControlsPage />}
+      {tab === "approvals" && <ApprovalsPage />}
       {tab === "expenses" && <ExpensesPage />}
       {tab === "accounting" && <AccountingPage />}
       {tab === "settings" && <SettingsPage section="config" />}

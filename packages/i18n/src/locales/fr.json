@@ -3,7 +3,8 @@
     "paymentStatus": {
       "paid": "Payée",
       "partial": "Partielle",
-      "credit": "Crédit"
+      "credit": "Crédit",
+      "unpaid": "À payer"
     },
     "filterBar": {
       "from": "Du",
@@ -51,7 +52,8 @@
     "appearance": "Apparence",
     "advanced": "Configuration avancée",
     "inventory": "Inventaire",
-    "controls": "Contrôles"
+    "controls": "Contrôles",
+    "approvals": "Demandes"
   },
   "topbar": {
     "impersonatingPrefix": "Connecté en tant que",
@@ -102,7 +104,11 @@
     "noSalesYet": "aucune vente pour l'instant",
     "chartLabel": "Ventes par heure aujourd'hui",
     "controlAlerts": "Alertes de contrôle",
-    "controlAlertsDetail": "{{count}} signal(s) à vérifier sur 30 jours ({{danger}} grave(s))"
+    "controlAlertsDetail": "{{count}} signal(s) à vérifier sur 30 jours ({{danger}} grave(s))",
+    "pendingApprovals": "Demandes à approuver",
+    "pendingApprovalsDetail": "{{count}} demande(s) attendent votre décision",
+    "decisionsToSee": "Décisions sur vos demandes",
+    "decisionsToSeeDetail": "{{count}} de vos demandes ont été tranchées."
   },
   "sales": {
     "title": "Ventes",
@@ -635,7 +641,11 @@
       "approval_rejected": "Demande refusée par un responsable",
       "cancel_service_order": "Ticket de service annulé",
       "create_service_tariff": "Tarif de service créé",
-      "update_service_tariff": "Tarif de service modifié"
+      "update_service_tariff": "Tarif de service modifié",
+      "approval_request_created": "Demande d'approbation créée",
+      "approval_request_approved": "Demande approuvée",
+      "approval_request_rejected": "Demande refusée",
+      "controls_reviewed": "Contrôle effectué"
     },
     "sales": {
       "searchPlaceholder": "Numéro de vente...",
@@ -1302,7 +1312,8 @@
     "paymentStatus": {
       "paid": "Payé",
       "partial": "Partiel",
-      "credit": "Crédit"
+      "credit": "Crédit",
+      "unpaid": "À payer"
     },
     "errors": {
       "itemRequired": "Le ticket doit contenir au moins un article.",
@@ -1311,7 +1322,8 @@
       "repayAmountPositive": "Le montant doit être supérieur à zéro.",
       "repayFailed": "Impossible d'enregistrer le remboursement.",
       "historyDescriptionRequired": "Chaque article doit avoir une description.",
-      "historySaveFailed": "Impossible d'enregistrer les modifications."
+      "historySaveFailed": "Impossible d'enregistrer les modifications.",
+      "customerRequired": "Le nom du client est obligatoire pour déposer un article."
     },
     "tariff": {
       "choose": "Tarif (facultatif)",
@@ -1323,7 +1335,11 @@
       "confirm": "Confirmer l'annulation",
       "tag": "Annulé",
       "done": "Ticket annulé."
-    }
+    },
+    "payLater": "Payer plus tard (au retrait)",
+    "balanceDue": "Solde à payer :",
+    "collectDue": "Encaisser",
+    "dueHint": "Le client n'est pas obligé de payer au dépôt. S'il repart sans avoir payé, ce solde devient une créance au retrait (client identifié, approbation d'un responsable)."
   },
   "auth": {
     "loading": "Chargement...",
@@ -1473,7 +1489,9 @@
       "cancelled": "Ce ticket est annulé : il ne peut plus être modifié.",
       "cancelReasonRequired": "Le motif d'annulation est obligatoire.",
       "cancelPickedUp": "Impossible d'annuler : au moins un article a déjà été retiré.",
-      "notFound": "Ticket de service introuvable."
+      "notFound": "Ticket de service introuvable.",
+      "customerRequiredAtPickup": "Ce ticket n'est pas soldé : indique le client (Historique → corriger le ticket) pour que le solde devienne une créance, ou encaisse-le avant le retrait.",
+      "customerRequired": "Le nom du client est obligatoire : pas de dépôt anonyme (traçabilité)."
     },
     "stores": {
       "noStoreExists": "Aucune boutique n'existe — la migration de la base a dû échouer."
@@ -1486,7 +1504,8 @@
       "required": "Cette action ({{kind}} de {{amount}}) dépasse le plafond de {{threshold}} : l'approbation d'un responsable est requise.",
       "invalidApprover": "Ce responsable ne peut pas approuver cette action.",
       "wrongPin": "Code PIN du responsable incorrect.",
-      "requiredPoints": "Cette action ({{kind}} de {{amount}} points) dépasse le plafond de {{threshold}} points : l'approbation d'un responsable est requise."
+      "requiredPoints": "Cette action ({{kind}} de {{amount}} points) dépasse le plafond de {{threshold}} points : l'approbation d'un responsable est requise.",
+      "overApproverLimit": "Ce montant dépasse le plafond d'approbation de ce responsable : il faut un responsable de niveau supérieur."
     },
     "stock": {
       "quantityPositive": "La quantité doit être supérieure à zéro.",
@@ -1842,7 +1861,9 @@
       "discount": "remise hors promotion",
       "expense": "dépense",
       "points": "ajustement de points",
-      "ticket": "modification ou annulation de ticket"
+      "ticket": "modification ou annulation de ticket",
+      "price": "changement de prix",
+      "payment": "paiement fournisseur"
     },
     "title": "Approbation requise",
     "approver": "Responsable",
@@ -1965,7 +1986,8 @@
       "ticket_cancels": "{{value}} tickets annulés.",
       "stale_tickets": "{{value}} ticket(s) prêt(s) depuis plus de {{threshold}} jours, jamais retirés.",
       "unpaid_pickups": "articles retirés avec un solde dû : {{amount}} à récupérer.",
-      "number_gaps": "{{value}} numéro(s) manquant(s) dans la suite des ventes ou tickets (ligne supprimée ou jamais saisie)."
+      "number_gaps": "{{value}} numéro(s) manquant(s) dans la suite des ventes ou tickets (ligne supprimée ou jamais saisie).",
+      "pending_approvals": "{{value}} demande(s) d'approbation en attente depuis plus de {{threshold}} h — à trancher pour ne pas bloquer l'activité."
     },
     "integrityTitle": "Intégrité du journal",
     "integrityHint": "Chaque action est chaînée à la précédente par une empreinte : supprimer ou modifier une ligne du journal casse la chaîne. Note l'empreinte de tête de temps en temps : elle permet de détecter aussi un retour en arrière.",
@@ -2018,6 +2040,15 @@
         "sale": "vente",
         "ticket": "ticket"
       }
+    },
+    "review": {
+      "title": "Contrôle du propriétaire",
+      "last": "Dernier contrôle effectué : {{date}} par {{name}}.",
+      "never": "Aucun contrôle enregistré pour l'instant.",
+      "since": "Depuis : {{events}} action(s) au journal, {{pending}} demande(s) en attente.",
+      "note": "Note (facultative)",
+      "mark": "Contrôle effectué",
+      "showSince": "Afficher depuis le dernier contrôle"
     }
   },
   "controlsSettings": {
@@ -2040,7 +2071,34 @@
     "alertLoss": "Alerte si les pertes déclarées dépassent (% des ventes de l'employé)",
     "alertDiscount": "Alerte si les remises hors promotion dépassent (% des ventes de l'employé)",
     "approvalTicket": "Ticket : baisse de prix après encaissement, annulation, retrait avec solde dû, retour arrière — au-delà de (0 = tout doit être approuvé)",
-    "staleTicketDays": "Signaler un ticket « prêt » non retiré depuis (jours)"
+    "staleTicketDays": "Signaler un ticket « prêt » non retiré depuis (jours)",
+    "modeHeading": "Comment approuver",
+    "modeHint": "« Code PIN » : le responsable saisit son code sur le moment. « Validation ultérieure » : l'action attend le propriétaire (écran Demandes) — le stock est appliqué tout de suite puis validé ou corrigé ; dépenses et points ne sont enregistrés qu'après accord.",
+    "modeStock": "Stock : entrées, sorties, achats, inventaire",
+    "modeExpense": "Dépenses",
+    "modePoints": "Ajustements de points de fidélité",
+    "modePin": "Code PIN du responsable, sur le moment",
+    "modeLater": "Validation ultérieure par le propriétaire",
+    "profilesHeading": "Profil de contrôle",
+    "profilesHint": "Choisis selon ta présence : un profil remplit les seuils, les modes et le délai d'alerte ci-dessous (à ajuster ensuite, puis Enregistrer). Les montants sont adaptés à ta devise.",
+    "profileApplied": "Réglages remplis ci-dessous — pense à Enregistrer.",
+    "profiles": {
+      "present": {
+        "name": "Présent en permanence",
+        "description": "tout passe par ton code, sur le moment ; une demande en attente est signalée après 4 h."
+      },
+      "evening": {
+        "name": "Passage chaque soir",
+        "description": "les petits montants sont libres, le reste attend ta validation du soir (stock appliqué tout de suite, dépenses et points après accord) ; alerte après 24 h."
+      },
+      "periodic": {
+        "name": "Hebdomadaire ou mensuel",
+        "description": "seuils élevés, tout est tracé pour ton contrôle après coup. Donne à ton gérant les droits d'approuver et un plafond d'approbation (Utilisateurs) pour qu'il débloque le quotidien ; alerte après 7 jours."
+      }
+    },
+    "pendingAlertHours": "Signaler une demande d'approbation en attente depuis (heures) — 0 pour désactiver",
+    "approvalPrice": "Changement de prix d'un produit au-delà de (écart de prix) — 0 = tout changement doit être approuvé",
+    "approvalPayment": "Paiement d'une dette fournisseur au-delà de — 0 = tout paiement doit être approuvé"
   },
   "approvalRoles": {
     "title": "Rôles et permissions",
@@ -2061,7 +2119,11 @@
     "limitDiscount": "Remise hors promotion max sans approbation",
     "limitExpense": "Dépense max sans approbation",
     "limitPoints": "Ajustement de points max sans approbation",
-    "limitTicket": "Modification/annulation de ticket max sans approbation"
+    "limitTicket": "Modification/annulation de ticket max sans approbation",
+    "limitApprove": "Plafond d'approbation : montant maximal que cette personne peut approuver (vide = illimité)",
+    "limitApproveHint": "Au-dessus de ce montant, la demande doit être tranchée par un responsable de niveau supérieur (propriétaire). Sans effet sur les points de fidélité.",
+    "template": "Partir d'un modèle",
+    "templateNone": "— Aucun (rôle vide) —"
   },
   "permissions": {
     "view_margins": "Voir les marges",
@@ -2110,7 +2172,20 @@
     "approve_discounts": "Approuver les remises hors promotion",
     "approve_expenses": "Approuver les dépenses",
     "approve_points": "Approuver les ajustements de points",
-    "approve_tickets": "Approuver les modifications de tickets"
+    "approve_tickets": "Approuver les modifications de tickets",
+    "transfer_stock": "Transférer du stock entre emplacements",
+    "record_stock_losses": "Déclarer des pertes de stock (casse, péremption, vol)",
+    "manage_inventory": "Faire les inventaires",
+    "manage_purchases": "Saisir des achats",
+    "receive_purchases": "Réceptionner les achats",
+    "edit_product_prices": "Modifier les prix des produits",
+    "view_costs": "Voir les prix d'achat (coûts)",
+    "open_close_cash": "Ouvrir et fermer la caisse",
+    "sell_on_credit": "Vendre à crédit",
+    "export_reports": "Exporter les rapports (PDF, Excel)",
+    "manage_backups": "Sauvegarder et restaurer les données",
+    "approve_prices": "Approuver les changements de prix",
+    "approve_payments": "Approuver les paiements fournisseurs"
   },
   "purchasesControls": {
     "invoiceReference": "N° de facture du fournisseur",
@@ -2178,5 +2253,87 @@
     "save": "Enregistrer",
     "none": "Aucun tarif : la saisie est manuelle.",
     "inactive": "désactivé"
+  },
+  "approvalRequests": {
+    "queued": "Demande envoyée au responsable pour validation : rien n'est enregistré tant qu'elle n'est pas approuvée.",
+    "reversalNote": "Refus de la demande n°{{id}}",
+    "errors": {
+      "notFound": "Demande introuvable.",
+      "alreadyDecided": "Cette demande a déjà été tranchée.",
+      "reasonRequired": "Le motif du refus est obligatoire.",
+      "selfDecision": "Tu ne peux pas trancher ta propre demande."
+    },
+    "summary": {
+      "stockEntry": "Entrée de stock : {{quantity}} × {{product}} (valeur {{value}}) — {{note}}",
+      "stockLoss": "Retrait de stock : {{quantity}} × {{product}} (valeur {{value}}) — motif : {{reason}}",
+      "purchase": "Achat {{number}} entré en stock ({{total}})",
+      "receipt": "Réception de l'achat {{number}} ({{total}})",
+      "inventory": "Inventaire n°{{id}} régularisé : manquants {{missing}}, surplus {{surplus}}",
+      "expense": "Dépense « {{category}} » de {{amount}} {{note}}",
+      "points": "Ajustement de {{points}} points pour {{customer}} {{reason}}"
+    },
+    "title": "Demandes d'approbation",
+    "hint": "Ce qui attend une décision, et le suivi de vos demandes. « Déjà appliqué » : le stock est déjà à jour, votre validation le confirme (un refus le corrige par un mouvement inverse). « En attente » : rien n'est enregistré tant que vous n'avez pas approuvé.",
+    "pendingTitle": "À valider ({{count}})",
+    "nonePending": "Rien à valider pour le moment.",
+    "myTitle": "Mes demandes",
+    "historyTitle": "Historique des décisions",
+    "none": "Aucune demande.",
+    "kinds": {
+      "stock": "Stock",
+      "expense": "Dépense",
+      "points": "Points",
+      "price": "Prix",
+      "payment": "Paiement"
+    },
+    "by": "Demandé par {{name}} le {{date}}",
+    "effectNow": "Déjà appliqué — à valider",
+    "blocked": "En attente — rien n'est enregistré",
+    "approve": "Approuver",
+    "reject": "Refuser",
+    "reason": "Motif du refus",
+    "confirmReject": "Confirmer le refus",
+    "cancel": "Annuler",
+    "status": {
+      "pending": "En attente",
+      "approved": "Approuvée",
+      "rejected": "Refusée"
+    },
+    "col": {
+      "date": "Date",
+      "detail": "Détail",
+      "amount": "Montant",
+      "status": "Statut",
+      "requestedBy": "Demandé par",
+      "decidedBy": "Décidé par"
+    },
+    "overLimit": "Ce montant dépasse ton plafond d'approbation : la demande doit être tranchée par un responsable de niveau supérieur.",
+    "batchDone": "{{count}} demande(s) approuvée(s).",
+    "selectAll": "Tout sélectionner",
+    "approveSelected": "Approuver la sélection ({{count}})",
+    "select": "Sélectionner",
+    "new": "Nouveau"
+  },
+  "roleTemplates": {
+    "storekeeper": {
+      "name": "Magasinier",
+      "description": "reçoit, range, transfère et compte le stock ; ne déclare pas de pertes"
+    },
+    "deputy_manager": {
+      "name": "Gérant adjoint",
+      "description": "comme un gérant, sans prix, points, dépenses supprimables ni exports"
+    },
+    "senior_cashier": {
+      "name": "Caissier confirmé",
+      "description": "vend, ouvre et ferme la caisse, encaisse les créances, gère les clients"
+    },
+    "accountant": {
+      "name": "Comptable",
+      "description": "lit et exporte les comptes, saisit les dépenses ; ne vend pas et ne touche pas au stock"
+    },
+    "supervisor": {
+      "name": "Superviseur",
+      "description": "lecture seule : rapports, marges, contrôles"
+    }
   }
 }

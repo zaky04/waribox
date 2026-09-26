@@ -59,6 +59,7 @@ export function UsersPage() {
   const [limitExpense, setLimitExpense] = useState("");
   const [limitPoints, setLimitPoints] = useState("");
   const [limitTicket, setLimitTicket] = useState("");
+  const [limitApprove, setLimitApprove] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [impersonateError, setImpersonateError] = useState<string | null>(null);
@@ -130,6 +131,7 @@ export function UsersPage() {
     setLimitExpense(target.limitExpense == null ? "" : String(target.limitExpense));
     setLimitPoints(target.limitPoints == null ? "" : String(target.limitPoints));
     setLimitTicket(target.limitTicket == null ? "" : String(target.limitTicket));
+    setLimitApprove(target.limitApprove == null ? "" : String(target.limitApprove));
     setError(null);
     setShowForm(true);
   };
@@ -171,6 +173,7 @@ export function UsersPage() {
       limitExpense: parseLimit(limitExpense),
       limitPoints: parseLimit(limitPoints),
       limitTicket: parseLimit(limitTicket),
+      limitApprove: parseLimit(limitApprove),
     };
     if (Object.values(limits).some((v) => v === undefined)) {
       setError(t("users.errors.limitFormat"));
@@ -200,6 +203,7 @@ export function UsersPage() {
             limitExpense: limits.limitExpense,
             limitPoints: limits.limitPoints,
             limitTicket: limits.limitTicket,
+            limitApprove: limits.limitApprove,
           },
           user?.permissions ?? {},
           user?.id,
@@ -223,6 +227,7 @@ export function UsersPage() {
             limitExpense: limits.limitExpense,
             limitPoints: limits.limitPoints,
             limitTicket: limits.limitTicket,
+            limitApprove: limits.limitApprove,
             createdBy: user?.id,
           },
           user?.permissions ?? {},
@@ -395,6 +400,12 @@ export function UsersPage() {
             {t("approvalRoles.limitTicket")}
             <input style={inputStyle} type="number" step="any" min={0} value={limitTicket} onChange={(e) => setLimitTicket(e.target.value)} />
           </label>
+
+          <label>
+            {t("approvalRoles.limitApprove")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitApprove} onChange={(e) => setLimitApprove(e.target.value)} />
+          </label>
+          <p style={{ color: "var(--color-text-muted)", fontSize: 12.5, margin: 0 }}>{t("approvalRoles.limitApproveHint")}</p>
 
           {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 

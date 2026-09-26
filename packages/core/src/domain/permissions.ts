@@ -44,6 +44,22 @@ export const PERMISSIONS = [
   // points de fidélité d'un client (jusque-là ouvert à quiconque gérait les clients).
   "delete_expenses",
   "adjust_loyalty_points",
+  // Droits plus fins, découpés de droits existants (voir PERMISSION_PARENTS) :
+  // stock, achats, prix, caisse, crédit, exports, sauvegardes, coûts.
+  "transfer_stock",
+  "record_stock_losses",
+  "manage_inventory",
+  "manage_purchases",
+  "receive_purchases",
+  "edit_product_prices",
+  "view_costs",
+  "open_close_cash",
+  "sell_on_credit",
+  "export_reports",
+  "manage_backups",
+  // Approbation des changements de prix produit et des paiements fournisseurs.
+  "approve_prices",
+  "approve_payments",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -54,13 +70,13 @@ export type PermissionOverrides = Partial<Record<Permission, boolean>>;
 // Regroupement pour l'écran de gestion des droits (chaque permission dans une
 // seule catégorie).
 export const PERMISSION_CATEGORIES: { key: string; permissions: Permission[] }[] = [
-  { key: "sales", permissions: ["manage_sales", "manage_refunds", "manage_quotes", "edit_quotes", "manage_service_orders", "edit_service_orders", "manage_promotions"] },
-  { key: "stock", permissions: ["manage_products", "manage_stock"] },
-  { key: "people", permissions: ["manage_customers", "edit_customers", "adjust_loyalty_points", "manage_suppliers", "edit_suppliers"] },
+  { key: "sales", permissions: ["manage_sales", "open_close_cash", "sell_on_credit", "manage_refunds", "manage_quotes", "edit_quotes", "manage_service_orders", "edit_service_orders", "manage_promotions"] },
+  { key: "stock", permissions: ["manage_products", "edit_product_prices", "view_costs", "manage_stock", "transfer_stock", "record_stock_losses", "manage_inventory"] },
+  { key: "people", permissions: ["manage_customers", "edit_customers", "adjust_loyalty_points", "manage_suppliers", "edit_suppliers", "manage_purchases", "receive_purchases"] },
   { key: "finance", permissions: ["manage_credits", "manage_debts", "manage_expenses", "edit_expenses", "delete_expenses", "view_margins", "view_accounting"] },
-  { key: "reports", permissions: ["view_reports", "view_controls", "view_audit_logs"] },
-  { key: "approvals", permissions: ["approve_actions", "approve_refunds", "approve_stock", "approve_credit", "approve_discounts", "approve_expenses", "approve_points", "approve_tickets"] },
-  { key: "admin", permissions: ["manage_settings", "manage_users", "switch_store"] },
+  { key: "reports", permissions: ["view_reports", "export_reports", "view_controls", "view_audit_logs"] },
+  { key: "approvals", permissions: ["approve_actions", "approve_refunds", "approve_stock", "approve_credit", "approve_discounts", "approve_expenses", "approve_points", "approve_tickets", "approve_prices", "approve_payments"] },
+  { key: "admin", permissions: ["manage_settings", "manage_backups", "manage_users", "switch_store"] },
 ];
 
 // Permissions "de pouvoir" : on ne peut les accorder ou les retirer (à un rôle ou
@@ -78,11 +94,43 @@ export const SENSITIVE_PERMISSIONS: Permission[] = [
   "approve_expenses",
   "approve_points",
   "approve_tickets",
+  "approve_prices",
+  "approve_payments",
   "adjust_loyalty_points",
   "view_audit_logs",
   "view_controls",
   "switch_store",
 ];
+
+// Droits découpés d'un droit plus large : tant qu'on ne les règle pas séparément,
+// ils suivent leur(s) droit(s) d'origine — un rôle ou une personne qui pouvait faire
+// l'ensemble continue de le pouvoir. Une exception explicite les en détache.
+export const PERMISSION_PARENTS: Partial<Record<Permission, Permission[]>> = {
+  transfer_stock: ["manage_stock"],
+  record_stock_losses: ["manage_stock"],
+  manage_inventory: ["manage_stock"],
+  manage_purchases: ["manage_suppliers"],
+  receive_purchases: ["manage_stock", "manage_suppliers"],
+  edit_product_prices: ["manage_products"],
+  view_costs: ["manage_products", "view_margins"],
+  open_close_cash: ["manage_sales"],
+  sell_on_credit: ["manage_sales"],
+  export_reports: ["view_reports", "view_accounting"],
+  manage_backups: ["manage_settings"],
+};
+
+// Complète un jeu de droits enregistré (rôle) : chaque droit découpé absent prend la
+// valeur de ses droits d'origine. Sans effet sur ceux déjà présents.
+export function inheritSplitPermissions(perms: PermissionSet): { merged: PermissionSet; changed: boolean } {
+  const merged: PermissionSet = { ...perms };
+  let changed = false;
+  for (const [child, parents] of Object.entries(PERMISSION_PARENTS) as [Permission, Permission[]][]) {
+    if (child in merged) continue;
+    merged[child] = parents.some((p) => merged[p] === true);
+    changed = true;
+  }
+  return { merged, changed };
+}
 
 export function parseOverrides(raw: string | null | undefined): PermissionOverrides {
   if (!raw) return {};
@@ -100,6 +148,15 @@ export function parseOverrides(raw: string | null | undefined): PermissionOverri
 export function applyOverrides(base: PermissionSet, overrides: PermissionOverrides): PermissionSet {
   const out: PermissionSet = { ...base };
   for (const key of PERMISSIONS) if (overrides[key] !== undefined) out[key] = overrides[key];
+  // Une exception sur un droit d'origine se répercute sur ses droits découpés, sauf
+  // s'ils ont eux-mêmes une exception : interdire la gestion du stock interdit aussi
+  // de transférer ou de déclarer des pertes.
+  for (const [child, parents] of Object.entries(PERMISSION_PARENTS) as [Permission, Permission[]][]) {
+    if (overrides[child] !== undefined) continue;
+    const overridden = parents.filter((p) => overrides[p] !== undefined);
+    if (overridden.length === 0) continue;
+    out[child] = overridden.some((p) => overrides[p] === true) || (out[child] === true && parents.some((p) => overrides[p] === undefined && base[p] === true));
+  }
   return out;
 }
 
@@ -187,6 +244,8 @@ const PROPRIETAIRE_PERMISSIONS: PermissionSet = Object.fromEntries(
   PERMISSIONS.filter((p) => p !== "view_audit_logs").map((permission) => [permission, true]),
 );
 
+// Rôles par défaut : les droits découpés absents sont complétés à partir de leur
+// droit d'origine (voir inheritSplitPermissions), sauf mention explicite ci-dessous.
 export const DEFAULT_ROLES: Record<DefaultRoleKey, { name: string; permissions: PermissionSet }> = {
   admin: {
     name: "Admin",
@@ -221,6 +280,16 @@ export const DEFAULT_ROLES: Record<DefaultRoleKey, { name: string; permissions: 
       adjust_loyalty_points: true,
       view_reports: true,
       view_accounting: true,
+      transfer_stock: true,
+      record_stock_losses: true,
+      manage_inventory: true,
+      manage_purchases: true,
+      receive_purchases: true,
+      edit_product_prices: true,
+      view_costs: true,
+      open_close_cash: true,
+      sell_on_credit: true,
+      export_reports: true,
     },
   },
   vendeur: {
@@ -231,6 +300,12 @@ export const DEFAULT_ROLES: Record<DefaultRoleKey, { name: string; permissions: 
       manage_customers: true,
       manage_stock: true,
       manage_quotes: true,
+      open_close_cash: true,
+      sell_on_credit: true,
+      transfer_stock: true,
+      record_stock_losses: true,
+      manage_inventory: true,
+      receive_purchases: true,
     },
   },
   caissier: {
@@ -239,6 +314,8 @@ export const DEFAULT_ROLES: Record<DefaultRoleKey, { name: string; permissions: 
       manage_sales: true,
       manage_service_orders: true,
       manage_quotes: true,
+      open_close_cash: true,
+      sell_on_credit: true,
     },
   },
 };

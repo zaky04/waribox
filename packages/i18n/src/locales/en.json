@@ -3,7 +3,8 @@
     "paymentStatus": {
       "paid": "Paid",
       "partial": "Partial",
-      "credit": "Credit"
+      "credit": "Credit",
+      "unpaid": "To pay"
     },
     "filterBar": {
       "from": "From",
@@ -51,7 +52,8 @@
     "appearance": "Appearance",
     "advanced": "Advanced settings",
     "inventory": "Stock count",
-    "controls": "Controls"
+    "controls": "Controls",
+    "approvals": "Requests"
   },
   "topbar": {
     "impersonatingPrefix": "Signed in as",
@@ -102,7 +104,11 @@
     "noSalesYet": "no sales yet",
     "chartLabel": "Sales by hour today",
     "controlAlerts": "Control alerts",
-    "controlAlertsDetail": "{{count}} signal(s) to check over 30 days ({{danger}} serious)"
+    "controlAlertsDetail": "{{count}} signal(s) to check over 30 days ({{danger}} serious)",
+    "pendingApprovals": "Requests to approve",
+    "pendingApprovalsDetail": "{{count}} request(s) await your decision",
+    "decisionsToSee": "Decisions on your requests",
+    "decisionsToSeeDetail": "{{count}} of your requests have been decided."
   },
   "sales": {
     "title": "Sales",
@@ -635,7 +641,11 @@
       "approval_rejected": "Request refused by a manager",
       "cancel_service_order": "Service ticket cancelled",
       "create_service_tariff": "Service rate created",
-      "update_service_tariff": "Service rate changed"
+      "update_service_tariff": "Service rate changed",
+      "approval_request_created": "Approval request created",
+      "approval_request_approved": "Request approved",
+      "approval_request_rejected": "Request refused",
+      "controls_reviewed": "Review done"
     },
     "sales": {
       "searchPlaceholder": "Sale number...",
@@ -1302,7 +1312,8 @@
     "paymentStatus": {
       "paid": "Paid",
       "partial": "Partial",
-      "credit": "Credit"
+      "credit": "Credit",
+      "unpaid": "To pay"
     },
     "errors": {
       "itemRequired": "The ticket must contain at least one item.",
@@ -1311,7 +1322,8 @@
       "repayAmountPositive": "The amount must be greater than zero.",
       "repayFailed": "Could not record the repayment.",
       "historyDescriptionRequired": "Each item must have a description.",
-      "historySaveFailed": "Could not save the changes."
+      "historySaveFailed": "Could not save the changes.",
+      "customerRequired": "The customer's name is required to drop off an item."
     },
     "tariff": {
       "choose": "Rate (optional)",
@@ -1323,7 +1335,11 @@
       "confirm": "Confirm cancellation",
       "tag": "Cancelled",
       "done": "Ticket cancelled."
-    }
+    },
+    "payLater": "Pay later (at pickup)",
+    "balanceDue": "Balance to pay:",
+    "collectDue": "Collect",
+    "dueHint": "The customer doesn't have to pay at drop-off. If they leave without paying, this balance becomes a credit at pickup (identified customer, manager approval)."
   },
   "auth": {
     "loading": "Loading...",
@@ -1473,7 +1489,9 @@
       "cancelled": "This ticket is cancelled: it can no longer be changed.",
       "cancelReasonRequired": "A cancellation reason is required.",
       "cancelPickedUp": "Cannot cancel: at least one item has already been picked up.",
-      "notFound": "Service ticket not found."
+      "notFound": "Service ticket not found.",
+      "customerRequiredAtPickup": "This ticket isn't paid: set the customer (History → edit ticket) so the balance becomes a credit, or collect it before pickup.",
+      "customerRequired": "The customer's name is required: no anonymous drop-offs (traceability)."
     },
     "stores": {
       "noStoreExists": "No store exists — the database migration must have failed."
@@ -1486,7 +1504,8 @@
       "required": "This action ({{kind}} of {{amount}}) exceeds the limit of {{threshold}}: a manager's approval is required.",
       "invalidApprover": "This manager cannot approve this action.",
       "wrongPin": "Incorrect manager PIN.",
-      "requiredPoints": "This action ({{kind}} of {{amount}} points) exceeds the {{threshold}}-point limit: a manager's approval is required."
+      "requiredPoints": "This action ({{kind}} of {{amount}} points) exceeds the {{threshold}}-point limit: a manager's approval is required.",
+      "overApproverLimit": "This amount is above this approver's limit: a higher-level approver is needed."
     },
     "stock": {
       "quantityPositive": "The quantity must be greater than zero.",
@@ -1842,7 +1861,9 @@
       "discount": "discount outside a promotion",
       "expense": "expense",
       "points": "points adjustment",
-      "ticket": "ticket change or cancellation"
+      "ticket": "ticket change or cancellation",
+      "price": "price change",
+      "payment": "supplier payment"
     },
     "title": "Approval required",
     "approver": "Manager",
@@ -1965,7 +1986,8 @@
       "ticket_cancels": "{{value}} cancelled tickets.",
       "stale_tickets": "{{value}} ticket(s) ready for more than {{threshold}} days, never picked up.",
       "unpaid_pickups": "items picked up with a balance due: {{amount}} to recover.",
-      "number_gaps": "{{value}} missing number(s) in the sales or tickets sequence (deleted or never entered)."
+      "number_gaps": "{{value}} missing number(s) in the sales or tickets sequence (deleted or never entered).",
+      "pending_approvals": "{{value}} approval request(s) pending for over {{threshold}} h — decide them so business isn't blocked."
     },
     "integrityTitle": "Log integrity",
     "integrityHint": "Each action is chained to the previous one by a fingerprint: deleting or editing a log line breaks the chain. Note the head fingerprint from time to time: it also lets you detect a rollback.",
@@ -2018,6 +2040,15 @@
         "sale": "sale",
         "ticket": "ticket"
       }
+    },
+    "review": {
+      "title": "Owner review",
+      "last": "Last review: {{date}} by {{name}}.",
+      "never": "No review recorded yet.",
+      "since": "Since then: {{events}} logged action(s), {{pending}} pending request(s).",
+      "note": "Note (optional)",
+      "mark": "Review done",
+      "showSince": "Show since last review"
     }
   },
   "controlsSettings": {
@@ -2040,7 +2071,34 @@
     "alertLoss": "Alert when declared losses exceed (% of the employee's sales)",
     "alertDiscount": "Alert when off-promotion discounts exceed (% of the employee's sales)",
     "approvalTicket": "Ticket: price cut after payment, cancellation, pickup with balance due, undo — above (0 = everything must be approved)",
-    "staleTicketDays": "Flag a « ready » ticket not picked up for (days)"
+    "staleTicketDays": "Flag a « ready » ticket not picked up for (days)",
+    "modeHeading": "How to approve",
+    "modeHint": "« PIN »: the manager types their code on the spot. « Later validation »: the action waits for the owner (Requests screen) — stock is applied right away then validated or corrected; expenses and points are only recorded after approval.",
+    "modeStock": "Stock: entries, withdrawals, purchases, inventory",
+    "modeExpense": "Expenses",
+    "modePoints": "Loyalty points adjustments",
+    "modePin": "Manager's PIN, on the spot",
+    "modeLater": "Later validation by the owner",
+    "profilesHeading": "Control profile",
+    "profilesHint": "Pick one based on how present you are: a profile fills the thresholds, modes and alert delay below (adjust then Save). Amounts are scaled to your currency.",
+    "profileApplied": "Settings filled in below — remember to Save.",
+    "profiles": {
+      "present": {
+        "name": "Always present",
+        "description": "everything goes through your PIN on the spot; a pending request is flagged after 4 h."
+      },
+      "evening": {
+        "name": "Daily check-in",
+        "description": "small amounts are free, the rest waits for your evening validation (stock applied now, expenses and points after approval); alert after 24 h."
+      },
+      "periodic": {
+        "name": "Weekly or monthly",
+        "description": "high thresholds, everything is logged for your review afterwards. Give your manager approval rights and an approval limit (Users) so daily work isn't blocked; alert after 7 days."
+      }
+    },
+    "pendingAlertHours": "Flag an approval request pending for more than (hours) — 0 to disable",
+    "approvalPrice": "Product price change above (price gap) — 0 = every change must be approved",
+    "approvalPayment": "Supplier debt payment above — 0 = every payment must be approved"
   },
   "approvalRoles": {
     "title": "Roles and permissions",
@@ -2061,7 +2119,11 @@
     "limitDiscount": "Max off-promotion discount without approval",
     "limitExpense": "Max expense without approval",
     "limitPoints": "Max points adjustment without approval",
-    "limitTicket": "Max ticket change/cancellation without approval"
+    "limitTicket": "Max ticket change/cancellation without approval",
+    "limitApprove": "Approval limit: maximum amount this person can approve (empty = unlimited)",
+    "limitApproveHint": "Above this amount, the request must be decided by a higher-level approver (owner). Does not apply to loyalty points.",
+    "template": "Start from a template",
+    "templateNone": "— None (empty role) —"
   },
   "permissions": {
     "view_margins": "See margins",
@@ -2110,7 +2172,20 @@
     "approve_discounts": "Approve discounts outside a promotion",
     "approve_expenses": "Approve expenses",
     "approve_points": "Approve points adjustments",
-    "approve_tickets": "Approve ticket changes"
+    "approve_tickets": "Approve ticket changes",
+    "transfer_stock": "Transfer stock between locations",
+    "record_stock_losses": "Record stock losses (breakage, expiry, theft)",
+    "manage_inventory": "Do stock counts",
+    "manage_purchases": "Enter purchases",
+    "receive_purchases": "Receive purchases",
+    "edit_product_prices": "Change product prices",
+    "view_costs": "See purchase prices (costs)",
+    "open_close_cash": "Open and close the cash drawer",
+    "sell_on_credit": "Sell on credit",
+    "export_reports": "Export reports (PDF, Excel)",
+    "manage_backups": "Back up and restore data",
+    "approve_prices": "Approve price changes",
+    "approve_payments": "Approve supplier payments"
   },
   "purchasesControls": {
     "invoiceReference": "Supplier invoice number",
@@ -2178,5 +2253,87 @@
     "save": "Save",
     "none": "No rates: entry is manual.",
     "inactive": "disabled"
+  },
+  "approvalRequests": {
+    "queued": "Request sent to the manager for validation: nothing is recorded until it is approved.",
+    "reversalNote": "Refusal of request no. {{id}}",
+    "errors": {
+      "notFound": "Request not found.",
+      "alreadyDecided": "This request has already been decided.",
+      "reasonRequired": "A reason is required to refuse.",
+      "selfDecision": "You cannot decide your own request."
+    },
+    "summary": {
+      "stockEntry": "Stock entry: {{quantity}} × {{product}} (value {{value}}) — {{note}}",
+      "stockLoss": "Stock withdrawal: {{quantity}} × {{product}} (value {{value}}) — reason: {{reason}}",
+      "purchase": "Purchase {{number}} received into stock ({{total}})",
+      "receipt": "Receipt of purchase {{number}} ({{total}})",
+      "inventory": "Inventory no. {{id}} adjusted: missing {{missing}}, surplus {{surplus}}",
+      "expense": "Expense « {{category}} » of {{amount}} {{note}}",
+      "points": "Adjustment of {{points}} points for {{customer}} {{reason}}"
+    },
+    "title": "Approval requests",
+    "hint": "What awaits a decision, and the follow-up of your requests. « Already applied »: stock is already up to date, your validation confirms it (a refusal corrects it with a reverse movement). « Pending »: nothing is recorded until you approve.",
+    "pendingTitle": "To validate ({{count}})",
+    "nonePending": "Nothing to validate right now.",
+    "myTitle": "My requests",
+    "historyTitle": "Decision history",
+    "none": "No requests.",
+    "kinds": {
+      "stock": "Stock",
+      "expense": "Expense",
+      "points": "Points",
+      "price": "Price",
+      "payment": "Payment"
+    },
+    "by": "Requested by {{name}} on {{date}}",
+    "effectNow": "Already applied — to validate",
+    "blocked": "Pending — nothing recorded",
+    "approve": "Approve",
+    "reject": "Refuse",
+    "reason": "Reason for refusal",
+    "confirmReject": "Confirm refusal",
+    "cancel": "Cancel",
+    "status": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Refused"
+    },
+    "col": {
+      "date": "Date",
+      "detail": "Detail",
+      "amount": "Amount",
+      "status": "Status",
+      "requestedBy": "Requested by",
+      "decidedBy": "Decided by"
+    },
+    "overLimit": "This amount is above your approval limit: a higher-level approver must decide.",
+    "batchDone": "{{count}} request(s) approved.",
+    "selectAll": "Select all",
+    "approveSelected": "Approve selection ({{count}})",
+    "select": "Select",
+    "new": "New"
+  },
+  "roleTemplates": {
+    "storekeeper": {
+      "name": "Storekeeper",
+      "description": "receives, shelves, transfers and counts stock; cannot record losses"
+    },
+    "deputy_manager": {
+      "name": "Deputy manager",
+      "description": "like a manager, without prices, points, expense deletion or exports"
+    },
+    "senior_cashier": {
+      "name": "Senior cashier",
+      "description": "sells, opens and closes the drawer, collects credits, manages customers"
+    },
+    "accountant": {
+      "name": "Accountant",
+      "description": "reads and exports accounts, enters expenses; does not sell or touch stock"
+    },
+    "supervisor": {
+      "name": "Supervisor",
+      "description": "read-only: reports, margins, controls"
+    }
   }
 }

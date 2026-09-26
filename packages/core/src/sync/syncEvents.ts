@@ -25,7 +25,9 @@ export type SyncEventType =
   | "stockEntry.created"
   | "stockLoss.created"
   | "stockTransfer.created"
-  | "expense.created";
+  | "expense.created"
+  | "approvalRequest.created"
+  | "approvalRequest.decided";
 
 export interface SyncEvent<T = unknown> {
   eventId: string;
@@ -123,6 +125,30 @@ export interface ExpenseCreatedEventPayload {
     storeId: number | null;
   };
   payment: { syncId: string; method: string; amount: number; storeId: number | null; createdAt: string };
+}
+
+// Demande d'approbation (dépense, stock manuel) : copie de la ligne, l'identité est le syncId.
+export interface ApprovalRequestSnapshot {
+  syncId: string;
+  kind: string;
+  amount: number;
+  requestedBy: number | null;
+  storeId: number | null;
+  summary: string;
+  payload: string | null;
+  createdAt: string;
+}
+
+export interface ApprovalRequestCreatedEventPayload {
+  request: ApprovalRequestSnapshot;
+}
+
+export interface ApprovalRequestDecidedEventPayload {
+  request: ApprovalRequestSnapshot;
+  approve: boolean;
+  decidedBy: number;
+  note: string | null;
+  decidedAt: string;
 }
 
 type SyncEventListener = (event: SyncEvent) => void;

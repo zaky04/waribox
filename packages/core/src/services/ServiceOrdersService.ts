@@ -1,7 +1,7 @@
 import { roundMoney } from "../domain/money";
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
-import { t } from "@gestion-boutique/i18n";
+import { formatAmount, t } from "@gestion-boutique/i18n";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { withTransaction } from "@gestion-boutique/database";
 import { logAction } from "./AuditService";
@@ -97,6 +97,79 @@ export async function getServiceOrderOpenBalance(db: Database, orderId: number):
   return roundMoney(rows.filter((r) => r.status !== "settled").reduce((sum, r) => sum + r.remaining, 0));
 }
 
+// Part d'un ticket ni encaissée ni transformée en créance : « solde à payer ».
+// Un service non payé au dépôt n'est PAS un crédit : il ne le devient que si le
+// client repart sans avoir payé (voir updateServiceOrderItemStatus).
+export function computeUncovered(total: number, paid: number, creditOriginal: number): number {
+  const value = roundMoney(total - paid - creditOriginal);
+  return value > 0.01 ? value : 0;
+}
+
+export async function getServiceOrderBalanceDue(db: Database, orderId: number): Promise<number> {
+  const order = await db.select().from(schema.serviceOrders).where(eq(schema.serviceOrders.id, orderId)).get();
+  if (!order || order.cancelledAt) return 0;
+  const credits = await db.select().from(schema.customerCredits).where(eq(schema.customerCredits.serviceOrderId, orderId));
+  return computeUncovered(order.total, await getPaidTotal(db, orderId), credits.reduce((sum, c) => sum + c.originalAmount, 0));
+}
+
+// Soldes à payer de tous les tickets en cours (clé = id du ticket), pour le suivi.
+export async function listServiceOrderBalancesDue(db: Database): Promise<Map<number, number>> {
+  const [orders, payments, credits] = await Promise.all([
+    db.select().from(schema.serviceOrders),
+    db.select().from(schema.payments).where(eq(schema.payments.referenceType, "service_order")),
+    db.select().from(schema.customerCredits),
+  ]);
+  const out = new Map<number, number>();
+  for (const o of orders) {
+    if (o.cancelledAt) continue;
+    const paid = payments.filter((p) => p.referenceId === o.id).reduce((s, p) => s + p.amount, 0);
+    const credit = credits.filter((c) => c.serviceOrderId === o.id).reduce((s, c) => s + c.originalAmount, 0);
+    const due = computeUncovered(o.total, paid, credit);
+    if (due > 0) out.set(o.id, due);
+  }
+  return out;
+}
+
+export interface RecordServiceOrderPaymentInput {
+  orderId: number;
+  amount: number;
+  method: ServiceOrderPaymentMethod;
+  userId: number;
+}
+
+// Encaisse tout ou partie du solde à payer d'un ticket (avant le retrait).
+export async function recordServiceOrderPayment(db: Database, input: RecordServiceOrderPaymentInput, actingPermissions: PermissionSet) {
+  requirePermission(actingPermissions, "manage_service_orders");
+  return withTransaction(async () => {
+    const order = await db.select().from(schema.serviceOrders).where(eq(schema.serviceOrders.id, input.orderId)).get();
+    if (!order) throw new Error(t("coreErrors.serviceOrders.itemNotFound"));
+    if (order.cancelledAt) throw new Error(t("coreErrors.serviceOrders.cancelled"));
+    const amount = roundMoney(input.amount);
+    if (amount <= 0) throw new Error(t("coreErrors.credits.amountPositive"));
+    const due = await getServiceOrderBalanceDue(db, input.orderId);
+    if (amount > due + 0.01) throw new Error(t("coreErrors.common.amountExceedsBalance", { balance: formatAmount(due) }));
+    await db.insert(schema.payments).values({
+      referenceType: "service_order",
+      referenceId: order.id,
+      method: input.method,
+      amount,
+      receivedBy: input.userId,
+      storeId: order.storeId,
+    });
+    const remaining = roundMoney(due - amount);
+    const paymentStatus = remaining <= 0.01 ? "paid" : "partial";
+    if (order.paymentStatus !== "credit") await db.update(schema.serviceOrders).set({ paymentStatus }).where(eq(schema.serviceOrders.id, order.id));
+    await logAction(db, {
+      userId: input.userId,
+      action: "record_service_order_payment",
+      entity: "service_order",
+      entityId: order.id,
+      metadata: { number: order.number, amount, method: input.method, remaining },
+    });
+    return remaining;
+  });
+}
+
 export async function createServiceOrder(
   db: Database,
   input: CreateServiceOrderInput,
@@ -143,6 +216,8 @@ export async function createServiceOrder(
     );
     customerId = customer.id;
   }
+  // Jamais de dépôt anonyme : le nom du client est la traçabilité du ticket.
+  if (!customerId) throw new Error(t("coreErrors.serviceOrders.customerRequired"));
 
   const subtotal = roundMoney(input.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0));
   const taxTotal = input.items.reduce((sum, item) => {
@@ -156,23 +231,11 @@ export async function createServiceOrder(
   const discount = 0;
   const total = roundMoney(Math.max(0, itemsTotal - discount));
 
-  const amountPaid = roundMoney(input.amountPaid ?? total);
-  if (amountPaid < total && !customerId) {
-    throw new Error(t("coreErrors.serviceOrders.customerIdRequiredCredit"));
-  }
+  // Le client n'est pas obligé de payer au dépôt : le solde reste « à payer » et
+  // ne devient une créance que s'il n'est pas réglé au retrait.
+  const amountPaid = roundMoney(input.paymentMethod === "credit" ? (input.amountPaid ?? 0) : (input.amountPaid ?? total));
 
-  let creditApprovedBy: number | null = null;
-  if (amountPaid < total) {
-    creditApprovedBy = await checkCreditApproval(db, {
-      customerId: customerId!,
-      creditAmount: roundMoney(total - amountPaid),
-      userId: input.userId,
-      actingPermissions,
-      verifiedApproverId,
-    });
-  }
-
-  const paymentStatus = amountPaid >= total ? "paid" : amountPaid > 0 ? "partial" : "credit";
+  const paymentStatus = amountPaid >= total ? "paid" : amountPaid > 0 ? "partial" : "unpaid";
   const number = await nextServiceOrderNumber(db);
 
   const order = await db
@@ -214,18 +277,6 @@ export async function createServiceOrder(
       amount: amountPaid,
       receivedBy: input.userId,
       storeId: input.storeId,
-    });
-  }
-
-  if (amountPaid < total) {
-    await db.insert(schema.customerCredits).values({
-      customerId: customerId!,
-      serviceOrderId: order.id,
-      storeId: input.storeId,
-      originalAmount: roundMoney(total - amountPaid),
-      remainingBalance: roundMoney(total - amountPaid),
-      status: "open",
-      approvedBy: creditApprovedBy ?? undefined,
     });
   }
 
@@ -352,13 +403,38 @@ export async function updateServiceOrderItemStatus(
   // « reprendre » l'article après avoir gardé l'argent.
   let approvedBy: number | null = null;
   let openBalance = 0;
+  // Solde jamais réglé : il devient une créance au retrait (avec approbation).
+  let uncovered = 0;
+  let creditApprovedBy: number | null = null;
   if (input.status === "picked_up" && current.status !== "picked_up") {
-    openBalance = await getServiceOrderOpenBalance(db, current.serviceOrderId);
-    if (openBalance > 0.01) {
-      approvedBy = await checkApproval(db, { kind: "ticket", amount: openBalance, userId: input.userId, actingPermissions, verifiedApproverId });
+    uncovered = await getServiceOrderBalanceDue(db, current.serviceOrderId);
+    openBalance = uncovered;
+    if (uncovered > 0.01) {
+      if (!order?.customerId) throw new Error(t("coreErrors.serviceOrders.customerRequiredAtPickup"));
+      approvedBy = await checkApproval(db, { kind: "ticket", amount: uncovered, userId: input.userId, actingPermissions, verifiedApproverId });
+      creditApprovedBy = await checkCreditApproval(db, {
+        customerId: order.customerId,
+        creditAmount: uncovered,
+        userId: input.userId,
+        actingPermissions,
+        verifiedApproverId,
+      });
     }
   } else if (current.status === "picked_up" && input.status !== "picked_up") {
     approvedBy = await checkApproval(db, { kind: "ticket", amount: order?.total ?? current.total, userId: input.userId, actingPermissions, verifiedApproverId });
+  }
+
+  if (uncovered > 0.01 && order?.customerId) {
+    await db.insert(schema.customerCredits).values({
+      customerId: order.customerId,
+      serviceOrderId: order.id,
+      storeId: order.storeId,
+      originalAmount: uncovered,
+      remainingBalance: uncovered,
+      status: "open",
+      approvedBy: creditApprovedBy ?? approvedBy ?? undefined,
+    });
+    await db.update(schema.serviceOrders).set({ paymentStatus: "credit" }).where(eq(schema.serviceOrders.id, order.id));
   }
 
   const item = await db
@@ -387,7 +463,7 @@ export async function updateServiceOrderItemStatus(
     action: "update_service_order_item_status",
     entity: "service_order_item",
     entityId: input.itemId,
-    metadata: { from: current.status, status: input.status, openBalance, approvedBy },
+    metadata: { from: current.status, status: input.status, openBalance, approvedBy, ...(uncovered > 0.01 ? { convertedToCredit: uncovered } : {}) },
   });
 
   return item;

@@ -4233,6 +4233,40 @@ crée pas de créance ; les lignes manuelles ne sont pas signalées quand des
 tarifs existent (piste : ratio lignes manuelles par employé) ; création d'un
 ticket toujours saisie du prix libre sans tarif (par choix du propriétaire).
 
+### 2026-09-26 — File d'approbation (validation ultérieure), Phase A locale
+
+**Deux modes par domaine** (Configuration → Contrôles) : `pin` (défaut, comportement inchangé) ou `later` pour stock/dépenses/points (`business_settings.approval_mode_*`, migration 12). Gestes de comptoir (remise, remboursement, retrait avec solde) gardent le PIN.
+- **Stock** : « effet maintenant, validation ensuite » — le mouvement est appliqué, une demande `approval_requests` est créée ; un refus crée des contre-mouvements (grand livre append-only, même lot).
+- **Dépenses / points** : « bloqué jusqu'à validation » — rien n'est enregistré, la demande porte le payload rejoué à l'approbation (`insertExpense`, `applyPointsAdjustment`). `ApprovalQueuedError` informe l'utilisateur.
+- `ApprovalRequestsService.decideApprovalRequest` ; page **Demandes** (`ApprovalsPage`) ; carte sur l'Accueil.
+- **Bug corrigé** : Approuver ne répondait pas car `insertExpense` ouvre sa propre `withTransaction` (pas d'imbrication) ; la dépense est maintenant rejouée hors du wrapper, seul le statut est marqué après. Motif de perte traduit dans le résumé.
+- Vérifié navigateur : dépense créée à l'approbation, retrait approuvé, historique. Refus avec contre-mouvement non re-testé après correctif.
+- **Pas fait (Phase B)** : validation à distance depuis le téléphone du propriétaire (réplication de `approval_requests` via le mode réseau, lui-même non testé sur deux appareils). `sync_id` déjà présent. Anciennes demandes gardent l'ancien libellé brut (« expiry »).
+
+### 2026-09-26 — Approbations sans frein au commerce : profils, plafond d'approbation, « Contrôle effectué », alerte d'attente
+
+Objectif : que le propriétaire soit présent en permanence, chaque soir ou une fois par mois, sans jamais bloquer l'activité (migration 13).
+1. **Profils de contrôle** (`domain/controlProfiles.ts`, Configuration → Contrôles de gestion) : *Présent en permanence* (PIN partout), *Passage chaque soir*, *Hebdomadaire ou mensuel* — remplissent seuils, modes et délai d'alerte (rien n'est enregistré avant « Enregistrer »). Seuils exprimés en FCFA puis mis à l'échelle de la devise (`niceRound`).
+2. **Plafond d'approbation par personne** (`users.limit_approve`, Utilisateurs) : au-dessus, un approbateur ne peut plus approuver seul ni chez les autres → il faut un responsable de niveau supérieur. Appliqué dans `checkApproval`/`requireApproval*` (auto-approbation), `approverWithinLimit` (PIN d'un autre), `listApprovers(kind, amount)`, et `decideApprovalRequest` (file). Sans effet sur les points. Nouveau : on ne peut pas trancher sa propre demande.
+3. **Contrôle effectué** (`ControlsReviewService`, page Contrôles) : date/auteur/note enregistrés dans `business_settings` + journal (`controls_reviewed`) ; affiche les actions et demandes depuis ce contrôle ; bouton « Afficher depuis le dernier contrôle ».
+4. **Alerte d'attente** (`approval_pending_alert_hours`, 48 h par défaut) : demande en attente trop longtemps → alerte `pending_approvals` (danger à 3× le délai), aussi dans le résumé WhatsApp.
+- Vérifié navigateur : profil appliqué (valeurs + 24 h), Contrôle effectué, gérant avec approve_expenses + plafond 10 000 → dépense de 20 000 mise en file, plafond relevé à 50 000 → enregistrée directement. 96 tests.
+- **Non testé** : alerte d'attente en conditions réelles (dépend de l'horloge), escalade avec un PIN de propriétaire sur un gérant plafonné, profils en autre devise dans le navigateur. Le profil ne configure pas les droits du gérant : à faire dans Utilisateurs.
+
+### 2026-09-26 — Droits plus fins, trous d'approbation fermés, confort d'équipe, validation à distance, ticket de service « à payer »
+
+**Ticket de service : le crédit naît au retrait, pas au dépôt.** Un client n'est pas obligé de payer au dépôt : le solde reste « à payer » (statut `unpaid`, aucune créance, client facultatif). `computeUncovered` = total − encaissé − créances déjà créées ; `getServiceOrderBalanceDue`/`listServiceOrderBalancesDue`. `recordServiceOrderPayment` encaisse avant le retrait (« Solde à payer » dans Suivi). Au **retrait** d'un article avec un solde jamais réglé : client obligatoire, approbation `ticket` + plafond de crédit (`checkCreditApproval`), création de la créance (`convertedToCredit` au journal), statut `credit`. Les anciennes créances créées au dépôt restent valables. Vérifié navigateur : ticket sans client à payer plus tard, acompte (Partiel), retrait sans client refusé, retrait avec client → Crédit 2 500.
+
+**Droits découpés** (migration sans effet visible : `PERMISSION_PARENTS`, `inheritSplitPermissions` au démarrage sur tous les rôles ; une exception sur le droit d'origine d'une personne se répercute sur ses enfants sauf exception propre) : `transfer_stock`, `record_stock_losses`, `manage_inventory`, `manage_purchases`, `receive_purchases`, `edit_product_prices`, `view_costs`, `open_close_cash`, `sell_on_credit`, `export_reports`, `manage_backups` + `approve_prices`, `approve_payments`. Appliqués côté service ET dans l'interface (Stock, Produits, Nav, Ventes, exports Rapports/Comptabilité, sauvegardes).
+
+**Trous d'approbation fermés** (migration 14, seuils 0 par défaut, PIN uniquement) : changement de prix produit (écart max vente/achat, kind `price`), paiement d'une dette fournisseur (kind `payment`), suppression d'une dépense (seuil dépense). Ajoutés aux profils de contrôle.
+
+**Confort d'équipe** (migration 15) : le demandeur voit « Décisions sur vos demandes » à l'Accueil et « Nouveau » dans Mes demandes (`decision_seen`) ; approbation groupée dans Demandes ; modèles de rôles (Magasinier, Gérant adjoint, Caissier confirmé, Comptable, Superviseur — jamais de droit d'approbation/administration).
+
+**Validation à distance (mode réseau)** : deux événements `approvalRequest.created`/`decided` (snapshot de la demande, identité = `sync_id`). Seules les demandes dont l'effet est répliqué voyagent : dépenses et stock manuel (avec `movementSyncIds`) ; points, achats, inventaires restent locaux. La décision est rejouée de façon déterministe sur chaque appareil (dépense : mêmes syncIds `<demande>:expense/payment` que l'événement `expense.created` du décideur ; stock : approbation = `approved_by`, refus = contre-mouvements `<demande>:rev:<mouvement>`, idempotents), après revérification du décideur (`assertCanDecide` : droit, plafond, pas le demandeur). L'instantané initial d'un nouveau Worker inclut les demandes en attente.
+- **Non testé** : la validation à distance sur deux appareils réels (comme tout le mode réseau) ; seule la logique pure est testée (111 tests). Le décideur reste soumis au canal `ws://` en clair déjà documenté.
+- **Pas fait** : réplication des demandes de points/achats/inventaire ; notification push au propriétaire ; droits par boutique.
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du

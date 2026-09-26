@@ -1,10 +1,10 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema, withTransaction } from "@gestion-boutique/database";
-import { t } from "@gestion-boutique/i18n";
+import { formatMoneyPlain, t } from "@gestion-boutique/i18n";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { roundMoney } from "../domain/money";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
-import { checkApproval, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
+import { checkApprovalDeferrable, createApprovalRequest, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
 import { logAction } from "./AuditService";
 import { consumeStockFefo, recordMovement } from "./StockService";
 
@@ -55,7 +55,7 @@ export interface StartStockCountInput {
 }
 
 export async function startStockCount(db: Database, input: StartStockCountInput, actingPermissions: PermissionSet) {
-  requirePermission(actingPermissions, "manage_stock");
+  requirePermission(actingPermissions, "manage_inventory");
   if (await getOpenStockCount(db, input.locationId)) {
     throw new Error(t("coreErrors.inventory.alreadyOpen"));
   }
@@ -100,7 +100,7 @@ export interface SaveCountedQuantityInput {
 }
 
 export async function saveCountedQuantity(db: Database, input: SaveCountedQuantityInput, actingPermissions: PermissionSet) {
-  requirePermission(actingPermissions, "manage_stock");
+  requirePermission(actingPermissions, "manage_inventory");
   const count = await db.select().from(schema.stockCounts).where(eq(schema.stockCounts.id, input.countId)).get();
   if (!count || count.status !== "open") throw new Error(t("coreErrors.inventory.notOpen"));
   if (input.countedQuantity != null && input.countedQuantity < 0) throw new Error(t("coreErrors.inventory.negative"));
@@ -163,7 +163,7 @@ export async function closeStockCount(
   input: CloseStockCountInput,
   actingPermissions: PermissionSet,
 ): Promise<CloseStockCountResult> {
-  requirePermission(actingPermissions, "manage_stock");
+  requirePermission(actingPermissions, "manage_inventory");
   const count = await db.select().from(schema.stockCounts).where(eq(schema.stockCounts.id, input.countId)).get();
   if (!count || count.status !== "open") throw new Error(t("coreErrors.inventory.notOpen"));
 
@@ -185,19 +185,21 @@ export async function closeStockCount(
 
     // Plafond : la régularisation est un mouvement de stock sensible (elle peut
     // effacer un vol) — même contrôle que les pertes/entrées manuelles.
-    const approvedBy = await checkApproval(db, {
+    const approval = await checkApprovalDeferrable(db, {
       kind: "stock",
       amount: roundMoney(missingValue + surplusValue),
       userId: input.userId,
       actingPermissions,
       verifiedApproverId,
     });
+    const approvedBy = approval.approvedBy;
+    const movementIds: number[] = [];
 
     const note = t("inventory.movementNote", { id: count.id });
     for (const v of variances) {
       if (v.difference === 0) continue;
       if (v.difference < 0) {
-        await consumeStockFefo(db, {
+        const consumed = await consumeStockFefo(db, {
           variantId: v.variantId,
           locationId: count.locationId,
           quantity: Math.abs(v.difference),
@@ -208,8 +210,9 @@ export async function closeStockCount(
           note,
           approvedBy: approvedBy ?? undefined,
         });
+        movementIds.push(...consumed.map((m) => m.id));
       } else {
-        await recordMovement(db, {
+        const added = await recordMovement(db, {
           variantId: v.variantId,
           locationId: count.locationId,
           quantityDelta: v.difference,
@@ -220,7 +223,19 @@ export async function closeStockCount(
           note,
           approvedBy: approvedBy ?? undefined,
         });
+        movementIds.push(added.id);
       }
+    }
+
+    if (approval.deferred && movementIds.length > 0) {
+      await createApprovalRequest(db, {
+        kind: "stock",
+        amount: roundMoney(missingValue + surplusValue),
+        requestedBy: input.userId,
+        storeId: count.storeId,
+        summary: t("approvalRequests.summary.inventory", { id: count.id, missing: formatMoneyPlain(missingValue), surplus: formatMoneyPlain(surplusValue) }),
+        payload: { movementIds, countId: count.id },
+      });
     }
 
     // Fige la quantité théorique réellement utilisée pour chaque ligne comptée.

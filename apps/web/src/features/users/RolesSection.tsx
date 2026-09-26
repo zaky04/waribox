@@ -3,10 +3,13 @@ import {
   getRoleDisplayName,
   listRoles,
   PERMISSION_CATEGORIES,
+  ROLE_TEMPLATES,
+  ROLE_TEMPLATE_IDS,
   SENSITIVE_PERMISSIONS,
   updateRolePermissions,
   type Permission,
   type PermissionSet,
+  type RoleTemplateId,
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useState } from "react";
@@ -100,10 +103,33 @@ export function RolesSection({ onChanged }: { onChanged: () => void }) {
       {editingId != null && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10, borderTop: "1px dashed var(--color-rule-strong)", paddingTop: 12 }}>
           {editingId === "new" ? (
-            <label>
-              {t("approvalRoles.name")}
-              <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
-            </label>
+            <>
+              <label>
+                {t("approvalRoles.template")}
+                <select
+                  style={inputStyle}
+                  defaultValue=""
+                  onChange={(e) => {
+                    const id = e.target.value as RoleTemplateId | "";
+                    if (!id) return;
+                    setName(t(`roleTemplates.${id}.name`));
+                    // Un modèle ne donne jamais un droit sensible que l'auteur n'a pas lui-même.
+                    setPerms(Object.fromEntries(Object.entries(ROLE_TEMPLATES[id]).filter(([p]) => !SENSITIVE_PERMISSIONS.includes(p as Permission) || user?.permissions[p as Permission] === true)));
+                  }}
+                >
+                  <option value="">{t("approvalRoles.templateNone")}</option>
+                  {ROLE_TEMPLATE_IDS.map((id) => (
+                    <option key={id} value={id}>
+                      {t(`roleTemplates.${id}.name`)} — {t(`roleTemplates.${id}.description`)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                {t("approvalRoles.name")}
+                <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
+              </label>
+            </>
           ) : (
             <strong>
               {t("approvalRoles.editRole")} : {getRoleDisplayName(name)}

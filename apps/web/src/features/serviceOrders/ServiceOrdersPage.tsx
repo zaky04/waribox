@@ -12,6 +12,8 @@ import {
   listServiceTariffs,
   listServiceOrders,
   recordCreditRepayment,
+  recordServiceOrderPayment,
+  listServiceOrderBalancesDue,
   updateServiceOrder,
   updateServiceOrderItem,
   updateServiceOrderItemStatus,
@@ -92,7 +94,7 @@ export function ServiceOrdersPage() {
     { value: "cash", label: t("sales.paymentMethods.cash") },
     { value: "card", label: t("sales.paymentMethods.card") },
     { value: "mobile_money", label: t("sales.paymentMethods.mobile_money") },
-    { value: "credit", label: t("sales.paymentMethods.credit") },
+    { value: "credit", label: t("serviceOrders.payLater") },
   ];
 
   const ITEM_STATUS_LABELS: Record<ServiceOrderItemStatus, string> = {
@@ -112,6 +114,7 @@ export function ServiceOrdersPage() {
     paid: t("serviceOrders.paymentStatus.paid"),
     partial: t("serviceOrders.paymentStatus.partial"),
     credit: t("serviceOrders.paymentStatus.credit"),
+    unpaid: t("serviceOrders.paymentStatus.unpaid"),
   };
 
   const [view, setView] = useState<"new" | "track" | "history">("new");
@@ -140,6 +143,9 @@ export function ServiceOrdersPage() {
 
   const [orders, setOrders] = useState<ServiceOrder[]>([]);
   const [credits, setCredits] = useState<Credit[]>([]);
+  // Soldes « à payer » (ni encaissés ni encore transformés en créance), par ticket.
+  const [dueByOrder, setDueByOrder] = useState<Map<number, number>>(new Map());
+  const [payMethod, setPayMethod] = useState<ServiceOrderPaymentMethod>("cash");
   const [itemsByOrder, setItemsByOrder] = useState<Record<number, ServiceOrderItem[]>>({});
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
   const [repayAmount, setRepayAmount] = useState("");
@@ -172,6 +178,7 @@ export function ServiceOrdersPage() {
     ]);
     setOrders(orderRows);
     setCredits(creditRows);
+    setDueByOrder(await listServiceOrderBalancesDue(db));
   }, [db, currentStoreId]);
 
   useEffect(() => {
@@ -229,13 +236,18 @@ export function ServiceOrdersPage() {
   const total = subtotal;
 
   const paidValuePreview = amountPaid === "" ? total : Number(amountPaid);
-  const needsCustomerIdentification = paymentMethod === "credit" || paidValuePreview < total;
+  // Jamais de dépôt anonyme : le nom du client est toujours requis (traçabilité).
+  const needsCustomerIdentification = true;
 
   const handleSubmit = async () => {
     setCheckoutError(null);
     if (!user) return;
     if (lines.length === 0) {
       setCheckoutError(t("serviceOrders.errors.itemRequired"));
+      return;
+    }
+    if (!customerId && !newCustomerName.trim()) {
+      setCheckoutError(t("serviceOrders.errors.customerRequired"));
       return;
     }
     if (lines.some((l) => !l.description.trim())) {
@@ -442,6 +454,26 @@ export function ServiceOrdersPage() {
   const customerPhone = (id: number | null) => customers.find((c) => c.id === id)?.phone ?? null;
   const creditForOrder = (orderId: number) =>
     credits.find((c) => c.serviceOrderId === orderId && c.status !== "settled");
+
+  const handlePayDue = async (orderId: number, due: number) => {
+    if (!user) return;
+    setRepayError(null);
+    const value = repayAmount === "" ? due : Number(repayAmount);
+    if (!value || value <= 0) {
+      setRepayError(t("serviceOrders.errors.repayAmountPositive"));
+      return;
+    }
+    setRepaying(true);
+    try {
+      await recordServiceOrderPayment(db, { orderId, amount: value, method: payMethod, userId: user.id }, user.permissions);
+      setRepayAmount("");
+      await refreshTrack();
+    } catch (err) {
+      setRepayError(err instanceof Error ? err.message : t("serviceOrders.errors.repayFailed"));
+    } finally {
+      setRepaying(false);
+    }
+  };
 
   const handleRepay = async (credit: Credit) => {
     if (!user) return;
@@ -795,6 +827,7 @@ export function ServiceOrdersPage() {
                   const items = itemsByOrder[order.id] ?? [];
                   const summary = deriveOrderStatus(items);
                   const credit = creditForOrder(order.id);
+                  const due = dueByOrder.get(order.id) ?? 0;
                   const expanded = expandedOrderId === order.id;
 
                   return (
@@ -877,6 +910,41 @@ export function ServiceOrdersPage() {
                                 <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
                                   {t("serviceOrders.promisedPickup")} {order.promisedDate}
                                 </p>
+                              )}
+
+                              {due > 0.01 && (
+                                <div
+                                  style={{
+                                    borderTop: "1px solid var(--color-border)",
+                                    paddingTop: 12,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    flexWrap: "wrap",
+                                  }}
+                                >
+                                  <span>{t("serviceOrders.balanceDue")} {formatAmount(due)}</span>
+                                  <input
+                                    type="number" step="any"
+                                    style={{ ...inputStyle, width: 90, marginTop: 0 }}
+                                    value={repayAmount}
+                                    onChange={(e) => setRepayAmount(e.target.value)}
+                                    placeholder={String(due)}
+                                  />
+                                  <select style={{ ...inputStyle, width: "auto", marginTop: 0 }} value={payMethod} onChange={(e) => setPayMethod(e.target.value as ServiceOrderPaymentMethod)}>
+                                    {PAYMENT_METHODS.filter((m) => m.value !== "credit").map((m) => (
+                                      <option key={m.value} value={m.value}>{m.label}</option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                                    onClick={() => handlePayDue(order.id, due)}
+                                    disabled={repaying}
+                                  >
+                                    {t("serviceOrders.collectDue")}
+                                  </button>
+                                  <span style={{ flexBasis: "100%", fontSize: 12.5, color: "var(--color-text-muted)" }}>{t("serviceOrders.dueHint")}</span>
+                                </div>
                               )}
 
                               {credit && (

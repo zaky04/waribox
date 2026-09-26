@@ -161,7 +161,11 @@ export function ExpensesPage() {
     if (!window.confirm(t("expenses.confirmDelete", { category: expense.category, amount: expense.amount }))) {
       return;
     }
-    await deleteExpense(db, expense.id, user?.permissions ?? {}, user?.id);
+    try {
+      await approval.run((a) => deleteExpense(db, expense.id, user?.permissions ?? {}, user?.id, a));
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    }
     await refresh();
   };
 

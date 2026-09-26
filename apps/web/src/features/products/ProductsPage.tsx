@@ -29,6 +29,7 @@ import {
   thStyle,
 } from "../../components/sharedStyles";
 import { saveGeneratedFile } from "../../lib/saveFile";
+import { useApproval } from "../approval/ApprovalProvider";
 import { useAuth } from "../auth/useAuth";
 
 type Product = typeof schema.products.$inferSelect;
@@ -46,7 +47,9 @@ export function ProductsPage() {
   const { user } = useAuth();
   const { t } = useTranslation();
   const canManage = hasPermission(user?.permissions ?? {}, "manage_products");
-  const canViewMargins = hasPermission(user?.permissions ?? {}, "view_margins");
+  const canViewMargins = hasPermission(user?.permissions ?? {}, "view_costs");
+  const canEditPrices = hasPermission(user?.permissions ?? {}, "edit_product_prices");
+  const approval = useApproval();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -154,7 +157,7 @@ export function ProductsPage() {
       }
 
       if (editingProductId) {
-        await updateProduct(db, editingProductId, {
+        await approval.run((a) => updateProduct(db, editingProductId, {
           name: name.trim(),
           categoryId: finalCategoryId,
           unit,
@@ -164,7 +167,8 @@ export function ProductsPage() {
           trackExpiry,
           taxRate: taxRate.trim() === "" ? null : Number(taxRate),
           updatedBy: user?.id,
-        }, permissions);
+          approval: a,
+        }, permissions));
         const variant = variants.find((v) => v.productId === editingProductId);
         if (variant) {
           await updateVariantBarcode(db, variant.id, barcode.trim() || null, permissions);
@@ -283,6 +287,7 @@ export function ProductsPage() {
                 style={inputStyle}
                 type="number" step="any"
                 value={purchasePrice}
+                disabled={!!editingProductId && !canEditPrices}
                 onChange={(e) => setPurchasePrice(e.target.value)}
               />
             </label>
@@ -292,6 +297,7 @@ export function ProductsPage() {
                 style={inputStyle}
                 type="number" step="any"
                 value={salePrice}
+                disabled={!!editingProductId && !canEditPrices}
                 onChange={(e) => setSalePrice(e.target.value)}
               />
             </label>
