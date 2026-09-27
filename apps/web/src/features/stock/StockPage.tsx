@@ -33,7 +33,7 @@ import {
   thStyle,
 } from "../../components/sharedStyles";
 import { openExternalUrl } from "../../lib/openExternalUrl";
-import { buildWhatsAppLink } from "../../lib/whatsapp";
+import { openWhatsApp } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
 
 type Product = typeof schema.products.$inferSelect;
@@ -313,7 +313,7 @@ export function StockPage() {
       );
     if (lowStock.length > MAX_LISTED) lines.push(t("whatsapp.moreItems", { count: lowStock.length - MAX_LISTED }));
     const message = t("whatsapp.lowStockAlert", { count: lowStock.length, business, lines: lines.join("\n") });
-    void openExternalUrl(buildWhatsAppLink(lowStockAlertPhone, businessSettings?.whatsappCountryCode, message));
+    void openWhatsApp(lowStockAlertPhone, businessSettings?.whatsappCountryCode, message);
   };
 
   // Même numéro que l'alerte stock bas (business_settings.lowStockAlertPhone)
@@ -339,7 +339,7 @@ export function StockPage() {
       business,
       lines: lines.join("\n"),
     });
-    void openExternalUrl(buildWhatsAppLink(lowStockAlertPhone, businessSettings?.whatsappCountryCode, message));
+    void openWhatsApp(lowStockAlertPhone, businessSettings?.whatsappCountryCode, message);
   };
 
   return (

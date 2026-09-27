@@ -8,8 +8,7 @@ import { useDeviceIdentityStore } from "../../stores/deviceIdentity";
 import { useDeviceRoleStore } from "../../stores/deviceRole";
 import { BarcodeCameraScanner, isCameraScanSupported } from "../sales/BarcodeCameraScanner";
 import { isDesktopTauriRuntime } from "../settings/tauriRuntime";
-import { useMasterServer } from "./useMasterServer";
-import { useWorkerConnection } from "./useWorkerConnection";
+import { useNetwork } from "./NetworkProvider";
 
 const secondaryButtonStyle = {
   background: "transparent",
@@ -68,11 +67,7 @@ function MasterView() {
   const db = useDatabase();
   const { deviceId, deviceName } = useDeviceIdentityStore();
   const { setRole } = useDeviceRoleStore();
-  const { running, starting, pairingPayload, workers, error, start, stop } = useMasterServer(
-    db,
-    deviceId,
-    deviceName.trim() || t("network.defaultMasterName"),
-  );
+  const { running, starting, pairingPayload, workers, error, start, stop } = useNetwork().master;
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -218,7 +213,7 @@ function WorkerView() {
     reconnect,
     disconnect,
     searchForMaster,
-  } = useWorkerConnection(db, deviceId, deviceName.trim() || t("network.defaultWorkerName"));
+  } = useNetwork().worker;
   const [scanning, setScanning] = useState(false);
 
   const handleDetected = (raw: string) => {

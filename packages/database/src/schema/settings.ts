@@ -31,6 +31,8 @@ export const businessSettings = sqliteTable("business_settings", {
   // Indicatif pays (ex: "225") utilisé pour compléter les numéros locaux des
   // clients lors de la génération d'un lien wa.me (voir lib/whatsapp.ts).
   whatsappCountryCode: text("whatsapp_country_code"),
+  // Pays du commerce (ISO) : indicatif ajouté aux numéros enregistrés en format national.
+  country: text("country"),
   // Numéro (gérant/propriétaire) à notifier par WhatsApp en cas de rupture de
   // stock — distinct de `phone` (coordonnées de l'entreprise affichées sur
   // les reçus) : celui-ci n'a de sens que comme destinataire d'alerte interne.

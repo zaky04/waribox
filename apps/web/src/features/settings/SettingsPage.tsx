@@ -23,7 +23,7 @@ import {
   loadFolderHandle,
   pickBackupFolder,
 } from "@gestion-boutique/sync";
-import { CURRENCY_PRESETS, getCurrencyPreset, isCfaZoneCurrency, setCurrency } from "@gestion-boutique/i18n";
+import { COUNTRIES, findCountryByDialCode, getCountry, CURRENCY_PRESETS, getCurrencyPreset, isCfaZoneCurrency, setCurrency } from "@gestion-boutique/i18n";
 import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
@@ -96,7 +96,7 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
   const db = useDatabase();
   const { user } = useAuth();
   const canBackup = hasPermission(user?.permissions ?? {}, "manage_backups");
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const theme = useThemeStore((s) => s.theme);
 
   const FREQUENCY_PRESETS = [
@@ -133,7 +133,10 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
     setCurrencyState(code);
     setCurrency(code);
     const preset = getCurrencyPreset(code);
-    if (!whatsappCountryCode.trim() && preset.whatsappCountryCode) setWhatsappCountryCode(preset.whatsappCountryCode);
+    if (!country && preset.whatsappCountryCode) {
+      const guess = findCountryByDialCode(preset.whatsappCountryCode);
+      if (guess) handleCountryChange(guess.iso);
+    }
   };
   // null = thème par défaut (aucune personnalisation) — voir lib/appearance.ts.
   const [appearanceAccentColor, setAppearanceAccentColor] = useState<string | null>(null);
@@ -151,6 +154,12 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [whatsappCountryCode, setWhatsappCountryCode] = useState("");
+  // Pays du commerce : fixe l'indicatif ajouté aux numéros de téléphone nationaux.
+  const [country, setCountry] = useState("");
+  const handleCountryChange = (iso: string) => {
+    setCountry(iso);
+    setWhatsappCountryCode(getCountry(iso)?.dialCode ?? "");
+  };
   const [lowStockAlertPhone, setLowStockAlertPhone] = useState("");
   const [taxEnabled, setTaxEnabled] = useState(false);
   const [defaultTaxRate, setDefaultTaxRate] = useState("0");
@@ -304,6 +313,7 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
     setPhone(settings.phone ?? "");
     setEmail(settings.email ?? "");
     setWhatsappCountryCode(settings.whatsappCountryCode ?? "");
+    setCountry(settings.country ?? findCountryByDialCode(settings.whatsappCountryCode)?.iso ?? "");
     setLowStockAlertPhone(settings.lowStockAlertPhone ?? "");
     setTaxEnabled(settings.taxEnabled);
     setDefaultTaxRate(String(settings.defaultTaxRate));
@@ -492,6 +502,7 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
           phone: phone.trim() || undefined,
           email: email.trim() || undefined,
           whatsappCountryCode: whatsappCountryCode.trim() || undefined,
+          country: country || undefined,
           lowStockAlertPhone: lowStockAlertPhone.trim() || undefined,
           taxEnabled,
           defaultTaxRate: taxRateValue,
@@ -885,13 +896,15 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
           />
         </label>
         <label>
-          {t("settings.business.whatsappCountryCode")}
-          <input
-            style={inputStyle}
-            value={whatsappCountryCode}
-            onChange={(e) => setWhatsappCountryCode(e.target.value)}
-            placeholder="ex: 225"
-          />
+          {t("settings.business.country")}
+          <select style={inputStyle} value={country} onChange={(e) => handleCountryChange(e.target.value)}>
+            <option value="">{t("settings.business.countryNone")}</option>
+            {COUNTRIES.map((c) => (
+              <option key={c.iso} value={c.iso}>
+                {i18n.language === "en" ? c.en : c.fr} (+{c.dialCode})
+              </option>
+            ))}
+          </select>
         </label>
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
           {t("settings.business.whatsappCountryCodeHint")}

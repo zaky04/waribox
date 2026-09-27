@@ -266,7 +266,9 @@
         "EUR": "Euro",
         "USD": "Dollar américain",
         "GBP": "Livre sterling"
-      }
+      },
+      "country": "Pays du commerce (indicatif ajouté aux numéros de téléphone)",
+      "countryNone": "— Choisir un pays —"
     },
     "appearance": {
       "heading": "Apparence",
@@ -471,7 +473,7 @@
   "network": {
     "heading": "Mode réseau",
     "description": "Partagez cette base avec d'autres appareils sur le même réseau local (Maître/Appareil relié), ou restez en mode Solo — un seul appareil, comme aujourd'hui.",
-    "intro": "Choisissez un rôle pour cet appareil : Maître (héberge le réseau) ou Appareil relié (rejoint un Maître déjà démarré). Aucune donnée métier ne transite encore par le réseau à ce stade.",
+    "intro": "Choisissez un rôle pour cet appareil : Maître (héberge le réseau) ou Appareil relié (rejoint un Maître déjà démarré). Les ventes, mouvements de stock, dépenses et demandes d'approbation sont partagés entre les appareils reliés ; un appareil relié continue de fonctionner hors connexion et se resynchronise ensuite.",
     "deviceName": "Nom de cet appareil",
     "deviceNamePlaceholder": "Ex. : Téléphone du gérant",
     "defaultMasterName": "Maître WariBox",
@@ -1554,7 +1556,8 @@
     "expiringLine": "- {{name}} (lot {{lot}}) : expire le {{date}}",
     "overdueDebt": "Bonjour {{customerName}}, vous avez une créance de {{amount}} en retard depuis le {{dueDate}} chez {{business}} (réf. {{reference}}). Merci de bien vouloir régulariser dès que possible.",
     "serviceOrderReady": "Bonjour {{customerName}}, votre ticket {{orderNumber}} est prêt à récupérer chez {{business}}.",
-    "verifyMessage": "Bonjour {{name}}, pouvez-vous confirmer votre {{kind}} n°{{number}} du {{date}} d'un montant de {{amount}} ? Merci !"
+    "verifyMessage": "Bonjour {{name}}, pouvez-vous confirmer votre {{kind}} n°{{number}} du {{date}} d'un montant de {{amount}} ? Merci !",
+    "countryRequired": "Impossible de compléter ce numéro : choisis d'abord le pays du commerce dans Configuration → Entreprise, ou enregistre le numéro avec son indicatif (+225…)."
   },
   "documents": {
     "common": {

@@ -55,6 +55,7 @@ export interface UpdateSettingsInput {
   phone?: string;
   email?: string;
   whatsappCountryCode?: string;
+  country?: string;
   receiptColumns?: number;
   enableServiceOrders?: boolean;
   printPromisedDateOnTicket?: boolean;

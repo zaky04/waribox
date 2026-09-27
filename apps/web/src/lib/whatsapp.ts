@@ -1,13 +1,27 @@
-import { t, formatMoneyPlain, formatAmountPlain } from "@gestion-boutique/i18n";
+import { t, formatMoneyPlain, formatAmountPlain, toInternationalDigits } from "@gestion-boutique/i18n";
+import { openExternalUrl } from "./openExternalUrl";
 
 // Lien "cliquer pour envoyer" wa.me — n'exige aucun compte/API WhatsApp
 // Business, ouvre WhatsApp (app ou web) avec le message pré-rempli, un clic
 // suffit ensuite pour l'envoyer.
+// Numéro utilisable pour un lien WhatsApp : international (« + »/« 00 »), ou national avec un
+// pays choisi dans Configuration (l'indicatif est alors ajouté).
+export function isWhatsAppNumberUsable(phone: string, countryCode: string | null | undefined): boolean {
+  return toInternationalDigits(phone, countryCode) !== null;
+}
+
 export function buildWhatsAppLink(phone: string, countryCode: string | null | undefined, message: string): string {
-  const digits = phone.replace(/\D/g, "");
-  const code = (countryCode ?? "").replace(/\D/g, "");
-  const withCountry = code && digits.startsWith(code) ? digits : `${code}${digits.replace(/^0+/, "")}`;
-  return `https://wa.me/${withCountry}?text=${encodeURIComponent(message)}`;
+  const digits = toInternationalDigits(phone, countryCode) ?? phone.replace(/\D/g, "");
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+}
+
+// Ouvre WhatsApp, ou explique quoi faire si le numéro ne peut pas être complété.
+export async function openWhatsApp(phone: string, countryCode: string | null | undefined, message: string): Promise<void> {
+  if (!isWhatsAppNumberUsable(phone, countryCode)) {
+    window.alert(t("whatsapp.countryRequired"));
+    return;
+  }
+  await openExternalUrl(buildWhatsAppLink(phone, countryCode, message));
 }
 
 export interface WhatsAppReceiptLine {

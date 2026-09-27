@@ -14,6 +14,7 @@ import { useThemeStore } from "../stores/theme";
 import { BusinessHeader } from "./BusinessHeader";
 import { AccountingPage } from "../features/accounting/AccountingPage";
 import { AuthGate } from "../features/auth/AuthGate";
+import { NetworkProvider } from "../features/network/NetworkProvider";
 import { TopBar } from "../features/auth/TopBar";
 import { useAuth } from "../features/auth/useAuth";
 import { useIdleLock } from "../features/auth/useIdleLock";
@@ -204,9 +205,11 @@ export function App() {
     <I18nextProvider i18n={i18next}>
       <UpdateBanner />
       <DatabaseProvider>
-        <AuthGate>
+        <NetworkProvider>
+          <AuthGate>
           <MainContent />
         </AuthGate>
+        </NetworkProvider>
       </DatabaseProvider>
     </I18nextProvider>
   );

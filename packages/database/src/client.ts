@@ -352,6 +352,11 @@ export const MIGRATIONS: Migration[] = [
       "ALTER TABLE business_settings ADD COLUMN approval_payment_threshold REAL DEFAULT 0",
     ],
   },
+  // Pays du commerce (indicatif téléphonique des numéros nationaux).
+  {
+    id: 16,
+    statements: ["ALTER TABLE business_settings ADD COLUMN country TEXT"],
+  },
   // Le demandeur est prévenu quand sa demande a été tranchée.
   {
     id: 15,

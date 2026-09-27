@@ -30,7 +30,7 @@ import {
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
-import { buildWhatsAppLink } from "../../lib/whatsapp";
+import { openWhatsApp } from "../../lib/whatsapp";
 import { openExternalUrl } from "../../lib/openExternalUrl";
 import { saveGeneratedFile } from "../../lib/saveFile";
 import { SearchableSelect } from "../../components/SearchableSelect";
@@ -894,9 +894,7 @@ export function ServiceOrdersPage() {
                                       orderNumber: order.number,
                                       business: businessSettings?.businessName ?? t("whatsapp.defaultBusinessName"),
                                     });
-                                    void openExternalUrl(
-                                      buildWhatsAppLink(phone, businessSettings?.whatsappCountryCode, message),
-                                    );
+                                    void openWhatsApp(phone, businessSettings?.whatsappCountryCode, message);
                                   }}
                                 >
                                   {t("serviceOrders.notifyWhatsapp")}

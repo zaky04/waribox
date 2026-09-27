@@ -31,6 +31,23 @@ function randomToken(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+// Le jeton de pairage est gardé d'un lancement à l'autre : les appareils déjà reliés
+// peuvent se reconnecter après un redémarrage du Maître sans repasser par le QR.
+const TOKEN_STORAGE_KEY = "waribox-master-token";
+export const MASTER_RUNNING_KEY = "waribox-master-running";
+
+function getMasterToken(): string {
+  try {
+    const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (stored && /^[0-9a-f]{32}$/.test(stored)) return stored;
+    const created = randomToken();
+    localStorage.setItem(TOKEN_STORAGE_KEY, created);
+    return created;
+  } catch {
+    return randomToken();
+  }
+}
+
 async function sendToWorker(connectionId: string, message: WsMessage): Promise<void> {
   await invoke("network_send_to_worker", { connectionId, raw: message.encode() });
 }
@@ -177,6 +194,11 @@ export function useMasterServer(db: Database, masterId: string, masterName: stri
     unlistenRef.current = null;
     unsubscribeSyncRef.current?.();
     unsubscribeSyncRef.current = null;
+    try {
+      localStorage.removeItem(MASTER_RUNNING_KEY);
+    } catch {
+      // ignoré
+    }
     setRunning(false);
     setPairingPayload(null);
     setWorkers([]);
@@ -186,7 +208,7 @@ export function useMasterServer(db: Database, masterId: string, masterName: stri
     setError(null);
     setStarting(true);
     try {
-      const token = randomToken();
+      const token = getMasterToken();
       // Port fixe (pas 0/OS) : nécessaire pour que le balayage réseau côté
       // Worker (lanScan.ts) sache sur quel port sonder chaque adresse — voir
       // CLAUDE.md, mode réseau Phase 1b. Source de vérité côté Rust.
@@ -217,6 +239,11 @@ export function useMasterServer(db: Database, masterId: string, masterName: stri
       setPairingPayload(new MasterPairingPayload({ masterId, masterName, host, port, token }));
       setWorkers([]);
       setRunning(true);
+      try {
+        localStorage.setItem(MASTER_RUNNING_KEY, "1");
+      } catch {
+        // ignoré
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("network.master.errors.startFailed"));
     } finally {

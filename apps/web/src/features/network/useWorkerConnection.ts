@@ -41,12 +41,31 @@ type DiscoveryEvent =
  * (contrairement au Master, qui doit écouter un socket — impossible depuis
  * une page web/WebView, d'où le serveur Rust côté Master).
  */
-export function useWorkerConnection(db: Database, deviceId: string, deviceName: string) {
+// Dernier Maître auquel cet appareil s'est relié avec succès : gardé sur l'appareil pour
+// se reconnecter tout seul après un redémarrage ou une coupure (comme la langue ou le thème,
+// un réglage propre à l'appareil, jamais répliqué).
+const PAIRING_STORAGE_KEY = "waribox-worker-pairing";
+const RECONNECT_DELAY_MS = 15000;
+
+function loadStoredPairing(): MasterPairingPayload | null {
+  try {
+    const raw = localStorage.getItem(PAIRING_STORAGE_KEY);
+    return raw ? MasterPairingPayload.tryDecode(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+// `enabled` : faux quand l'appareil n'est pas un Appareil relié (Solo ou Maître) — aucun
+// événement local ne doit alors être mis en file pour un Maître qui n'existe pas.
+export function useWorkerConnection(db: Database, deviceId: string, deviceName: string, enabled = true) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<WorkerConnectionStatus>("idle");
   const [masterName, setMasterName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [lastPayload, setLastPayload] = useState<MasterPairingPayload | null>(null);
+  const [lastPayload, setLastPayload] = useState<MasterPairingPayload | null>(() => loadStoredPairing());
+  // Refus définitif (jeton invalide) : inutile de réessayer tout seul.
+  const fatalRef = useRef(false);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
@@ -79,14 +98,17 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
     [db],
   );
 
+  const autoConnectedRef = useRef(false);
   const connect = useCallback(
     (payload: MasterPairingPayload) => {
+      autoConnectedRef.current = true;
       socketRef.current?.close();
       clearHandshakeTimeout();
 
       setError(null);
       setMasterName(null);
       setLastPayload(payload);
+      fatalRef.current = false;
       setStatus("connecting");
 
       let socket: WebSocket;
@@ -141,8 +163,14 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
           if (message.payload.accepted === true) {
             setMasterName(typeof message.payload.masterName === "string" ? message.payload.masterName : null);
             setStatus("connected");
+            try {
+              localStorage.setItem(PAIRING_STORAGE_KEY, payload.encode());
+            } catch {
+              // stockage indisponible : la reconnexion automatique après redémarrage sera simplement absente
+            }
             void flushOutbox(socket);
           } else {
+            fatalRef.current = true;
             setStatus("error");
             setError(
               typeof message.payload.reason === "string"
@@ -155,6 +183,7 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
           socket.send(new WsMessage({ type: WsMessageTypes.pong, correlationId: message.correlationId }).encode());
         } else if (message.type === WsMessageTypes.error) {
           clearHandshakeTimeout();
+          fatalRef.current = true;
           setStatus("error");
           setError(
             typeof message.payload.message === "string"
@@ -187,6 +216,9 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
       };
 
       socket.onclose = () => {
+        // Un ancien socket fermé par une reconnexion ne doit ni effacer le nouveau ni
+        // changer l'état affiché : seul le socket courant compte.
+        if (socketRef.current !== socket) return;
         clearHandshakeTimeout();
         socketRef.current = null;
         // Une connexion déjà établie qui tombe devient "disconnected"
@@ -203,6 +235,7 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
   // d'abord dans la file d'attente persistée — envoyé tout de suite si déjà
   // connecté, sinon repris au prochain flushOutbox (voir connect ci-dessus).
   useEffect(() => {
+    if (!enabled) return;
     unsubscribeLocalSyncRef.current = onSyncEvent((event) => {
       void (async () => {
         const outboxId = await enqueueOutbox(db, event);
@@ -217,16 +250,36 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
     return () => {
       unsubscribeLocalSyncRef.current?.();
     };
-  }, [db]);
+  }, [db, enabled]);
 
   const reconnect = useCallback(() => {
     if (lastPayload) connect(lastPayload);
   }, [connect, lastPayload]);
 
+  // Au démarrage (Appareil relié déjà apparié) : se reconnecte tout seul.
+  useEffect(() => {
+    if (!enabled || autoConnectedRef.current || !lastPayload) return;
+    autoConnectedRef.current = true;
+    connect(lastPayload);
+  }, [enabled, lastPayload, connect]);
+
+  // Coupure (réseau, Maître redémarré) : nouvelle tentative périodique, sauf refus définitif.
+  useEffect(() => {
+    if (!enabled || !lastPayload || fatalRef.current) return;
+    if (status !== "disconnected" && status !== "error") return;
+    const timer = setTimeout(() => connect(lastPayload), RECONNECT_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [enabled, lastPayload, status, connect]);
+
   const disconnect = useCallback(() => {
     clearHandshakeTimeout();
     socketRef.current?.close();
     socketRef.current = null;
+    try {
+      localStorage.removeItem(PAIRING_STORAGE_KEY);
+    } catch {
+      // ignoré
+    }
     setStatus("idle");
     setMasterName(null);
     setLastPayload(null);

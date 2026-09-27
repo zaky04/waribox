@@ -36,7 +36,7 @@ import { Stamp } from "../../components/Stamp";
 import { TicketEdge } from "../../components/TicketEdge";
 import { openExternalUrl } from "../../lib/openExternalUrl";
 import { saveGeneratedFile } from "../../lib/saveFile";
-import { buildReceiptWhatsAppMessage, buildWhatsAppLink } from "../../lib/whatsapp";
+import { buildReceiptWhatsAppMessage, openWhatsApp } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
 import { PrinterPanel } from "../printer/PrinterPanel";
 import { usePrinter } from "../printer/usePrinter";
@@ -577,7 +577,7 @@ export function SalesPage() {
               onClick={() => {
                 if (!lastReceipt) return;
                 const message = buildReceiptWhatsAppMessage(lastReceipt);
-                void openExternalUrl(buildWhatsAppLink(receiptPhone, businessSettings?.whatsappCountryCode, message));
+                void openWhatsApp(receiptPhone, businessSettings?.whatsappCountryCode, message);
               }}
             >
               {t("sales.sendWhatsapp")}

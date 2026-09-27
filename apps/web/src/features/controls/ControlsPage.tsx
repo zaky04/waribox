@@ -22,7 +22,7 @@ import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { amountStyle, badgeStyle, cardStyle, inputStyle, pageStyle, primaryButtonStyle, tableStyle, tdStyle, thStyle } from "../../components/sharedStyles";
 import { formatAmount, formatMoney } from "../../lib/format";
-import { buildWhatsAppLink } from "../../lib/whatsapp";
+import { buildWhatsAppLink, isWhatsAppNumberUsable } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
 
 function isoDay(d: Date): string {
@@ -287,6 +287,12 @@ export function ControlsPage() {
               {shop.phone ? (
                 <a
                   href={buildWhatsAppLink(shop.phone, shop.countryCode, summaryText)}
+                  onClick={(e) => {
+                    if (!isWhatsAppNumberUsable(shop.phone, shop.countryCode)) {
+                      e.preventDefault();
+                      window.alert(t("whatsapp.countryRequired"));
+                    }
+                  }}
                   target="_blank"
                   rel="noreferrer"
                   style={{ ...primaryButtonStyle, textDecoration: "none", display: "inline-block" }}
@@ -326,6 +332,12 @@ export function ControlsPage() {
                   <li key={it.number}>
                     <strong>{it.number}</strong> — {it.customerName} — {formatMoney(it.total)} ({it.at.slice(0, 10)}){" "}
                     <a
+                      onClick={(e) => {
+                        if (!isWhatsAppNumberUsable(it.phone, shop.countryCode)) {
+                          e.preventDefault();
+                          window.alert(t("whatsapp.countryRequired"));
+                        }
+                      }}
                       href={buildWhatsAppLink(
                         it.phone,
                         shop.countryCode,

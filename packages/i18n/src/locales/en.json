@@ -266,7 +266,9 @@
         "EUR": "Euro",
         "USD": "US dollar",
         "GBP": "Pound sterling"
-      }
+      },
+      "country": "Business country (dialling code added to phone numbers)",
+      "countryNone": "— Choose a country —"
     },
     "appearance": {
       "heading": "Appearance",
@@ -471,7 +473,7 @@
   "network": {
     "heading": "Network mode",
     "description": "Share this database with other devices on the same local network (Master/Worker), or stay in Solo mode — a single device, as today.",
-    "intro": "Choose a role for this device: Master (hosts the network) or Worker (joins a Master that's already running). No business data flows over the network yet at this stage.",
+    "intro": "Choose a role for this device: Master (hosts the network) or Worker (joins a Master that's already running). Sales, stock movements, expenses and approval requests are shared between linked devices; a linked device keeps working offline and resyncs afterwards.",
     "deviceName": "This device's name",
     "deviceNamePlaceholder": "E.g.: Manager's phone",
     "defaultMasterName": "WariBox Master",
@@ -1554,7 +1556,8 @@
     "expiringLine": "- {{name}} (batch {{lot}}): expires {{date}}",
     "overdueDebt": "Hello {{customerName}}, you have an overdue balance of {{amount}} since {{dueDate}} at {{business}} (ref. {{reference}}). Please settle it as soon as possible.",
     "serviceOrderReady": "Hello {{customerName}}, your ticket {{orderNumber}} is ready for pickup at {{business}}.",
-    "verifyMessage": "Hello {{name}}, could you confirm your {{kind}} no. {{number}} of {{date}} for {{amount}}? Thank you!"
+    "verifyMessage": "Hello {{name}}, could you confirm your {{kind}} no. {{number}} of {{date}} for {{amount}}? Thank you!",
+    "countryRequired": "This number can't be completed: first choose the business country in Settings → Company, or save the number with its dialling code (+225…)."
   },
   "documents": {
     "common": {

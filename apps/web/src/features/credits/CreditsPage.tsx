@@ -24,7 +24,7 @@ import {
   thStyle,
 } from "../../components/sharedStyles";
 import { openExternalUrl } from "../../lib/openExternalUrl";
-import { buildWhatsAppLink } from "../../lib/whatsapp";
+import { openWhatsApp } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
 
 type Credit = typeof schema.customerCredits.$inferSelect;
@@ -140,7 +140,7 @@ export function CreditsPage() {
       business: businessSettings?.businessName ?? t("whatsapp.defaultBusinessName"),
       reference: referenceNumber(credit),
     });
-    void openExternalUrl(buildWhatsAppLink(phone, businessSettings?.whatsappCountryCode, message));
+    void openWhatsApp(phone, businessSettings?.whatsappCountryCode, message);
   };
 
   const startPayment = (credit: Credit) => {

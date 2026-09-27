@@ -2,6 +2,8 @@ import i18next from "i18next";
 import en from "./locales/en.json";
 import fr from "./locales/fr.json";
 
+export * from "./countries";
+
 export type Language = "fr" | "en";
 export const LANGUAGES: Language[] = ["fr", "en"];
 export const DEFAULT_LANGUAGE: Language = "fr";

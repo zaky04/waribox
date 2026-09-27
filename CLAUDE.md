@@ -4267,6 +4267,26 @@ Objectif : que le propriétaire soit présent en permanence, chaque soir ou une 
 - **Non testé** : la validation à distance sur deux appareils réels (comme tout le mode réseau) ; seule la logique pure est testée (111 tests). Le décideur reste soumis au canal `ws://` en clair déjà documenté.
 - **Pas fait** : réplication des demandes de points/achats/inventaire ; notification push au propriétaire ; droits par boutique.
 
+### 2026-09-27 — Vérification des services externes et du mode réseau : 4 défauts réels corrigés
+
+Vérifié avec un **faux Maître WebSocket** (Node, sans dépendance) contre l'appli en Appareil relié dans le navigateur — première vraie preuve du mode réseau, qui n'avait jamais quitté la théorie.
+
+**Défauts trouvés et corrigés (tous antérieurs à cette session, jamais vus faute de test réel) :**
+1. **Le moteur réseau ne tournait que sur l'écran Paramètres** : `useMasterServer`/`useWorkerConnection` étaient appelés dans `NetworkSection` ; dès qu'on changeait d'onglet, plus aucun événement local n'était mis en file ni envoyé, et le Maître ne répondait plus aux connexions. Remonté dans `NetworkProvider` (monté une fois au-dessus de `AuthGate`), que Paramètres ne fait que piloter.
+2. **Aucune reconnexion** : le Maître régénérait un jeton à chaque démarrage (et le serveur Rust gardait l'ancien s'il tournait déjà → QR faux), l'Appareil relié perdait son appairage au redémarrage. Maintenant : jeton du Maître persistant (`waribox-master-token`), Maître relancé tout seul s'il tournait (`waribox-master-running`), Appareil relié qui mémorise son appairage (`waribox-worker-pairing`), se reconnecte au démarrage et réessaie toutes les 15 s après une coupure (sauf refus définitif du jeton). Vérifié : redémarrage du faux Maître → reconnexion automatique.
+3. **Envoi en direct cassé après une reconnexion** : `onclose` d'un ancien socket effaçait `socketRef` du nouveau (course dans `connect`) — les événements restaient en file jusqu'à la reconnexion suivante. Corrigé (seul le socket courant compte). Vérifié : dépense créée sur un autre onglet que Paramètres → reçue par le faux Maître.
+4. **Blocages plateforme** : la CSP Tauri n'autorisait pas `ws:` (connexion Appareil relié et balayage réseau bloqués dans l'appli desktop/Android) → `ws:` ajouté à `connect-src`. Sur Android, `usesCleartextTraffic` était `false` en release (fichier généré `gen/android/app/build.gradle.kts`, gitignoré) → passé à `true` ; **à refaire si `gen/` est régénéré**.
+
+**Vérifié OK :** handshake hello/helloAck avec jeton, réception de `approvalRequest.created/decided` et `expense.created` d'un Maître (demande visible dans Demandes, décision appliquée, dépense créée une seule fois), décision forgée (décideur = demandeur) refusée, envoi Appareil relié → Maître avec syncAck, file d'attente vidée à la reconnexion (`lastSyncSeq` correct). FNE : le bac à sable DGI répond (« Invalid API Key »). Google Drive : sans Client ID, message clair, aucune exception. Liens WhatsApp : construits correctement.
+
+**Bug WhatsApp corrigé :** `buildWhatsAppLink` retirait le 0 initial du numéro pour tous les pays → numéros ivoiriens (+225 07…) et béninois (+229) faux depuis le passage à 10 chiffres. Le 0 est gardé pour 225/229.
+
+**Non testé (matériel/OS requis) :** le serveur Rust du Maître en conditions réelles (compilé seulement), mDNS, balayage réseau, pare-feu Windows, imprimante (WebView2/Android n'exposent pas forcément Web USB/Bluetooth), OAuth Google réel, installation de mise à jour. Le texte d'introduction du mode réseau (« aucune donnée ne transite encore ») était obsolète, corrigé.
+
+### 2026-09-27 — Pays du commerce et numéros WhatsApp (bug signalé sur un vrai ticket)
+
+**Bug** : notifier un client par WhatsApp ouvrait `wa.me/749693849` (« +7 … n'est pas sur WhatsApp ») pour un numéro enregistré 0749693849 — pas d'indicatif configuré et le 0 était retiré. **Corrigé** : nouveau réglage **Pays du commerce** (Configuration → Entreprise, colonne `business_settings.country`, migration 16, 40 pays dans `packages/i18n/src/countries.ts`) qui fixe l'indicatif (`whatsappCountryCode` reste rempli pour compatibilité ; une installation qui n'avait que l'indicatif retrouve son pays). `toInternationalDigits` : numéro « + »/« 00 » gardé tel quel, indicatif déjà présent sans doublon, sinon indicatif ajouté et 0 initial retiré **sauf 225/229** (Côte d'Ivoire, Bénin). Sans pays ni indicatif dans le numéro, le lien n'est plus construit à l'aveugle : message « choisis le pays… » (`openWhatsApp`, garde sur les liens de Contrôles). Le pays proposé suit la devise si aucun n'est choisi. Vérifié : lien `wa.me/2250707070707`. 119 tests.
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du
