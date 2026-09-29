@@ -69,6 +69,24 @@ function MasterView() {
   const { setRole } = useDeviceRoleStore();
   const { running, starting, pairingPayload, workers, error, start, stop } = useNetwork().master;
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const copyManualInfo = async () => {
+    if (!pairingPayload) return;
+    const text = [
+      `${t("network.worker.host")}: ${pairingPayload.host}`,
+      `${t("network.worker.port")}: ${pairingPayload.port}`,
+      `${t("network.worker.token")}: ${pairingPayload.token}`,
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Presse-papier indisponible (contexte non sécurisé, permission refusée) : le texte
+      // reste affiché à l'écran, on peut toujours le recopier à la main.
+    }
+  };
 
   useEffect(() => {
     if (!pairingPayload) {
@@ -119,6 +137,21 @@ function MasterView() {
             <span style={{ color: "var(--color-text-muted)", fontSize: 12 }}>
               {pairingPayload.host}:{pairingPayload.port}
             </span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 240 }}>
+            <strong style={{ fontSize: 14 }}>{t("network.master.manualHeading")}</strong>
+            <p style={{ color: "var(--color-text-muted)", fontSize: 12.5, margin: 0 }}>{t("network.master.manualHint")}</p>
+            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 8, rowGap: 4, fontSize: 13 }}>
+              <span style={{ color: "var(--color-text-muted)" }}>{t("network.worker.host")}</span>
+              <code style={{ fontFamily: "var(--font-mono)", userSelect: "all" }}>{pairingPayload.host}</code>
+              <span style={{ color: "var(--color-text-muted)" }}>{t("network.worker.port")}</span>
+              <code style={{ fontFamily: "var(--font-mono)", userSelect: "all" }}>{pairingPayload.port}</code>
+              <span style={{ color: "var(--color-text-muted)" }}>{t("network.worker.token")}</span>
+              <code style={{ fontFamily: "var(--font-mono)", userSelect: "all", wordBreak: "break-all" }}>{pairingPayload.token}</code>
+            </div>
+            <button style={{ ...secondaryButtonStyle, alignSelf: "flex-start", padding: "6px 12px", fontSize: 13 }} onClick={copyManualInfo}>
+              {copied ? t("network.master.copied") : t("network.master.copyManualInfo")}
+            </button>
           </div>
           <div style={{ flex: 1, minWidth: 240 }}>
             <strong style={{ fontSize: 14 }}>{t("network.master.connectedWorkers", { count: workers.length })}</strong>
@@ -177,6 +210,7 @@ function ManualEntryForm({ onSubmit }: { onSubmit: (payload: MasterPairingPayloa
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 320 }}>
+      <p style={{ color: "var(--color-text-muted)", fontSize: 12.5, margin: 0 }}>{t("network.worker.manualEntryHint")}</p>
       <label>
         {t("network.worker.host")}
         <input style={inputStyle} value={host} onChange={(e) => setHost(e.target.value)} placeholder="192.168.1.42" />

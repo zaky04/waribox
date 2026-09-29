@@ -219,13 +219,25 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
         // Un ancien socket fermé par une reconnexion ne doit ni effacer le nouveau ni
         // changer l'état affiché : seul le socket courant compte.
         if (socketRef.current !== socket) return;
+        // Le délai d'attente n'a pas encore expiré (`timeoutRef.current` toujours
+        // posé) : aucun des chemins qui le désamorcent (accepté, refusé, timeout)
+        // n'est encore passé — le socket lui-même vient de se fermer avant tout
+        // échange, donc jamais réellement ouvert (adresse injoignable, connexion
+        // activement refusée par le réseau/pare-feu). Sans ce cas traité à part,
+        // l'écran affichait juste "Erreur" sans aucune explication (bug signalé le
+        // 2026-09-29 : seul le cas "délai expiré" avait un message).
+        const closedBeforeResolution = timeoutRef.current !== null;
         clearHandshakeTimeout();
         socketRef.current = null;
-        // Une connexion déjà établie qui tombe devient "disconnected"
-        // (l'appareil garde le payload pour se reconnecter) ; une connexion
-        // jamais aboutie (refusée, master injoignable) devient "error" —
-        // sauf si le timeout ou le refus ci-dessus a déjà positionné "error".
-        setStatus((current) => (current === "connecting" ? "error" : current === "connected" ? "disconnected" : current));
+        if (closedBeforeResolution) {
+          setError(t("network.worker.errors.connectionClosed"));
+          setStatus("error");
+        } else {
+          // Une connexion déjà établie qui tombe devient "disconnected" (l'appareil
+          // garde le payload pour se reconnecter) ; sinon le statut a déjà été
+          // positionné par le chemin qui a désamorcé le délai (accepté/refusé/timeout).
+          setStatus((current) => (current === "connected" ? "disconnected" : current));
+        }
       };
     },
     [db, deviceId, deviceName, flushOutbox, t],

@@ -492,7 +492,11 @@
       "noWorkers": "Aucun appareil connecté pour le moment.",
       "errors": {
         "startFailed": "Impossible de démarrer le serveur réseau local."
-      }
+      },
+      "manualHeading": "Saisie manuelle (pas de caméra sur l'autre appareil)",
+      "manualHint": "Si le scan du QR ne fonctionne pas, recopie ces 3 valeurs dans le formulaire « Connexion manuelle » de l'appareil relié.",
+      "copyManualInfo": "Copier ces informations",
+      "copied": "Copié !"
     },
     "worker": {
       "status": "État",
@@ -518,8 +522,10 @@
         "connectionFailed": "Impossible d'ouvrir la connexion réseau.",
         "timeout": "Le Maître n'a pas répondu à temps.",
         "rejected": "Connexion refusée par le Maître.",
-        "searchFailed": "Maître introuvable sur ce réseau — rescannez son QR ou saisissez son adresse manuellement."
-      }
+        "searchFailed": "Maître introuvable sur ce réseau — rescannez son QR ou saisissez son adresse manuellement.",
+        "connectionClosed": "La connexion s'est fermée avant même d'atteindre le Maître — probablement l'adresse/le port, un pare-feu, ou le fait que les deux appareils ne sont pas sur le même réseau Wi-Fi."
+      },
+      "manualEntryHint": "Trouve ces 3 valeurs sur l'écran du Maître (Configuration avancée → Mode réseau), sous le QR code — bouton « Copier ces informations »."
     }
   },
   "storesSection": {

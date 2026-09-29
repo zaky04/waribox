@@ -208,6 +208,17 @@ export function useMasterServer(db: Database, masterId: string, masterName: stri
     setError(null);
     setStarting(true);
     try {
+      // Enregistré AVANT de démarrer le serveur Rust : celui-ci commence à accepter
+      // des connexions dès le retour de `network_start_master`, et un événement Tauri
+      // émis avant qu'un `listen()` existe côté JS est perdu (pas de rejeu). Un Worker
+      // qui se connecterait dans cette fenêtre (ex. reconnexion automatique très
+      // rapide après un redémarrage du Maître) verrait sinon son `hello` jamais
+      // traité — silencieux jusqu'au délai d'attente du Worker.
+      const unlisten = await listen<MasterEvent>("network:master-event", (event) => {
+        handleEventRef.current(event.payload);
+      });
+      unlistenRef.current = unlisten;
+
       const token = getMasterToken();
       // Port fixe (pas 0/OS) : nécessaire pour que le balayage réseau côté
       // Worker (lanScan.ts) sache sur quel port sonder chaque adresse — voir
@@ -220,11 +231,6 @@ export function useMasterServer(db: Database, masterId: string, masterName: stri
         masterName,
       });
       const host = await invoke<string>("network_local_ip");
-
-      const unlisten = await listen<MasterEvent>("network:master-event", (event) => {
-        handleEventRef.current(event.payload);
-      });
-      unlistenRef.current = unlisten;
 
       // Ce PC (Master) peut lui-même créer des ventes/mouvements/dépenses —
       // chaque événement local devient directement autorité (pas d'aller-
@@ -245,6 +251,10 @@ export function useMasterServer(db: Database, masterId: string, masterName: stri
         // ignoré
       }
     } catch (err) {
+      // Le listener a pu être enregistré avant qu'un `invoke` suivant n'échoue
+      // (ex. port déjà utilisé) — pas de serveur fantôme dans ce cas.
+      unlistenRef.current?.();
+      unlistenRef.current = null;
       setError(err instanceof Error ? err.message : t("network.master.errors.startFailed"));
     } finally {
       setStarting(false);

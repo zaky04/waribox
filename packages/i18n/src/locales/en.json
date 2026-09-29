@@ -492,7 +492,11 @@
       "noWorkers": "No device connected yet.",
       "errors": {
         "startFailed": "Could not start the local network server."
-      }
+      },
+      "manualHeading": "Manual entry (no camera on the other device)",
+      "manualHint": "If scanning the QR code doesn't work, copy these 3 values into the \"Manual connection\" form on the linked device.",
+      "copyManualInfo": "Copy this information",
+      "copied": "Copied!"
     },
     "worker": {
       "status": "Status",
@@ -518,8 +522,10 @@
         "connectionFailed": "Could not open the network connection.",
         "timeout": "The Master did not respond in time.",
         "rejected": "Connection rejected by the Master.",
-        "searchFailed": "Master not found on this network — rescan its QR code or enter its address manually."
-      }
+        "searchFailed": "Master not found on this network — rescan its QR code or enter its address manually.",
+        "connectionClosed": "The connection closed before even reaching the Master — likely the address/port, a firewall, or the two devices not being on the same Wi-Fi network."
+      },
+      "manualEntryHint": "Find these 3 values on the Master's screen (Advanced settings → Network mode), under the QR code — \"Copy this information\" button."
     }
   },
   "storesSection": {
