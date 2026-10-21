@@ -165,6 +165,9 @@ export function buildReceiptPdf(data: ReceiptData): Blob {
       align: "center",
     });
   }
+  if (data.prescriptionRef) {
+    pushWrapped(lines, measure, t("documents.receipt.prescription", { reference: data.prescriptionRef }), maxWidthMm, { align: "center" });
+  }
   if (data.fneStatus === "certified" && data.fneReference) {
     pushWrapped(lines, measure, t("documents.receipt.fneCertified", { reference: data.fneReference }), maxWidthMm, { align: "center" });
   } else if (data.fneStatus === "pending") {

@@ -104,7 +104,7 @@ export interface SupplierControl {
 
 export interface ControlEvent {
   at: string;
-  kind: "refund" | "loss" | "manual_entry" | "cash_variance" | "price_alert" | "credit_approved" | "stock_count" | "discount";
+  kind: "refund" | "loss" | "manual_entry" | "cash_variance" | "price_alert" | "credit_approved" | "stock_count" | "discount" | "expired_sale" | "expired_writeoff";
   userId: number | null;
   amount: number;
   detail: string;
@@ -423,6 +423,19 @@ export async function getControlsReport(db: Database, range: ControlsRange, stor
   for (const a of audits) {
     if (!inRange(a.createdAt)) continue;
     const meta = parseMeta(a.metadata);
+    // Vente de lots périmés autorisée par dérogation (pack Pharmacie) : indépendant
+    // d'une éventuelle remise sur la même vente, donc traité à part de la chaîne ci-dessous.
+    if (a.action === "create_sale" && a.userId != null && meta.expiredOverride) {
+      const lines = (meta.expiredOverride.lines ?? []) as Array<{ value?: number }>;
+      if (meta.expiredOverride.approvedBy != null) emp(meta.expiredOverride.approvedBy).approvalsGiven++;
+      events.push({
+        at: a.createdAt,
+        kind: "expired_sale",
+        userId: a.userId,
+        amount: lines.reduce((sum, l) => sum + (Number(l.value) || 0), 0),
+        detail: meta.number ?? "",
+      });
+    }
     if (a.action === "approval_failed" && a.userId != null) emp(a.userId).failedApprovals++;
     else if (a.action === "update_product" && a.userId != null && meta.changes && (meta.changes.salePrice || meta.changes.purchasePrice)) emp(a.userId).priceChanges++;
     else if ((a.action === "update_expense" || a.action === "delete_expense") && a.userId != null) emp(a.userId).expenseEdits++;
@@ -431,6 +444,11 @@ export async function getControlsReport(db: Database, range: ControlsRange, stor
       if (meta.discountApprovedBy != null) emp(meta.discountApprovedBy).approvalsGiven++;
       events.push({ at: a.createdAt, kind: "discount", userId: a.userId, amount: meta.unauthorizedDiscount, detail: meta.number ?? "" });
     } else if (a.action === "approval_rejected" && a.userId != null) emp(a.userId).approvalsRejected++;
+    else if (a.action === "stock_expired_writeoff" && a.userId != null) {
+      // Rebut de lots périmés (pack Pharmacie) : valeur perdue, avec le responsable.
+      if (meta.approvedBy != null) emp(meta.approvedBy).approvalsGiven++;
+      events.push({ at: a.createdAt, kind: "expired_writeoff", userId: a.userId, amount: Number(meta.value) || 0, detail: `${meta.batches ?? 0} lot(s)` });
+    }
     else if (a.action === "approval_request_rejected" && meta.requestedBy != null) emp(meta.requestedBy).approvalsRejected++;
     else if (a.action === "approval_request_approved" && a.userId != null) emp(a.userId).approvalsGiven++;
     else if (a.action === "cancel_service_order" && a.userId != null) {

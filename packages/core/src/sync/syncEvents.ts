@@ -25,6 +25,7 @@ export type SyncEventType =
   | "stockEntry.created"
   | "stockLoss.created"
   | "stockTransfer.created"
+  | "stockBreakdown.created"
   | "expense.created"
   | "approvalRequest.created"
   | "approvalRequest.decided";
@@ -82,6 +83,9 @@ export interface SaleCreatedEventPayload {
     total: number;
     paymentStatus: string;
     createdAt: string;
+    // Ordonnance (pack Pharmacie) — absents des événements émis avant son introduction.
+    prescriptionRef?: string | null;
+    prescriber?: string | null;
   };
   // Présent seulement si la vente a créé un nouveau client de passage (nom
   // saisi sans client existant) — voir CustomersService.findOrCreateCustomerByName.
@@ -110,6 +114,18 @@ export interface StockTransferCreatedEventPayload {
     sourceMovement: SyncStockMovementPayload;
     destMovement: SyncStockMovementPayload;
     destBatch?: { syncId: string; variantId: number; locationId: number; lotNumber: string | null; expiryDate: string | null; quantity: number; unitCost: number | null };
+  }>;
+}
+
+// Boîte ouverte en plaquettes (pack Pharmacie, StockService.breakDownPack) : une
+// ligne par lot de boîtes consommé ; la source est la variante « boîte », la
+// destination la variante détaillée au même emplacement.
+export interface StockBreakdownCreatedEventPayload {
+  unitsPerParent: number;
+  legs: Array<{
+    sourceMovement: SyncStockMovementPayload;
+    destMovement: SyncStockMovementPayload;
+    destBatch: { syncId: string; variantId: number; locationId: number; lotNumber: string | null; expiryDate: string | null; quantity: number; unitCost: number | null };
   }>;
 }
 

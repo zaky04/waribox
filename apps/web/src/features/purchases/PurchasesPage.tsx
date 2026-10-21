@@ -52,6 +52,10 @@ interface CartLine {
   productName: string;
   quantity: number;
   unitCost: number;
+  // Lot et péremption : requis pour un produit suivi en péremption (saisis ici en
+  // achat simple, à la réception en achat en deux temps).
+  lotNumber?: string;
+  expiryDate?: string;
 }
 
 // Fenêtre à la fois utilisée pour lire la vitesse de vente passée (30
@@ -102,6 +106,13 @@ export function PurchasesPage() {
   const [receiveResult, setReceiveResult] = useState<string | null>(null);
   const [receiveSaving, setReceiveSaving] = useState(false);
   const [lastPurchaseNumber, setLastPurchaseNumber] = useState<string | null>(null);
+  // Lot / péremption saisis à la réception (par ligne d'achat).
+  const [receivedLots, setReceivedLots] = useState<Record<number, { lotNumber: string; expiryDate: string }>>({});
+
+  const isExpiryTracked = (variantId: number): boolean => {
+    const variant = variants.find((v) => v.id === variantId);
+    return products.find((p) => p.id === variant?.productId)?.trackExpiry ?? false;
+  };
 
   const refresh = useCallback(async () => {
     const [supplierRows, productRows, variantRows, purchaseRows, lowStockRows, velocityMap] = await Promise.all([
@@ -145,6 +156,7 @@ export function PurchasesPage() {
     const items = await listPurchaseItems(db, purchase.id);
     setReceiveItems(items);
     setReceivedInputs({});
+    setReceivedLots({});
   };
 
   const handleReceive = async () => {
@@ -158,7 +170,12 @@ export function PurchasesPage() {
           {
             purchaseId: receiving.id,
             userId: user.id,
-            lines: receiveItems.map((i) => ({ purchaseItemId: i.id, receivedQuantity: Number(receivedInputs[i.id] ?? "") })),
+            lines: receiveItems.map((i) => ({
+              purchaseItemId: i.id,
+              receivedQuantity: Number(receivedInputs[i.id] ?? ""),
+              lotNumber: receivedLots[i.id]?.lotNumber || undefined,
+              expiryDate: receivedLots[i.id]?.expiryDate || undefined,
+            })),
             approval: a,
           },
           user.permissions,
@@ -238,6 +255,10 @@ export function PurchasesPage() {
     );
   };
 
+  const updateLot = (variantId: number, patch: { lotNumber?: string; expiryDate?: string }) => {
+    setCart((prev) => prev.map((line) => (line.variantId === variantId ? { ...line, ...patch } : line)));
+  };
+
   const removeLine = (variantId: number) => {
     setCart((prev) => prev.filter((line) => line.variantId !== variantId));
   };
@@ -281,6 +302,8 @@ export function PurchasesPage() {
             variantId: line.variantId,
             quantity: line.quantity,
             unitCost: line.unitCost,
+            lotNumber: line.lotNumber || undefined,
+            expiryDate: line.expiryDate || undefined,
           })),
           paymentMethod,
           amountPaid: paidValue,
@@ -458,6 +481,9 @@ export function PurchasesPage() {
                     <th style={thStyle}>{t("purchases.quantity")}</th>
                     <th style={thStyle}>{t("purchases.unitCost")}</th>
                     <th style={thStyle}>{t("purchases.total")}</th>
+                    {!twoStep && cart.some((l) => isExpiryTracked(l.variantId)) && (
+                      <th style={thStyle}>{t("pharmacy.lotAndExpiry")}</th>
+                    )}
                     <th style={thStyle}></th>
                   </tr>
                 </thead>
@@ -490,6 +516,29 @@ export function PurchasesPage() {
                         )}
                       </td>
                       <td style={tdStyle}>{formatAmount(line.quantity * line.unitCost)}</td>
+                      {!twoStep && cart.some((l) => isExpiryTracked(l.variantId)) && (
+                        <td style={tdStyle}>
+                          {isExpiryTracked(line.variantId) ? (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                              <input
+                                style={{ ...inputStyle, width: 90, marginTop: 0 }}
+                                placeholder={t("pharmacy.lotNumber")}
+                                value={line.lotNumber ?? ""}
+                                onChange={(e) => updateLot(line.variantId, { lotNumber: e.target.value })}
+                              />
+                              <input
+                                style={{ ...inputStyle, width: 140, marginTop: 0 }}
+                                type="date"
+                                aria-label={t("pharmacy.expiryDate")}
+                                value={line.expiryDate ?? ""}
+                                onChange={(e) => updateLot(line.variantId, { expiryDate: e.target.value })}
+                              />
+                            </div>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      )}
                       <td style={tdStyle}>
                         <button
                           onClick={() => removeLine(line.variantId)}
@@ -579,6 +628,27 @@ export function PurchasesPage() {
                   value={receivedInputs[item.id] ?? ""}
                   onChange={(e) => setReceivedInputs((prev) => ({ ...prev, [item.id]: e.target.value }))}
                 />
+                {isExpiryTracked(item.variantId) && (
+                  <span style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+                    <input
+                      style={{ ...inputStyle, flex: 1, minWidth: 120, marginTop: 0 }}
+                      placeholder={t("pharmacy.lotNumber")}
+                      value={receivedLots[item.id]?.lotNumber ?? ""}
+                      onChange={(e) =>
+                        setReceivedLots((prev) => ({ ...prev, [item.id]: { lotNumber: e.target.value, expiryDate: prev[item.id]?.expiryDate ?? "" } }))
+                      }
+                    />
+                    <input
+                      style={{ ...inputStyle, flex: 1, minWidth: 140, marginTop: 0 }}
+                      type="date"
+                      aria-label={t("pharmacy.expiryDate")}
+                      value={receivedLots[item.id]?.expiryDate ?? ""}
+                      onChange={(e) =>
+                        setReceivedLots((prev) => ({ ...prev, [item.id]: { lotNumber: prev[item.id]?.lotNumber ?? "", expiryDate: e.target.value } }))
+                      }
+                    />
+                  </span>
+                )}
               </label>
             );
           })}

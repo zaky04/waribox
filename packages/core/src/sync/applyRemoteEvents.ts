@@ -9,6 +9,7 @@ import type {
   ExpenseCreatedEventPayload,
   SaleCreatedEventPayload,
   StockEntryCreatedEventPayload,
+  StockBreakdownCreatedEventPayload,
   StockLossCreatedEventPayload,
   StockTransferCreatedEventPayload,
   SyncEvent,
@@ -265,6 +266,8 @@ async function applySaleCreated(db: Database, payload: SaleCreatedEventPayload):
       total: payload.sale.total,
       paymentStatus: payload.sale.paymentStatus,
       createdAt: payload.sale.createdAt,
+      prescriptionRef: payload.sale.prescriptionRef ?? null,
+      prescriber: payload.sale.prescriber ?? null,
     })
     .returning()
     .get();
@@ -452,6 +455,60 @@ async function applyStockTransferCreated(db: Database, payload: StockTransferCre
   }
 }
 
+async function applyStockBreakdownCreated(db: Database, payload: StockBreakdownCreatedEventPayload): Promise<void> {
+  assertSync(payload.unitsPerParent > 0, "contenance invalide pour un détail de boîte");
+  for (const leg of payload.legs) {
+    const existing = await db
+      .select({ id: schema.stockMovements.id })
+      .from(schema.stockMovements)
+      .where(eq(schema.stockMovements.syncId, leg.sourceMovement.syncId))
+      .get();
+    if (existing) continue;
+
+    assertSync(leg.sourceMovement.movementType === "adjustment" && leg.destMovement.movementType === "adjustment", "type de mouvement inattendu pour un détail de boîte");
+    assertSync(leg.sourceMovement.quantityDelta < 0, "la boîte ouverte doit décrémenter le stock");
+    assertSync(leg.destMovement.quantityDelta > 0, "les unités détaillées doivent incrémenter le stock");
+    assertSync(
+      approxEqual(-leg.sourceMovement.quantityDelta * payload.unitsPerParent, leg.destMovement.quantityDelta, 0.01),
+      "quantités incohérentes entre boîtes ouvertes et unités détaillées",
+    );
+    assertSync(leg.sourceMovement.locationId === leg.destMovement.locationId, "un détail de boîte reste au même emplacement");
+    assertSync(leg.sourceMovement.variantId !== leg.destMovement.variantId, "la boîte et son détail doivent être deux variantes");
+    await assertLocationExists(db, leg.sourceMovement.locationId);
+    // Le lien boîte → détail doit exister dans le catalogue local, avec la même contenance.
+    const child = await db
+      .select()
+      .from(schema.productVariants)
+      .where(eq(schema.productVariants.id, leg.destMovement.variantId))
+      .get();
+    assertSync(
+      !!child && child.parentVariantId === leg.sourceMovement.variantId && approxEqual(child.unitsPerParent ?? 0, payload.unitsPerParent, 0.0001),
+      "présentation détaillée inconnue ou différente localement",
+    );
+    assertSync(approxEqual(leg.destBatch.quantity, leg.destMovement.quantityDelta, 0.01), "quantité de lot détaillé incohérente avec le mouvement");
+    assertSync(leg.destBatch.variantId === leg.destMovement.variantId && leg.destBatch.locationId === leg.destMovement.locationId, "lot détaillé incohérent avec le mouvement");
+
+    const existingBatch = await db
+      .select({ id: schema.stockBatches.id })
+      .from(schema.stockBatches)
+      .where(eq(schema.stockBatches.syncId, leg.destBatch.syncId))
+      .get();
+    if (!existingBatch) {
+      await db.insert(schema.stockBatches).values({
+        syncId: leg.destBatch.syncId,
+        variantId: leg.destBatch.variantId,
+        locationId: leg.destBatch.locationId,
+        lotNumber: leg.destBatch.lotNumber,
+        expiryDate: leg.destBatch.expiryDate,
+        quantity: leg.destBatch.quantity,
+        unitCost: leg.destBatch.unitCost,
+      });
+    }
+    await insertMovement(db, leg.sourceMovement, null);
+    await insertMovement(db, leg.destMovement, null);
+  }
+}
+
 async function applyExpenseCreated(db: Database, payload: ExpenseCreatedEventPayload): Promise<void> {
   const existing = await db.select({ id: schema.expenses.id }).from(schema.expenses).where(eq(schema.expenses.syncId, payload.expense.syncId)).get();
   if (existing) return;
@@ -507,6 +564,8 @@ export async function applyRemoteSyncEvent(db: Database, event: SyncEvent): Prom
       return applyStockLossCreated(db, event.payload as StockLossCreatedEventPayload);
     case "stockTransfer.created":
       return applyStockTransferCreated(db, event.payload as StockTransferCreatedEventPayload);
+    case "stockBreakdown.created":
+      return applyStockBreakdownCreated(db, event.payload as StockBreakdownCreatedEventPayload);
     case "expense.created":
       return applyExpenseCreated(db, event.payload as ExpenseCreatedEventPayload);
     case "approvalRequest.created":

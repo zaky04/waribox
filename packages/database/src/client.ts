@@ -362,6 +362,23 @@ export const MIGRATIONS: Migration[] = [
     id: 15,
     statements: ["ALTER TABLE approval_requests ADD COLUMN decision_seen INTEGER NOT NULL DEFAULT 1"],
   },
+  // Pack Pharmacie : fiche médicament (DCI, dosage, forme, laboratoire, sur
+  // ordonnance), ordonnance enregistrée avec la vente, et lien boîte → plaquette
+  // entre variantes d'un même produit (action « Détailler »).
+  {
+    id: 17,
+    statements: [
+      "ALTER TABLE products ADD COLUMN dci TEXT",
+      "ALTER TABLE products ADD COLUMN dosage TEXT",
+      "ALTER TABLE products ADD COLUMN dosage_form TEXT",
+      "ALTER TABLE products ADD COLUMN laboratory TEXT",
+      "ALTER TABLE products ADD COLUMN requires_prescription INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE sales ADD COLUMN prescription_ref TEXT",
+      "ALTER TABLE sales ADD COLUMN prescriber TEXT",
+      "ALTER TABLE product_variants ADD COLUMN parent_variant_id INTEGER",
+      "ALTER TABLE product_variants ADD COLUMN units_per_parent REAL",
+    ],
+  },
 ];
 
 async function runMigrations(): Promise<void> {

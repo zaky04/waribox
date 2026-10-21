@@ -28,6 +28,8 @@ export interface ReceiptData {
   // aucune ligne affichée. Voir packages/core/src/fne/.
   fneStatus?: "pending" | "certified" | "failed";
   fneReference?: string;
+  // Ordonnance (pack Pharmacie) : référence imprimée sur le ticket si présente.
+  prescriptionRef?: string;
   lines: ReceiptLine[];
   subtotal: number;
   discount: number;
@@ -79,6 +81,9 @@ export async function buildReceipt(data: ReceiptData): Promise<Uint8Array> {
   builder.text(t("documents.receipt.cashier", { name: data.cashierName })).newline();
   if (data.customerName) {
     builder.text(t("documents.common.customer", { name: data.customerName })).newline();
+  }
+  if (data.prescriptionRef) {
+    builder.text(t("documents.receipt.prescription", { reference: data.prescriptionRef })).newline();
   }
   if (data.fneStatus === "certified" && data.fneReference) {
     builder.text(t("documents.receipt.fneCertified", { reference: data.fneReference })).newline();

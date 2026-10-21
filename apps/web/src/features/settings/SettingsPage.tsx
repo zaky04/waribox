@@ -4,6 +4,7 @@ import {
   getControlProfile,
   FNE_TEST_BASE_URL,
   getSettings,
+  installStarterCategories,
   hasPermission,
   hasMaintenanceCode,
   listBackups,
@@ -127,6 +128,7 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
 
   const [businessName, setBusinessName] = useState("");
   const [sectorType, setSectorType] = useState("");
+  const [starterMessage, setStarterMessage] = useState<string | null>(null);
   // Devise du commerce (code ISO) : voir packages/i18n/src/currency.ts.
   const [currency, setCurrencyState] = useState("XOF");
   const handleCurrencyChange = (code: string) => {
@@ -1030,6 +1032,34 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
             {t("settings.business.sectorTypeHint")}
           </div>
         </label>
+
+        {sectorType === "pharmacie" && (
+          <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: 12, display: "grid", gap: 8 }}>
+            <strong style={{ fontSize: 14 }}>{t("pharmacy.packTitle")}</strong>
+            <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("pharmacy.packHint")}</p>
+            <div>
+              <button
+                type="button"
+                style={primaryButtonStyle}
+                onClick={async () => {
+                  setStarterMessage(null);
+                  try {
+                    const names = t("pharmacy.starterCategories", { returnObjects: true }) as unknown as string[];
+                    const created = await installStarterCategories(db, Array.isArray(names) ? names : [], user?.id, user?.permissions ?? {});
+                    setStarterMessage(
+                      created.length > 0 ? t("pharmacy.starterDone", { count: created.length }) : t("pharmacy.starterNone"),
+                    );
+                  } catch (err) {
+                    setStarterMessage(describeError(err, t("pharmacy.starterFailed")));
+                  }
+                }}
+              >
+                {t("pharmacy.starterInstall")}
+              </button>
+            </div>
+            {starterMessage && <p style={{ fontSize: 13, margin: 0 }}>{starterMessage}</p>}
+          </div>
+        )}
 
 
         <div>

@@ -2,6 +2,8 @@ export * from "./auth/AuthService";
 export * from "./auth/hash";
 export * from "./domain/permissions";
 export * from "./domain/stock";
+export * from "./domain/expiry";
+export * from "./domain/pharmacy";
 export * from "./services/AccountingService";
 export * from "./services/ApprovalService";
 export * from "./services/ApprovalRequestsService";

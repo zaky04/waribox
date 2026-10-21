@@ -33,8 +33,12 @@ import {
   thStyle,
 } from "../../components/sharedStyles";
 import { openExternalUrl } from "../../lib/openExternalUrl";
+import { variantFullName } from "../../lib/variantLabel";
 import { openWhatsApp } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
+import { ExpiryPanel } from "./ExpiryPanel";
+import { LotTracePanel } from "./LotTracePanel";
+import { PackPanel } from "./PackPanel";
 
 type Product = typeof schema.products.$inferSelect;
 type Variant = typeof schema.productVariants.$inferSelect;
@@ -123,8 +127,7 @@ export function StockPage() {
 
   const variantLabel = (variant: Variant) => {
     const product = products.find((p) => p.id === variant.productId);
-    const attrs = variant.attributes && variant.attributes !== "{}" ? ` (${variant.attributes})` : "";
-    return `${product?.name ?? "?"}${attrs}`;
+    return variantFullName(variant, product?.name ?? "?");
   };
 
   const quantityFor = (vId: number, lId: number) =>
@@ -376,31 +379,29 @@ export function StockPage() {
         </div>
       )}
 
-      {expiring.length > 0 && (
-        <div style={{ ...cardStyle, borderLeft: "4px solid var(--color-caution)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-            <strong>{t("stock.expiringSoon", { days: EXPIRY_WARNING_DAYS })}</strong>
-            {lowStockAlertPhone && (
-              <button
-                style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 13, whiteSpace: "nowrap" }}
-                onClick={handleNotifyExpiring}
-              >
-                {t("stock.notifyWhatsapp")}
-              </button>
-            )}
-          </div>
-          <ul style={{ margin: 0, paddingLeft: 20 }}>
-            {expiring.map((e) => (
-              <li key={e.batch.id}>
-                {t("stock.expiringLine", {
-                  product: productName(e.variant.productId),
-                  lot: e.batch.lotNumber || "—",
-                  date: e.batch.expiryDate,
-                })}
-              </li>
-            ))}
-          </ul>
-        </div>
+      <ExpiryPanel
+        products={products}
+        storeId={currentStoreId ?? undefined}
+        canWriteOff={canLoss}
+        onChanged={refresh}
+        onNotify={expiring.length > 0 && lowStockAlertPhone ? handleNotifyExpiring : undefined}
+      />
+
+      {canTransfer && (
+        <PackPanel
+          products={products}
+          variants={variants}
+          locations={locations}
+          levels={levels}
+          onChanged={refresh}
+        />
+      )}
+
+      {businessSettings?.sectorType === "pharmacie" && (
+        <LotTracePanel
+          businessName={businessSettings.businessName ?? undefined}
+          countryCode={businessSettings.whatsappCountryCode}
+        />
       )}
 
       <FilterBar

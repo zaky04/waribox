@@ -11,7 +11,9 @@ import { checkApproval, checkCreditApproval, computeUnauthorizedDiscount, verify
 import { getActivePromotionsWithProducts } from "./PromotionsService";
 import { earnPoints, pointsToDiscount, redeemPoints } from "./LoyaltyService";
 import { getSettings } from "./SettingsService";
-import { consumeStockFefo, getStockLevels } from "./StockService";
+import { ExpiredStockError, todayISO } from "../domain/expiry";
+import { missingPrescription } from "../domain/pharmacy";
+import { consumeStockFefo, getSellableQuantity } from "./StockService";
 import { buildSyncEvent, emitSyncEvent, type SaleCreatedEventPayload, type SyncStockMovementPayload } from "../sync/syncEvents";
 import { enqueueFneCertification } from "../fne/fneQueue";
 import { emitFneQueued } from "../fne/fneEvents";
@@ -48,6 +50,11 @@ export interface CreateSaleInput {
   // Approbation d'un responsable : vente à crédit hors plafond, ou remise /
   // prix inférieur au catalogue non couvert par une promotion programmée.
   approval?: ApprovalInput;
+  // Autorise la vente de lots périmés : exige toujours un responsable (approval).
+  expiredOverride?: boolean;
+  // Ordonnance : obligatoire si la vente contient un produit « sur ordonnance ».
+  prescriptionRef?: string;
+  prescriber?: string;
 }
 
 // Les prix saisis sont TTC (taxe déjà incluse, comme affiché en surface de
@@ -85,15 +92,60 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
   // n'écrive, ou une erreur en cours de route laisserait une vente à moitié
   // enregistrée (ex : stock décrémenté sans paiement inséré).
   const { sale, event, fneEnabled } = await withTransaction(async () => {
-    const levels = await getStockLevels(db);
+    // Un lot périmé ne se vend pas : on ne compte que le stock vendable. Si la
+    // vente a besoin de lots périmés, seule une dérogation approuvée par un
+    // responsable (toujours exigée, même sans seuil configuré) la laisse passer.
+    const today = todayISO();
+    const expiredLines: Array<{ variantId: number; quantity: number; value: number }> = [];
     for (const item of input.items) {
-      const available = levels
-        .filter((l) => l.variantId === item.variantId && l.locationId === input.surfaceLocationId)
-        .reduce((sum, l) => sum + l.quantity, 0);
-      if (item.quantity > available) {
-        throw new Error(t("coreErrors.sales.insufficientStock", { available }));
+      const info = await getSellableQuantity(db, item.variantId, input.surfaceLocationId, today);
+      if (item.quantity > info.total) {
+        throw new Error(t("coreErrors.sales.insufficientStock", { available: info.total }));
+      }
+      if (item.quantity > info.sellable) {
+        if (!input.expiredOverride) {
+          throw new ExpiredStockError(
+            t("coreErrors.pharmacy.expiredStock", { available: info.sellable, expired: info.expiredRemaining }),
+            info.sellable,
+            info.expiredRemaining,
+          );
+        }
+        const cost = await db
+          .select({ cost: schema.products.purchasePrice })
+          .from(schema.productVariants)
+          .innerJoin(schema.products, eq(schema.products.id, schema.productVariants.productId))
+          .where(eq(schema.productVariants.id, item.variantId))
+          .get();
+        const expiredUsed = item.quantity - info.sellable;
+        expiredLines.push({ variantId: item.variantId, quantity: expiredUsed, value: expiredUsed * (cost?.cost ?? 0) });
       }
     }
+    let expiredApprovedBy: number | null = null;
+    if (expiredLines.length > 0) {
+      expiredApprovedBy = await checkApproval(db, {
+        kind: "stock",
+        amount: Math.max(0.01, expiredLines.reduce((sum, l) => sum + l.value, 0)),
+        userId: input.userId,
+        actingPermissions,
+        verifiedApproverId,
+        thresholdOverride: 0,
+      });
+    }
+    const expiredOverrideVariants = new Set(expiredLines.map((l) => l.variantId));
+
+    // Produit délivré sur ordonnance : la référence est obligatoire et reste
+    // attachée à la vente (traçabilité en cas de contrôle ou de rappel de lot).
+    const prescriptionRows = await db
+      .select({ requiresPrescription: schema.products.requiresPrescription })
+      .from(schema.productVariants)
+      .innerJoin(schema.products, eq(schema.products.id, schema.productVariants.productId))
+      .where(inArray(schema.productVariants.id, input.items.map((i) => i.variantId)));
+    if (missingPrescription(prescriptionRows, input.prescriptionRef)) {
+      throw new Error(t("coreErrors.pharmacy.prescriptionRequired"));
+    }
+    const prescriptionRef = input.prescriptionRef?.trim() || null;
+    const prescriber = input.prescriber?.trim() || null;
+    const hasPrescriptionProduct = prescriptionRows.some((r) => r.requiresPrescription);
 
     // Résolu ici (après la validation du stock, avant tout insert) pour rester
     // idempotent : une nouvelle tentative avec le même nom réutilise le client
@@ -235,6 +287,8 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
         taxTotal,
         total,
         paymentStatus,
+        prescriptionRef,
+        prescriber,
       })
       .returning()
       .get();
@@ -276,6 +330,7 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
         referenceType: "sale",
         referenceId: sale.id,
         userId: input.userId,
+        includeExpired: expiredOverrideVariants.has(item.variantId),
       });
       for (const movement of movements) {
         rawMovements.push({
@@ -361,6 +416,10 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
         paymentStatus,
         // Remise hors promotion : montant et responsable qui l'a approuvée (pour le tableau de bord Contrôles).
         ...(unauthorizedDiscount > 0 ? { unauthorizedDiscount, discountApprovedBy } : {}),
+        // Vente sur ordonnance : référence et prescripteur (traçabilité, Contrôles).
+        ...(hasPrescriptionProduct ? { prescription: { ref: prescriptionRef, prescriber } } : {}),
+        // Vente de lots périmés autorisée par un responsable (dérogation).
+        ...(expiredLines.length > 0 ? { expiredOverride: { approvedBy: expiredApprovedBy, lines: expiredLines } } : {}),
       },
     });
 
@@ -378,6 +437,8 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
         total: sale.total,
         paymentStatus: sale.paymentStatus,
         createdAt: sale.createdAt,
+        prescriptionRef: sale.prescriptionRef,
+        prescriber: sale.prescriber,
       },
       newCustomer,
       items: itemEvents,

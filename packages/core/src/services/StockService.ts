@@ -3,6 +3,8 @@ import { schema, withTransaction } from "@gestion-boutique/database";
 import { formatMoneyPlain, t } from "@gestion-boutique/i18n";
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { DEFAULT_LOCATIONS, type DefaultLocationKey } from "../domain/stock";
+import { computeSellableQuantity, isExpired, selectBatchesForConsumption, todayISO } from "../domain/expiry";
+import { areEquivalent, breakdownUnitCost } from "../domain/pharmacy";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { buildApprovalRequestCreatedEvent, createApprovalRequest, describeVariant, requireApproval, requireApprovalDeferrable, type ApprovalInput } from "./ApprovalService";
 import { logAction } from "./AuditService";
@@ -10,6 +12,7 @@ import {
   buildSyncEvent,
   emitSyncEvent,
   type SyncEvent,
+  type StockBreakdownCreatedEventPayload,
   type StockEntryCreatedEventPayload,
   type StockLossCreatedEventPayload,
   type StockTransferCreatedEventPayload,
@@ -171,8 +174,14 @@ export async function transferStock(
   requirePermission(actingPermissions, "transfer_stock");
   if (input.quantity <= 0) throw new Error(t("coreErrors.stock.quantityPositive"));
   if (input.fromLocationId === input.toLocationId) throw new Error(t("coreErrors.stock.sameLocation"));
-  const available = await getLocationBalance(db, input.variantId, input.fromLocationId);
-  if (input.quantity > available) throw new Error(t("coreErrors.stock.insufficient", { available }));
+  // Un lot périmé ne part jamais vers la surface de vente : seule la quantité
+  // vendable (hors périmés) peut être transférée.
+  const today = todayISO();
+  const stockInfo = await getSellableQuantity(db, input.variantId, input.fromLocationId, today);
+  if (input.quantity > stockInfo.total) throw new Error(t("coreErrors.stock.insufficient", { available: stockInfo.total }));
+  if (input.quantity > stockInfo.sellable) {
+    throw new Error(t("coreErrors.pharmacy.expiredStock", { available: stockInfo.sellable, expired: stockInfo.expiredRemaining }));
+  }
 
   // Enveloppé dans withTransaction (Phase 2, voir CLAUDE.md) — jusqu'ici
   // cette fonction ne l'était pas (gap déjà noté dans les pistes), ce qui
@@ -189,15 +198,11 @@ export async function transferStock(
         ),
       );
     const remainingMap = await getBatchRemainingMap(db, batches.map((b) => b.id));
-    const withRemaining = batches
-      .map((batch) => ({ batch, remaining: remainingMap.get(batch.id) ?? 0 }))
-      .filter((b) => b.remaining > 0)
-      .sort((a, b) => {
-        if (!a.batch.expiryDate && !b.batch.expiryDate) return a.batch.id - b.batch.id;
-        if (!a.batch.expiryDate) return 1;
-        if (!b.batch.expiryDate) return -1;
-        return a.batch.expiryDate.localeCompare(b.batch.expiryDate);
-      });
+    const withRemaining = selectBatchesForConsumption(
+      batches.map((batch) => ({ batch, remaining: remainingMap.get(batch.id) ?? 0 })),
+      today,
+      { includeExpired: false },
+    );
 
     const legs: StockTransferCreatedEventPayload["legs"] = [];
 
@@ -709,6 +714,10 @@ export interface ConsumeStockInput {
   userId?: number;
   note?: string;
   approvedBy?: number;
+  // Vendre/consommer aussi les lots périmés. Par défaut : jamais pour une vente
+  // (un périmé ne se vend pas), toujours pour un ajustement (écart d'inventaire).
+  // Une vente ne passe à `true` qu'avec la dérogation approuvée d'un responsable.
+  includeExpired?: boolean;
 }
 
 // Décrémente le stock en respectant l'ordre FEFO (premier expiré, premier
@@ -737,15 +746,11 @@ export async function consumeStockFefo(
     );
 
   const remainingMap = await getBatchRemainingMap(db, batches.map((b) => b.id));
-  const withRemaining = batches
-    .map((batch) => ({ batch, remaining: remainingMap.get(batch.id) ?? 0 }))
-    .filter((b) => b.remaining > 0)
-    .sort((a, b) => {
-      if (!a.batch.expiryDate && !b.batch.expiryDate) return a.batch.id - b.batch.id;
-      if (!a.batch.expiryDate) return 1;
-      if (!b.batch.expiryDate) return -1;
-      return a.batch.expiryDate.localeCompare(b.batch.expiryDate);
-    });
+  const withRemaining = selectBatchesForConsumption(
+    batches.map((batch) => ({ batch, remaining: remainingMap.get(batch.id) ?? 0 })),
+    todayISO(),
+    { includeExpired: input.includeExpired ?? input.movementType !== "sale" },
+  );
 
   let toConsume = input.quantity;
   for (const { batch, remaining } of withRemaining) {
@@ -786,6 +791,439 @@ export async function consumeStockFefo(
   }
 
   return movements;
+}
+
+export interface SellableInfo {
+  // Solde total de la variante à cet emplacement (périmés compris).
+  total: number;
+  // Partie réellement vendable (hors lots périmés).
+  sellable: number;
+  // Quantité encore en stock dans des lots périmés.
+  expiredRemaining: number;
+}
+
+// Stock vendable d'une variante à un emplacement : le solde du grand livre moins
+// ce qui reste dans des lots périmés. Voir computeSellableQuantity pour le cas
+// des anciennes sorties enregistrées sans lot.
+export async function getSellableQuantity(
+  db: Database,
+  variantId: number,
+  locationId: number,
+  today: string = todayISO(),
+): Promise<SellableInfo> {
+  const total = await getLocationBalance(db, variantId, locationId);
+  const batches = await db
+    .select()
+    .from(schema.stockBatches)
+    .where(and(eq(schema.stockBatches.variantId, variantId), eq(schema.stockBatches.locationId, locationId)));
+  const remainingMap = await getBatchRemainingMap(db, batches.map((b) => b.id));
+  let allBatchesRemaining = 0;
+  let expiredRemaining = 0;
+  for (const batch of batches) {
+    const remaining = remainingMap.get(batch.id) ?? 0;
+    if (remaining <= 0) continue;
+    allBatchesRemaining += remaining;
+    if (isExpired(batch.expiryDate, today)) expiredRemaining += remaining;
+  }
+  return {
+    total,
+    expiredRemaining,
+    sellable: computeSellableQuantity({ total, expiredRemaining, allBatchesRemaining }),
+  };
+}
+
+export interface ExpiredBatchEntry {
+  batch: typeof schema.stockBatches.$inferSelect;
+  variant: typeof schema.productVariants.$inferSelect;
+  productName: string;
+  remaining: number;
+  // Valeur au coût du lot (coût du lot, repli sur le prix d'achat du produit).
+  value: number;
+}
+
+// Lots périmés qui contiennent encore du stock, avec leur valeur perdue.
+export async function listExpiredBatches(db: Database, storeId?: number): Promise<ExpiredBatchEntry[]> {
+  const expiring = await listExpiringBatches(db, 0, storeId);
+  const today = todayISO();
+  const expired = expiring.filter((e) => isExpired(e.batch.expiryDate, today));
+  if (expired.length === 0) return [];
+  const remainingMap = await getBatchRemainingMap(db, expired.map((e) => e.batch.id));
+  const products = await db.select().from(schema.products);
+  const productById = new Map(products.map((p) => [p.id, p] as const));
+  return expired.map(({ batch, variant }) => {
+    const product = productById.get(variant.productId);
+    const remaining = remainingMap.get(batch.id) ?? 0;
+    return {
+      batch,
+      variant,
+      productName: product?.name ?? `#${variant.id}`,
+      remaining,
+      value: remaining * (batch.unitCost ?? product?.purchasePrice ?? 0),
+    };
+  });
+}
+
+export interface WriteOffExpiredInput {
+  // Rebuter seulement ces lots (sinon tous les lots périmés de la boutique).
+  batchIds?: number[];
+  storeId?: number;
+  userId?: number;
+  approval?: ApprovalInput;
+}
+
+// Rebut des lots périmés : une sortie « perte / péremption » PAR LOT (le lot est
+// ainsi réellement vidé et disparaît des alertes, ce que l'ancien retrait manuel
+// ne faisait pas). Au-delà du seuil d'approbation stock, un responsable valide
+// avec son code (toujours en mode code, jamais en validation ultérieure : la
+// marchandise est déjà inutilisable, il n'y a rien à « annuler » après coup).
+export async function writeOffExpiredBatches(
+  db: Database,
+  input: WriteOffExpiredInput,
+  actingPermissions: PermissionSet,
+): Promise<{ batches: number; units: number; value: number }> {
+  requirePermission(actingPermissions, "record_stock_losses");
+  const all = await listExpiredBatches(db, input.storeId);
+  const targets = all.filter((e) => e.remaining > 0 && (!input.batchIds || input.batchIds.includes(e.batch.id)));
+  if (targets.length === 0) throw new Error(t("coreErrors.pharmacy.nothingExpired"));
+  const value = targets.reduce((sum, e) => sum + e.value, 0);
+  const approvedBy = await requireApproval(db, {
+    kind: "stock",
+    amount: value,
+    userId: input.userId,
+    actingPermissions,
+    approval: input.approval,
+  });
+
+  const events: SyncEvent[] = [];
+  await withTransaction(async () => {
+    for (const entry of targets) {
+      const movement = await recordMovement(db, {
+        variantId: entry.variant.id,
+        locationId: entry.batch.locationId,
+        quantityDelta: -entry.remaining,
+        movementType: "loss",
+        referenceType: "expiry",
+        batchId: entry.batch.id,
+        userId: input.userId,
+        note: entry.batch.lotNumber ? `lot ${entry.batch.lotNumber}` : undefined,
+        approvedBy: approvedBy ?? undefined,
+      });
+      events.push(
+        buildSyncEvent<StockLossCreatedEventPayload>("stockLoss.created", {
+          movement: {
+            syncId: movement.syncId!,
+            variantId: movement.variantId,
+            locationId: movement.locationId,
+            batchSyncId: entry.batch.syncId,
+            quantityDelta: movement.quantityDelta,
+            movementType: movement.movementType,
+            referenceType: movement.referenceType,
+          },
+        }),
+      );
+    }
+  });
+  for (const event of events) emitSyncEvent(event);
+
+  const units = targets.reduce((sum, e) => sum + e.remaining, 0);
+  await logAction(db, {
+    userId: input.userId ?? null,
+    action: "stock_expired_writeoff",
+    entity: "stock",
+    metadata: {
+      batches: targets.length,
+      units,
+      value,
+      lots: targets.map((e) => ({ product: e.productName, lot: e.batch.lotNumber, expiryDate: e.batch.expiryDate, quantity: e.remaining })),
+      approvedBy,
+    },
+  });
+  return { batches: targets.length, units, value };
+}
+
+export interface BreakDownPackInput {
+  // Variante « boîte » à ouvrir, et variante détaillée (plaquette…) qui reçoit les unités.
+  parentVariantId: number;
+  childVariantId: number;
+  locationId: number;
+  // Nombre de boîtes à ouvrir.
+  quantity: number;
+  userId?: number;
+}
+
+// Ouvre des boîtes : -N boîtes, +N × contenance unités détaillées, au même
+// emplacement. Le lot SUIT (même numéro, même péremption) et le coût de la boîte
+// est réparti sur ses unités — le stock garde sa valeur. Les lots périmés ne
+// s'ouvrent jamais (sinon une boîte périmée redeviendrait vendable en détail).
+export async function breakDownPack(db: Database, input: BreakDownPackInput, actingPermissions: PermissionSet) {
+  requirePermission(actingPermissions, "transfer_stock");
+  if (!(input.quantity > 0)) throw new Error(t("coreErrors.pharmacy.breakQuantityPositive"));
+  const child = await db
+    .select()
+    .from(schema.productVariants)
+    .where(eq(schema.productVariants.id, input.childVariantId))
+    .get();
+  if (!child || child.parentVariantId !== input.parentVariantId || !((child.unitsPerParent ?? 0) > 0)) {
+    throw new Error(t("coreErrors.pharmacy.noPackLink"));
+  }
+  const units = child.unitsPerParent!;
+  const product = await db.select().from(schema.products).where(eq(schema.products.id, child.productId)).get();
+  const productCost = product?.purchasePrice ?? 0;
+
+  const today = todayISO();
+  const info = await getSellableQuantity(db, input.parentVariantId, input.locationId, today);
+  if (input.quantity > info.sellable) {
+    throw new Error(t("coreErrors.pharmacy.notEnoughToBreak", { available: info.sellable }));
+  }
+
+  const event = await withTransaction(async () => {
+    const batches = await db
+      .select()
+      .from(schema.stockBatches)
+      .where(
+        and(eq(schema.stockBatches.variantId, input.parentVariantId), eq(schema.stockBatches.locationId, input.locationId)),
+      );
+    const remainingMap = await getBatchRemainingMap(db, batches.map((b) => b.id));
+    const withRemaining = selectBatchesForConsumption(
+      batches.map((batch) => ({ batch, remaining: remainingMap.get(batch.id) ?? 0 })),
+      today,
+      { includeExpired: false },
+    );
+
+    const legs: StockBreakdownCreatedEventPayload["legs"] = [];
+    const openOne = async (take: number, batch: (typeof batches)[number] | undefined) => {
+      const sourceMovement = await recordMovement(db, {
+        variantId: input.parentVariantId,
+        locationId: input.locationId,
+        quantityDelta: -take,
+        movementType: "adjustment",
+        referenceType: "breakdown",
+        batchId: batch?.id,
+        userId: input.userId,
+      });
+      // Toujours un lot pour les unités détaillées (même sans lot d'origine) : sans
+      // lui, la marge retomberait sur le prix d'achat du PRODUIT, c'est-à-dire celui
+      // d'une boîte entière appliqué à une seule plaquette.
+      const destBatch = await createBatch(db, {
+        variantId: input.childVariantId,
+        locationId: input.locationId,
+        lotNumber: batch?.lotNumber ?? undefined,
+        expiryDate: batch?.expiryDate ?? undefined,
+        quantity: take * units,
+        unitCost: breakdownUnitCost(batch?.unitCost ?? productCost, units),
+      });
+      const destMovement = await recordMovement(db, {
+        variantId: input.childVariantId,
+        locationId: input.locationId,
+        quantityDelta: take * units,
+        movementType: "adjustment",
+        referenceType: "breakdown",
+        batchId: destBatch.id,
+        userId: input.userId,
+      });
+      legs.push({
+        sourceMovement: {
+          syncId: sourceMovement.syncId!,
+          variantId: sourceMovement.variantId,
+          locationId: sourceMovement.locationId,
+          batchSyncId: batch?.syncId ?? null,
+          quantityDelta: sourceMovement.quantityDelta,
+          movementType: sourceMovement.movementType,
+          referenceType: sourceMovement.referenceType,
+        },
+        destMovement: {
+          syncId: destMovement.syncId!,
+          variantId: destMovement.variantId,
+          locationId: destMovement.locationId,
+          batchSyncId: destBatch.syncId,
+          quantityDelta: destMovement.quantityDelta,
+          movementType: destMovement.movementType,
+          referenceType: destMovement.referenceType,
+        },
+        destBatch: {
+          syncId: destBatch.syncId!,
+          variantId: destBatch.variantId,
+          locationId: destBatch.locationId,
+          lotNumber: destBatch.lotNumber,
+          expiryDate: destBatch.expiryDate,
+          quantity: destBatch.quantity,
+          unitCost: destBatch.unitCost,
+        },
+      });
+    };
+
+    let toBreak = input.quantity;
+    for (const { batch, remaining } of withRemaining) {
+      if (toBreak <= 0) break;
+      const take = Math.min(toBreak, remaining);
+      if (take <= 0) continue;
+      await openOne(take, batch);
+      toBreak -= take;
+    }
+    // Reliquat sans lot (stock jamais suivi par lot).
+    if (toBreak > 0) await openOne(toBreak, undefined);
+
+    return buildSyncEvent<StockBreakdownCreatedEventPayload>("stockBreakdown.created", { unitsPerParent: units, legs });
+  });
+
+  emitSyncEvent(event);
+  await logAction(db, {
+    userId: input.userId ?? null,
+    action: "stock_break_pack",
+    entity: "stock",
+    entityId: input.parentVariantId,
+    metadata: {
+      parentVariantId: input.parentVariantId,
+      childVariantId: input.childVariantId,
+      locationId: input.locationId,
+      boxes: input.quantity,
+      units: input.quantity * units,
+    },
+  });
+}
+
+export interface LotTraceBatch {
+  batch: typeof schema.stockBatches.$inferSelect;
+  productName: string;
+  remaining: number;
+  // Achat d'origine (si le lot en vient directement) et son fournisseur.
+  purchaseNumber: string | null;
+  supplierName: string | null;
+}
+
+export interface LotTraceSale {
+  saleId: number;
+  number: string;
+  createdAt: string;
+  productName: string;
+  quantity: number;
+  customerId: number | null;
+  customerName: string | null;
+  customerPhone: string | null;
+}
+
+export interface LotTrace {
+  batches: LotTraceBatch[];
+  sales: LotTraceSale[];
+}
+
+// Traçabilité d'un numéro de lot : où il se trouve, d'où il vient, à qui il a été
+// vendu. Sert aux rappels de lot (prévenir les clients). Un lot ouvert en
+// plaquettes garde son numéro : ses unités détaillées sont retrouvées aussi.
+export async function getLotTrace(db: Database, lotNumber: string): Promise<LotTrace> {
+  const wanted = lotNumber.trim().toLowerCase();
+  if (!wanted) return { batches: [], sales: [] };
+
+  const allBatches = await db.select().from(schema.stockBatches);
+  const batches = allBatches.filter((b) => b.lotNumber?.trim().toLowerCase() === wanted);
+  if (batches.length === 0) return { batches: [], sales: [] };
+  const batchIds = batches.map((b) => b.id);
+
+  const [remainingMap, variants, products, movements] = await Promise.all([
+    getBatchRemainingMap(db, batchIds),
+    db.select().from(schema.productVariants),
+    db.select().from(schema.products),
+    db.select().from(schema.stockMovements).where(inArray(schema.stockMovements.batchId, batchIds)),
+  ]);
+  const productNameOfVariant = (variantId: number) => {
+    const variant = variants.find((v) => v.id === variantId);
+    const name = products.find((p) => p.id === variant?.productId)?.name ?? `#${variantId}`;
+    // Présentation détaillée : « Doliprane 500 (Plaquette) », pour la distinguer de la boîte.
+    if (variant?.parentVariantId != null) {
+      try {
+        const presentation = (JSON.parse(variant.attributes ?? "{}") as { presentation?: string }).presentation;
+        if (presentation) return `${name} (${presentation})`;
+      } catch {
+        // attributs illisibles : on garde le nom du produit
+      }
+    }
+    return name;
+  };
+
+  const purchaseIds = [
+    ...new Set(movements.filter((m) => m.movementType === "purchase" && m.referenceType === "purchase" && m.referenceId != null).map((m) => m.referenceId!)),
+  ];
+  const purchases = purchaseIds.length
+    ? await db.select().from(schema.purchases).where(inArray(schema.purchases.id, purchaseIds))
+    : [];
+  const suppliers = await db.select().from(schema.suppliers);
+
+  const traceBatches: LotTraceBatch[] = batches.map((batch) => {
+    const purchaseId = movements.find((m) => m.batchId === batch.id && m.movementType === "purchase")?.referenceId;
+    const purchase = purchases.find((p) => p.id === purchaseId);
+    return {
+      batch,
+      productName: productNameOfVariant(batch.variantId),
+      remaining: remainingMap.get(batch.id) ?? 0,
+      purchaseNumber: purchase?.number ?? null,
+      supplierName: suppliers.find((s) => s.id === purchase?.supplierId)?.name ?? null,
+    };
+  });
+
+  // Ventes : quantité sortie de CE lot par vente.
+  const soldBySale = new Map<number, { quantity: number; variantId: number }>();
+  for (const m of movements) {
+    if (m.movementType !== "sale" || m.referenceType !== "sale" || m.referenceId == null) continue;
+    const entry = soldBySale.get(m.referenceId) ?? { quantity: 0, variantId: m.variantId };
+    entry.quantity += -m.quantityDelta;
+    soldBySale.set(m.referenceId, entry);
+  }
+  const saleIds = [...soldBySale.keys()];
+  const sales = saleIds.length ? await db.select().from(schema.sales).where(inArray(schema.sales.id, saleIds)) : [];
+  const customers = await db.select().from(schema.customers);
+
+  const traceSales: LotTraceSale[] = sales
+    .map((sale) => {
+      const sold = soldBySale.get(sale.id)!;
+      const customer = customers.find((c) => c.id === sale.customerId);
+      return {
+        saleId: sale.id,
+        number: sale.number,
+        createdAt: sale.createdAt,
+        productName: productNameOfVariant(sold.variantId),
+        quantity: sold.quantity,
+        customerId: sale.customerId,
+        customerName: customer?.fullName ?? null,
+        customerPhone: customer?.phone ?? null,
+      };
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  return { batches: traceBatches, sales: traceSales };
+}
+
+export interface EquivalentProduct {
+  product: typeof schema.products.$inferSelect;
+  // Stock vendable (toutes présentations de la boutique, hors lots périmés).
+  sellableStock: number;
+}
+
+// Produits équivalents (même DCI et même dosage) à un produit donné, ceux qui ont
+// du stock vendable d'abord — pour proposer une alternative en cas de rupture.
+export async function findEquivalents(db: Database, productId: number, storeId?: number): Promise<EquivalentProduct[]> {
+  const [products, variants, levels, expired] = await Promise.all([
+    db.select().from(schema.products),
+    db.select().from(schema.productVariants),
+    getStockLevels(db, storeId),
+    listExpiredBatches(db, storeId),
+  ]);
+  const source = products.find((p) => p.id === productId);
+  if (!source) return [];
+
+  const stockByVariant = new Map<number, number>();
+  for (const level of levels) stockByVariant.set(level.variantId, (stockByVariant.get(level.variantId) ?? 0) + level.quantity);
+  for (const e of expired) stockByVariant.set(e.variant.id, (stockByVariant.get(e.variant.id) ?? 0) - e.remaining);
+
+  return products
+    .filter((p) => p.id !== source.id && p.isActive && areEquivalent(source, p))
+    .map((product) => ({
+      product,
+      sellableStock: Math.max(
+        0,
+        variants.filter((v) => v.productId === product.id).reduce((sum, v) => sum + (stockByVariant.get(v.id) ?? 0), 0),
+      ),
+    }))
+    .sort((a, b) => Number(b.sellableStock > 0) - Number(a.sellableStock > 0) || a.product.salePrice - b.product.salePrice);
 }
 
 export interface ExpiringBatch {

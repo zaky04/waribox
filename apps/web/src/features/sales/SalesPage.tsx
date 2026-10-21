@@ -3,6 +3,8 @@ import { getCurrency } from "@gestion-boutique/i18n";
 import { formatAmount, formatMoney } from "../../lib/format";
 import {
   createSale,
+  ExpiredStockError,
+  findEquivalents,
   hasPermission,
   getActivePromotionsWithProducts,
   type CloseSessionResult,
@@ -13,6 +15,7 @@ import {
   listAllVariants,
   pointsToDiscount,
   type ActivePromotionWithProducts,
+  type EquivalentProduct,
   type PaymentMethod,
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
@@ -115,6 +118,11 @@ export function SalesPage() {
   const [amountPaid, setAmountPaid] = useState<string>("");
   const [cashReceived, setCashReceived] = useState<string>("");
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  // Pack Pharmacie : ordonnance (si le panier contient un produit sur ordonnance)
+  // et équivalents proposés pour un produit du panier.
+  const [prescriptionRef, setPrescriptionRef] = useState("");
+  const [prescriber, setPrescriber] = useState("");
+  const [equivalents, setEquivalents] = useState<{ sourceName: string; items: EquivalentProduct[] } | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
   const [lastSaleNumber, setLastSaleNumber] = useState<string | null>(null);
   const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null);
@@ -154,11 +162,34 @@ export function SalesPage() {
     refresh();
   }, [refresh]);
 
-  const filteredProducts = useMemo(() => {
+  // Nom affiché d'une variante : « Doliprane 500 (Plaquette) » pour une
+  // présentation détaillée d'une boîte (pack Pharmacie), le nom du produit sinon.
+  const variantDisplayName = (variant: Variant, product: Product): string => {
+    if (variant.parentVariantId == null) return product.name;
+    let presentation = "";
+    try {
+      presentation = (JSON.parse(variant.attributes ?? "{}") as { presentation?: string }).presentation ?? "";
+    } catch {
+      presentation = "";
+    }
+    return presentation ? `${product.name} (${presentation})` : product.name;
+  };
+
+  // Une tuile par produit (sa variante de base) + une par présentation détaillée.
+  const saleTiles = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return products;
-    return products.filter((p) => p.name.toLowerCase().includes(term));
-  }, [products, search]);
+    const tiles: { key: string; product: Product; variant: Variant; label: string; price: number }[] = [];
+    for (const product of products) {
+      const productVariants = variants.filter((v) => v.productId === product.id);
+      const base = productVariants.find((v) => v.parentVariantId == null);
+      if (base) tiles.push({ key: `v${base.id}`, product, variant: base, label: product.name, price: base.priceOverride ?? product.salePrice });
+      for (const v of productVariants.filter((x) => x.parentVariantId != null)) {
+        tiles.push({ key: `v${v.id}`, product, variant: v, label: variantDisplayName(v, product), price: v.priceOverride ?? product.salePrice });
+      }
+    }
+    return term ? tiles.filter((tile) => tile.label.toLowerCase().includes(term)) : tiles;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, variants, search]);
 
   // TVA désactivée globalement -> toujours 0, quel que soit le taux
   // configuré sur le produit. Sinon, taux du produit ou, à défaut, taux par
@@ -179,7 +210,7 @@ export function SalesPage() {
         {
           variantId: variant.id,
           productId: product.id,
-          productName: product.name,
+          productName: variantDisplayName(variant, product),
           unitPrice: variant.priceOverride ?? product.salePrice,
           quantity: 1,
           taxRate: resolveTaxRate(product),
@@ -189,7 +220,7 @@ export function SalesPage() {
   };
 
   const addToCart = (product: Product) => {
-    const variant = variants.find((v) => v.productId === product.id);
+    const variant = variants.find((v) => v.productId === product.id && v.parentVariantId == null);
     if (!variant) return;
     addVariantToCart(variant, product);
   };
@@ -311,6 +342,14 @@ export function SalesPage() {
   // crédit/partiel.
   const changeDue = Math.max(0, (Number(cashReceived) || 0) - total);
 
+  const cartNeedsPrescription = cart.some((l) => products.find((p) => p.id === l.productId)?.requiresPrescription);
+
+  const showEquivalents = async (productId: number) => {
+    const source = products.find((p) => p.id === productId);
+    if (!source) return;
+    setEquivalents({ sourceName: source.name, items: await findEquivalents(db, productId, currentStoreId ?? undefined) });
+  };
+
   const handleCheckout = async () => {
     setCheckoutError(null);
     if (!user || !surfaceLocationId || !currentStoreId) return;
@@ -318,13 +357,20 @@ export function SalesPage() {
       setCheckoutError(t("sales.emptyCartError"));
       return;
     }
+    if (cartNeedsPrescription && !prescriptionRef.trim()) {
+      setCheckoutError(t("pharmacy.prescriptionRequiredHint"));
+      return;
+    }
 
     setCheckingOut(true);
     try {
       const paidValue = amountPaid === "" ? total : Number(amountPaid);
 
-      const sale = await approval.run((a) => createSale(db, {
+      const submitSale = (expiredOverride: boolean) => approval.run((a) => createSale(db, {
         approval: a,
+        expiredOverride: expiredOverride || undefined,
+        prescriptionRef: cartNeedsPrescription ? prescriptionRef.trim() : undefined,
+        prescriber: cartNeedsPrescription ? prescriber.trim() || undefined : undefined,
         userId: user.id,
         customerId: customerId ? Number(customerId) : null,
         newCustomerName: customerId ? undefined : newCustomerName,
@@ -347,6 +393,19 @@ export function SalesPage() {
         storeId: currentStoreId,
       }, user.permissions));
 
+      // Un lot périmé ne se vend pas : si la vente en a besoin, on propose la
+      // dérogation d'un responsable (PIN) plutôt qu'un simple refus.
+      let sale: Awaited<ReturnType<typeof submitSale>>;
+      try {
+        sale = await submitSale(false);
+      } catch (err) {
+        if (err instanceof ExpiredStockError && window.confirm(t("pharmacy.sellExpiredConfirm", { expired: err.expired, available: err.available }))) {
+          sale = await submitSale(true);
+        } else {
+          throw err;
+        }
+      }
+
       const customerName =
         customers.find((c) => c.id === Number(customerId))?.fullName || newCustomerName.trim() || undefined;
 
@@ -368,6 +427,7 @@ export function SalesPage() {
         // CLAUDE.md) : on sait déjà ici, de façon fiable, si la FNE va
         // s'appliquer à cette vente.
         fneStatus: businessSettings?.fneEnabled ? "pending" : undefined,
+        prescriptionRef: cartNeedsPrescription ? prescriptionRef.trim() : undefined,
         lines: cart.map((line) => ({
           label: line.productName,
           quantity: line.quantity,
@@ -384,6 +444,9 @@ export function SalesPage() {
       setReceiptPhone(customers.find((c) => c.id === Number(customerId))?.phone ?? "");
       setPrintError(null);
       setCart([]);
+      setPrescriptionRef("");
+      setPrescriber("");
+      setEquivalents(null);
       setCustomerId("");
       setNewCustomerName("");
       setRedeemPointsInput("");
@@ -639,12 +702,13 @@ export function SalesPage() {
                   marginTop: 16,
                 }}
               >
-                {filteredProducts.map((product) => {
-                  const inCart = cart.filter((line) => line.productId === product.id).reduce((sum, line) => sum + line.quantity, 0);
+                {saleTiles.map((tile) => {
+                  const { product, variant } = tile;
+                  const inCart = cart.filter((line) => line.variantId === variant.id).reduce((sum, line) => sum + line.quantity, 0);
                   return (
                     <button
-                      key={product.id}
-                      onClick={() => addToCart(product)}
+                      key={tile.key}
+                      onClick={() => addVariantToCart(variant, product)}
                       style={{
                         position: "relative",
                         display: "flex",
@@ -675,8 +739,8 @@ export function SalesPage() {
                         {productMonogram(product.name)}
                       </span>
                       <span style={{ display: "flex", flexDirection: "column", gap: 4, padding: "10px 12px 12px" }}>
-                        <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.25, minHeight: 35 }}>{product.name}</span>
-                        <span style={{ ...amountStyle, fontSize: 15, fontWeight: 600 }}>{formatMoney(product.salePrice)}</span>
+                        <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.25, minHeight: 35 }}>{tile.label}</span>
+                        <span style={{ ...amountStyle, fontSize: 15, fontWeight: 600 }}>{formatMoney(tile.price)}</span>
                       </span>
                       {inCart > 0 && (
                         <span
@@ -836,6 +900,16 @@ export function SalesPage() {
                           <span style={{ ...amountStyle, fontSize: 14, fontWeight: 500 }}>
                             {formatAmount(lineGross - lineDiscountAmount)}
                           </span>
+                          {products.find((p) => p.id === line.productId)?.dci && (
+                            <button
+                              type="button"
+                              title={t("pharmacy.equivalents")}
+                              onClick={() => void showEquivalents(line.productId)}
+                              style={{ ...stepper, width: "auto", padding: "0 6px", fontSize: 12 }}
+                            >
+                              {t("pharmacy.equivalentsShort")}
+                            </button>
+                          )}
                         </div>
                         {promo.percent > 0 && (
                           <div style={{ color: "var(--color-success)", fontSize: 12, marginLeft: 92 }}>
@@ -846,6 +920,40 @@ export function SalesPage() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {equivalents && (
+                <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: 8, margin: "6px 0", fontSize: 13 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <strong>{t("pharmacy.equivalentsFor", { name: equivalents.sourceName })}</strong>
+                    <button type="button" onClick={() => setEquivalents(null)} style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}>
+                      ✕
+                    </button>
+                  </div>
+                  {equivalents.items.length === 0 ? (
+                    <p style={{ margin: "4px 0 0", color: "var(--color-text-muted)" }}>{t("pharmacy.noEquivalent")}</p>
+                  ) : (
+                    equivalents.items.map((e) => (
+                      <div key={e.product.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0" }}>
+                        <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
+                          {e.product.name}
+                          <span style={{ color: "var(--color-text-muted)" }}> — {formatAmount(e.product.salePrice)}</span>
+                        </span>
+                        <span style={{ color: e.sellableStock > 0 ? "var(--color-success)" : "var(--color-danger)" }}>
+                          {e.sellableStock > 0 ? t("pharmacy.inStock", { count: e.sellableStock }) : t("pharmacy.outOfStock")}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={e.sellableStock <= 0}
+                          onClick={() => addToCart(e.product)}
+                          style={{ ...primaryButtonStyle, padding: "2px 10px", fontSize: 12 }}
+                        >
+                          {t("pharmacy.addEquivalent")}
+                        </button>
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
 
@@ -894,6 +1002,20 @@ export function SalesPage() {
           </div>
 
           <div style={{ ...cardStyle, marginTop: 0 }}>
+            {cartNeedsPrescription && (
+              <div style={{ border: "1px solid var(--color-warning)", borderRadius: "var(--radius-md)", padding: 10, display: "grid", gap: 8 }}>
+                <strong style={{ color: "var(--color-warning)", fontSize: 13 }}>{t("pharmacy.prescriptionTitle")}</strong>
+                <label>
+                  {t("pharmacy.prescriptionRef")}
+                  <input style={inputStyle} value={prescriptionRef} onChange={(e) => setPrescriptionRef(e.target.value)} />
+                </label>
+                <label>
+                  {t("pharmacy.prescriber")}
+                  <input style={inputStyle} value={prescriber} onChange={(e) => setPrescriber(e.target.value)} />
+                </label>
+              </div>
+            )}
+
             <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("sales.customerOptionalHint")}</p>
 
             <label>

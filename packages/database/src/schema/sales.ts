@@ -40,6 +40,10 @@ export const sales = sqliteTable("sales", {
   fneBalanceSticker: integer("fne_balance_sticker"),
   fneError: text("fne_error"),
   fneCertifiedAt: text("fne_certified_at"),
+  // Ordonnance (pack Pharmacie) : référence et prescripteur, enregistrés quand la
+  // vente contient un produit délivré sur ordonnance.
+  prescriptionRef: text("prescription_ref"),
+  prescriber: text("prescriber"),
 });
 
 export const saleItems = sqliteTable("sale_items", {

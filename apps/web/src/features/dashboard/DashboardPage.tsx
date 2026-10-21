@@ -11,6 +11,7 @@ import {
   hasPermission,
   isBackupDue,
   isCreditOverdue,
+  isExpired,
   listBackups,
   listCustomerCredits,
   listExpiringBatches,
@@ -18,6 +19,7 @@ import {
   listSales,
   listServiceOrders,
   listStores,
+  todayISO,
   type ExpiringBatch,
   type LowStockEntry,
 } from "@gestion-boutique/core";
@@ -240,6 +242,14 @@ export function DashboardPage({ onNavigate }: { onNavigate?: (tab: NavTab) => vo
   const todos: TodoRow[] = [];
   if (canViewStock && lowStock.length > 0)
     todos.push({ key: "lowStock", title: t("dashboard.lowStock"), detail: t("dashboard.todoLowStockDetail", { count: lowStock.length }), target: "stock" });
+  const expiredCount = expiringBatches.filter((e) => isExpired(e.batch.expiryDate, todayISO())).length;
+  if (canViewStock && expiredCount > 0)
+    todos.push({
+      key: "expired",
+      title: t("pharmacy.dashboardExpired"),
+      detail: t("pharmacy.dashboardExpiredDetail", { count: expiredCount }),
+      target: "stock",
+    });
   if (canViewStock && expiringBatches.length > 0)
     todos.push({
       key: "expiring",

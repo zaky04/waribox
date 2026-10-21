@@ -162,6 +162,7 @@ export function SalesHistoryPage() {
         customerName: customerName(sale.customerId) ?? undefined,
         fneStatus: (sale.fneStatus as ReceiptData["fneStatus"]) ?? undefined,
         fneReference: sale.fneReference ?? undefined,
+        prescriptionRef: sale.prescriptionRef ?? undefined,
         lines: items.map((item) => ({
           label: variantLabel(item.variantId),
           quantity: item.quantity,

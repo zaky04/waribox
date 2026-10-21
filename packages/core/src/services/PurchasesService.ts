@@ -7,6 +7,7 @@ import { logAction } from "./AuditService";
 import { requireAnyPermission, requirePermission, type PermissionSet } from "../domain/permissions";
 import { checkApprovalDeferrable, createApprovalRequest, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
 import { getSettings } from "./SettingsService";
+import { isExpired, todayISO } from "../domain/expiry";
 import { createBatch, listLocations, recordMovement } from "./StockService";
 
 async function nextPurchaseNumber(db: Database): Promise<string> {
@@ -20,6 +21,41 @@ export interface PurchaseItemInput {
   variantId: number;
   quantity: number;
   unitCost: number;
+  // Lot et péremption de la marchandise reçue — la date est OBLIGATOIRE pour un
+  // produit suivi en péremption (voir assertExpiryProvided).
+  lotNumber?: string;
+  expiryDate?: string;
+}
+
+// Variantes dont le produit est suivi en péremption → nom du produit.
+async function getTrackedVariants(db: Database, variantIds: number[]): Promise<Map<number, string>> {
+  const tracked = new Map<number, string>();
+  for (const variantId of new Set(variantIds)) {
+    const row = await db
+      .select({ name: schema.products.name, trackExpiry: schema.products.trackExpiry })
+      .from(schema.productVariants)
+      .innerJoin(schema.products, eq(schema.products.id, schema.productVariants.productId))
+      .where(eq(schema.productVariants.id, variantId))
+      .get();
+    if (row?.trackExpiry) tracked.set(variantId, row.name);
+  }
+  return tracked;
+}
+
+// Un produit suivi en péremption ne rentre jamais en stock sans date : sinon il
+// échapperait aux alertes et au blocage des périmés. Une marchandise déjà
+// périmée à la réception est refusée (à retourner au fournisseur).
+function assertExpiryProvided(
+  tracked: Map<number, string>,
+  lines: { variantId: number; expiryDate?: string }[],
+): void {
+  const today = todayISO();
+  for (const line of lines) {
+    const name = tracked.get(line.variantId);
+    if (!name) continue;
+    if (!line.expiryDate) throw new Error(t("coreErrors.pharmacy.expiryRequired", { product: name }));
+    if (isExpired(line.expiryDate, today)) throw new Error(t("coreErrors.pharmacy.receivedExpired", { product: name }));
+  }
 }
 
 export type PurchasePaymentMethod = "cash" | "card" | "mobile_money" | "credit";
@@ -101,6 +137,10 @@ export async function createPurchase(
   // Achats en deux temps : la facture est saisie ici, le stock n'entre qu'à la
   // réception contrôlée (receivePurchase).
   const twoStep = settings.requirePurchaseReceipt;
+  // En deux temps, lot et péremption se saisissent à la réception, pas ici.
+  if (!twoStep) {
+    assertExpiryProvided(await getTrackedVariants(db, input.items.map((i) => i.variantId)), input.items);
+  }
   const priceRefs = await getPriceReferences(db, input.items.map((i) => i.variantId));
   // Responsable vérifié hors transaction (le compteur d'essais doit survivre à un rollback).
   const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
@@ -175,7 +215,8 @@ export async function createPurchase(
         variantId: item.variantId,
         locationId: reserve.id,
         quantity: item.quantity,
-        expiryDate: undefined,
+        lotNumber: item.lotNumber?.trim() || undefined,
+        expiryDate: item.expiryDate || undefined,
         unitCost: item.unitCost,
       });
 
@@ -244,7 +285,8 @@ export interface ReceivePurchaseInput {
   purchaseId: number;
   userId: number;
   // Quantité réellement comptée pour chaque ligne de la facture.
-  lines: { purchaseItemId: number; receivedQuantity: number }[];
+  // Lot et péremption sont à saisir ici pour les produits suivis en péremption.
+  lines: { purchaseItemId: number; receivedQuantity: number; lotNumber?: string; expiryDate?: string }[];
   note?: string;
   approval?: ApprovalInput;
 }
@@ -260,10 +302,16 @@ export async function receivePurchase(db: Database, input: ReceivePurchaseInput,
 
   const items = await listPurchaseItems(db, purchase.id);
   const receivedById = new Map(input.lines.map((l) => [l.purchaseItemId, l.receivedQuantity] as const));
+  const lineById = new Map(input.lines.map((l) => [l.purchaseItemId, l] as const));
   for (const item of items) {
     const rq = receivedById.get(item.id);
     if (rq == null || rq < 0) throw new Error(t("coreErrors.purchases.receiptQuantityRequired"));
   }
+  // Seules les lignes réellement reçues ont besoin d'une date de péremption.
+  assertExpiryProvided(
+    await getTrackedVariants(db, items.map((i) => i.variantId)),
+    items.filter((i) => (receivedById.get(i.id) ?? 0) > 0).map((i) => ({ variantId: i.variantId, expiryDate: lineById.get(i.id)?.expiryDate })),
+  );
 
   const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
   const result = await withTransaction(async () => {
@@ -293,7 +341,8 @@ export async function receivePurchase(db: Database, input: ReceivePurchaseInput,
         variantId: item.variantId,
         locationId: reserve.id,
         quantity: received,
-        expiryDate: undefined,
+        lotNumber: lineById.get(item.id)?.lotNumber?.trim() || undefined,
+        expiryDate: lineById.get(item.id)?.expiryDate || undefined,
         unitCost: item.unitCost,
       });
       const receiptMovement = await recordMovement(db, {
