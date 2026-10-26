@@ -20,5 +20,11 @@
   "devDependencies": {
     "turbo": "^2.3.0",
     "typescript": "^5.7.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "dompurify": ">=3.4.17",
+      "shell-quote": ">=1.11.0"
+    }
   }
 }
