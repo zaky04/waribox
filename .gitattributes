@@ -1,0 +1,4 @@
+# Fins de ligne LF partout (index deja en LF) : evite les avertissements LF/CRLF sous Windows.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
