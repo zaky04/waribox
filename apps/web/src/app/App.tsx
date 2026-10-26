@@ -11,6 +11,7 @@ import { useLanguageStore } from "../stores/language";
 import { useThemeStore } from "../stores/theme";
 import { BusinessHeader } from "./BusinessHeader";
 import { AuthGate } from "../features/auth/AuthGate";
+import { FocusProvider } from "../features/focus/FocusProvider";
 import { NetworkProvider } from "../features/network/NetworkProvider";
 import { TopBar } from "../features/auth/TopBar";
 import { useAuth } from "../features/auth/useAuth";
@@ -217,11 +218,13 @@ export function App() {
       <UpdateBanner />
       <ErrorBoundary>
         <DatabaseProvider>
-          <NetworkProvider>
-            <AuthGate>
-              <MainContent />
-            </AuthGate>
-          </NetworkProvider>
+          <FocusProvider>
+            <NetworkProvider>
+              <AuthGate>
+                <MainContent />
+              </AuthGate>
+            </NetworkProvider>
+          </FocusProvider>
         </DatabaseProvider>
       </ErrorBoundary>
     </I18nextProvider>

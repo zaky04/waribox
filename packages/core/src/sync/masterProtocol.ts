@@ -152,7 +152,8 @@ export function createMasterProtocol(deps: MasterProtocolDeps) {
     try {
       const approverId = Number(message.payload.approverId);
       if (!Number.isInteger(approverId)) throw new Error("responsable invalide");
-      const challenge = await issuePinChallenge(db, approverId);
+      const kind = message.payload.kind === "approval" ? "approval" : "unlock";
+      const challenge = await issuePinChallenge(db, approverId, Date.now(), kind);
       await send(connectionId, new WsMessage({ type: WsMessageTypes.pinChallengeResult, payload: { ok: true, challenge }, correlationId: message.correlationId }));
     } catch (err) {
       await send(connectionId, new WsMessage({ type: WsMessageTypes.pinChallengeResult, payload: { ok: false, error: errorMessage(err) }, correlationId: message.correlationId }));

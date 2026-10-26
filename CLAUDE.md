@@ -4392,6 +4392,30 @@ Demandée parce que les vérifications précédentes laissaient des trous. Méth
 
 **Encore jamais exécuté** : la vérification de PIN à distance par un vrai appareil relié contre un vrai Maître (couverte seulement par les tests vitest qui relient `masterProtocol` et `workerRpc` en mémoire), l'appli Tauri installée (desktop/Android), le réseau sur deux machines.
 
+### 2026-10-26 — Mode focus (plein écran) + PIN de déverrouillage séparé du PIN d'approbation
+
+**Demande** : l'appli se lance en plein écran sur PC et tablette (concentration), avec retour possible en mode fenêtre, mais **sortir demande un code à définir**. En même temps : recenser tous les codes demandés par l'appli et décider lesquels sont communs ou distincts.
+
+**Inventaire des codes (décisions du propriétaire)** :
+
+| Code | Où | Portée |
+|---|---|---|
+| Mot de passe | connexion, changement de mot de passe | par utilisateur |
+| **PIN de déverrouillage** (`users.pin_hash`) | écran de verrouillage de session | par utilisateur, 6-8 chiffres |
+| **PIN d'approbation** (`users.approval_pin_hash`, nouveau) | validation d'une remise, remboursement, dépense, perte de stock, etc. | par utilisateur, 6-8 chiffres, **obligatoirement différent** du PIN de déverrouillage |
+| **Code de maintenance** (`business_settings.maintenance_code_hash`) | Configuration avancée, installer une mise à jour | un seul pour l'entreprise, 6 caractères mini |
+| **Code du mode focus** (`business_settings.focus_code_hash`, nouveau) | quitter le plein écran | un seul pour l'entreprise, 4 caractères mini |
+
+Décisions : code focus **dédié** (≠ maintenance), maintenance et PIN d'approbation **séparés**, PIN de déverrouillage et PIN d'approbation **séparés** (un PIN vu par-dessus l'épaule à l'écran de verrouillage ne permet plus d'approuver).
+
+**PIN d'approbation** : migration `id: 19` ajoute `approval_pin_hash` + compteur d'essais propre (`approval_failed_attempts/locked_until`, un échec de l'un ne bloque pas l'autre) et **copie le PIN existant** dans `approval_pin_hash` pour que les responsables continuent d'approuver après la mise à jour (ils le changent ensuite dans Utilisateurs). `verifyApprovalPin` (AuthService) sert `verifyApprovalInput`/`listApprovers` (un responsable sans PIN d'approbation n'est plus proposé). À distance : le défi/réponse de `pinProof.ts` porte un `kind` (`unlock`|`approval`) — le Maître prend le hash et le compteur correspondants, et `decideApprovalRequestRemote` refuse une preuve du PIN de déverrouillage (`expectedKind: "approval"`). L'instantané remplace aussi `approvalPinHash` par `remote:v1`. `createUser`/`updateUser` refusent deux PIN identiques (y compris quand un seul est modifié, en comparant au hash de l'autre).
+
+**Mode focus** : `tauri.conf.json` démarre la fenêtre PC en `fullscreen: true` (aucun flash) ; permissions `core:window:allow-set-fullscreen/is-fullscreen`. La **décision** (qui a droit au plein écran, quand il s'enclenche, quand un code est exigé) est pure et testée : `packages/core/src/domain/focusPolicy.ts` — téléphone (petit côté < 600 px) = pas de mode focus ; PC Tauri et tablette Android = automatique ; PWA installée = au premier toucher (l'API Fullscreen exige un geste) ; simple onglet de navigateur = jamais forcé (bouton manuel). `apps/web/src/features/focus/` : `FocusProvider` (monté au-dessus d'`AuthGate`, donc actif dès l'écran de connexion), `FocusToggleButton` (barre du haut + bouton flottant sur connexion/verrouillage), `FocusCodeSection` (Configuration → Sécurité). **La sortie n'est pas mémorisée** : chaque lancement repart en plein écran (c'est le but). Sans code défini, la sortie est libre. Le code de maintenance sert de secours (« code oublié ») mais **se vérifie séparément** (compteurs d'essais distincts).
+- **Android** : le `WebChromeClient` de wry ferme immédiatement toute demande plein écran de la page (`onShowCustomView` → `onCustomViewHidden`), l'API Fullscreen y est donc inutilisable. Le plein écran passe par un pont natif `WariBoxNative.setImmersive()` posé dans `MainActivity.kt` (`onWebViewCreate` + `addJavascriptInterface`) qui cache les barres système. **`gen/` est ignoré par git** : la copie versionnée est `apps/desktop/android-overrides/MainActivity.kt`, à recopier dans `gen/android/app/src/main/java/com/waribox/app/` après tout `tauri android init` (comme `usesCleartextTraffic`). Un ancien APK sans ce pont n'a pas de mode focus (la politique le détecte).
+- **Limites assumées** : en PWA/navigateur, Échap ou F11 quittent le plein écran sans code (impossible à empêcher depuis une page web) — l'appli y rentre au toucher suivant. Sur PC, Alt+F4 / la touche Windows restent disponibles (c'est un mode concentration, pas un kiosque verrouillé). Le hash du code focus est répliqué aux appareils reliés (une tablette Worker doit pouvoir vérifier le code hors ligne) ; pas celui de maintenance, donc le secours « code oublié » n'y fonctionne pas.
+
+**Tests** : 257 (core) dont `focusPolicy`, `FocusCodeService` (verrouillage progressif, secours maintenance, `updateSettings` ne peut pas écraser le hash, instantané), séparation des deux PIN (compteurs, identiques refusés, type de PIN demandé à distance, décision d'approbation refusant une preuve du mauvais PIN).
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du

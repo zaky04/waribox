@@ -3,8 +3,15 @@ import { schema } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
 import { eq } from "drizzle-orm";
 import { argon2id, createHMAC, createSHA256 } from "hash-wasm";
-import { clearFailedAttempts, registerFailedAttempt, remainingLockSeconds } from "./lockout";
+import {
+  clearFailedApprovalAttempts,
+  clearFailedAttempts,
+  registerFailedApprovalAttempt,
+  registerFailedAttempt,
+  remainingLockSeconds,
+} from "./lockout";
 import { isRemotePinHash } from "./pin";
+import type { PinKind } from "./remotePin";
 
 // Vérification à distance d'un code PIN, sans jamais le faire circuler :
 //  1. l'appareil relié demande un défi pour un responsable (`issuePinChallenge`,
@@ -97,7 +104,7 @@ function constantTimeEqual(a: string, b: string): boolean {
 
 // Défis en attente, côté Maître uniquement — en mémoire : un redémarrage les
 // invalide, ce qui est voulu.
-const pending = new Map<string, { approverId: number; expiresAt: number }>();
+const pending = new Map<string, { approverId: number; kind: PinKind; expiresAt: number }>();
 
 function purgeExpired(now: number): void {
   for (const [nonce, entry] of pending) if (entry.expiresAt <= now) pending.delete(nonce);
@@ -107,26 +114,37 @@ export function pendingPinChallengeCount(): number {
   return pending.size;
 }
 
-/** Côté Maître : émet un défi pour ce responsable (refusé s'il est verrouillé ou sans PIN vérifiable ici). */
-export async function issuePinChallenge(db: Database, approverId: number, now = Date.now()): Promise<PinChallenge> {
+/**
+ * Côté Maître : émet un défi pour ce responsable (refusé s'il est verrouillé ou sans
+ * PIN vérifiable ici). `kind` choisit le PIN visé : celui du déverrouillage de session
+ * ou celui des approbations — deux secrets distincts, chacun avec son compteur d'essais.
+ */
+export async function issuePinChallenge(db: Database, approverId: number, now = Date.now(), kind: PinKind = "unlock"): Promise<PinChallenge> {
   const user = await db
-    .select({ pinHash: schema.users.pinHash, isActive: schema.users.isActive, lockedUntil: schema.users.lockedUntil })
+    .select({
+      pinHash: schema.users.pinHash,
+      approvalPinHash: schema.users.approvalPinHash,
+      isActive: schema.users.isActive,
+      lockedUntil: schema.users.lockedUntil,
+      approvalLockedUntil: schema.users.approvalLockedUntil,
+    })
     .from(schema.users)
     .where(eq(schema.users.id, approverId))
     .get();
-  if (!user || !user.isActive || !user.pinHash || isRemotePinHash(user.pinHash)) throw new Error(t("coreErrors.auth.pinChallengeInvalid"));
-  const locked = remainingLockSeconds(user.lockedUntil);
+  const hash = kind === "approval" ? user?.approvalPinHash : user?.pinHash;
+  if (!user || !user.isActive || !hash || isRemotePinHash(hash)) throw new Error(t("coreErrors.auth.pinChallengeInvalid"));
+  const locked = remainingLockSeconds(kind === "approval" ? user.approvalLockedUntil : user.lockedUntil);
   if (locked > 0) throw new Error(t("coreErrors.common.tooManyAttempts", { seconds: locked }));
 
   purgeExpired(now);
   if (pending.size >= MAX_PENDING_CHALLENGES) throw new Error(t("coreErrors.auth.pinChallengeInvalid"));
 
-  const parsed = parseArgon2Phc(user.pinHash);
+  const parsed = parseArgon2Phc(hash);
   const nonce = toHex(crypto.getRandomValues(new Uint8Array(16)));
-  pending.set(nonce, { approverId, expiresAt: now + PIN_CHALLENGE_TTL_MS });
+  pending.set(nonce, { approverId, kind, expiresAt: now + PIN_CHALLENGE_TTL_MS });
   return {
     nonce,
-    salt: user.pinHash.split("$")[4]!,
+    salt: hash.split("$")[4]!,
     memory: parsed.memory,
     iterations: parsed.iterations,
     parallelism: parsed.parallelism,
@@ -146,26 +164,42 @@ export async function verifyPinProof(
   context: string,
   proof: string,
   now = Date.now(),
+  // Si fourni, le défi doit avoir été émis pour ce PIN-là (une décision
+  // d'approbation n'accepte jamais une preuve du PIN de déverrouillage).
+  expectedKind?: PinKind,
 ): Promise<boolean> {
   const entry = pending.get(nonce);
   pending.delete(nonce);
   if (!entry || entry.approverId !== approverId || entry.expiresAt <= now) return false;
+  if (expectedKind && entry.kind !== expectedKind) return false;
+  const kind = entry.kind;
 
   const user = await db
-    .select({ pinHash: schema.users.pinHash, failedAttempts: schema.users.failedAttempts, lockedUntil: schema.users.lockedUntil, isActive: schema.users.isActive })
+    .select({
+      pinHash: schema.users.pinHash,
+      approvalPinHash: schema.users.approvalPinHash,
+      failedAttempts: schema.users.failedAttempts,
+      approvalFailedAttempts: schema.users.approvalFailedAttempts,
+      lockedUntil: schema.users.lockedUntil,
+      approvalLockedUntil: schema.users.approvalLockedUntil,
+      isActive: schema.users.isActive,
+    })
     .from(schema.users)
     .where(eq(schema.users.id, approverId))
     .get();
-  if (!user || !user.isActive || !user.pinHash || isRemotePinHash(user.pinHash)) return false;
-  const locked = remainingLockSeconds(user.lockedUntil);
+  const hash = kind === "approval" ? user?.approvalPinHash : user?.pinHash;
+  if (!user || !user.isActive || !hash || isRemotePinHash(hash)) return false;
+  const locked = remainingLockSeconds(kind === "approval" ? user.approvalLockedUntil : user.lockedUntil);
   if (locked > 0) throw new Error(t("coreErrors.common.tooManyAttempts", { seconds: locked }));
 
-  const expected = await hmacHex(parseArgon2Phc(user.pinHash).hash, `${nonce}|${context}`);
+  const expected = await hmacHex(parseArgon2Phc(hash).hash, `${nonce}|${context}`);
   if (!constantTimeEqual(expected, proof.toLowerCase())) {
-    await registerFailedAttempt(db, approverId, user.failedAttempts);
+    if (kind === "approval") await registerFailedApprovalAttempt(db, approverId, user.approvalFailedAttempts);
+    else await registerFailedAttempt(db, approverId, user.failedAttempts);
     return false;
   }
-  await clearFailedAttempts(db, approverId);
+  if (kind === "approval") await clearFailedApprovalAttempts(db, approverId);
+  else await clearFailedAttempts(db, approverId);
   return true;
 }
 

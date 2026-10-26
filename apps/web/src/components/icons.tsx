@@ -292,3 +292,21 @@ export const IconEye = (p: IconProps) => (
     <circle cx="12" cy="12" r="3" />
   </Svg>
 );
+
+export const IconFullscreen = (p: IconProps) => (
+  <Svg {...p}>
+    <polyline points="4 9 4 4 9 4" />
+    <polyline points="15 4 20 4 20 9" />
+    <polyline points="20 15 20 20 15 20" />
+    <polyline points="9 20 4 20 4 15" />
+  </Svg>
+);
+
+export const IconFullscreenExit = (p: IconProps) => (
+  <Svg {...p}>
+    <polyline points="9 4 9 9 4 9" />
+    <polyline points="20 9 15 9 15 4" />
+    <polyline points="15 20 15 15 20 15" />
+    <polyline points="4 15 9 15 9 20" />
+  </Svg>
+);

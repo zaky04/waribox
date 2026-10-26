@@ -661,7 +661,9 @@
       "approval_request_created": "Demande d'approbation créée",
       "approval_request_approved": "Demande approuvée",
       "approval_request_rejected": "Demande refusée",
-      "controls_reviewed": "Contrôle effectué"
+      "controls_reviewed": "Contrôle effectué",
+      "set_focus_code": "Code du mode focus défini",
+      "change_focus_code": "Code du mode focus changé"
     },
     "sales": {
       "searchPlaceholder": "Numéro de vente...",
@@ -1143,7 +1145,7 @@
     "emailColumn": "Email",
     "newPassword": "Nouveau mot de passe (laisser vide = inchangé)",
     "password": "Mot de passe",
-    "pin": "Code PIN (6 à 8 chiffres, optionnel)",
+    "pin": "PIN de déverrouillage (6 à 8 chiffres, optionnel)",
     "role": "Rôle",
     "chooseOption": "— Choisir —",
     "storeLabel": "Boutique (ce rôle ne peut pas en changer lui-même)",
@@ -1169,8 +1171,10 @@
       "storeRequired": "Ce rôle doit être rattaché à une boutique (il ne peut pas en changer lui-même).",
       "emailInUse": "Cet email est déjà utilisé.",
       "impersonateFailed": "Impossible d'ouvrir une session pour ce compte.",
-      "limitFormat": "Un plafond doit être vide ou un nombre positif."
-    }
+      "limitFormat": "Un plafond doit être vide ou un nombre positif.",
+      "pinsDiffer": "Le PIN de déverrouillage et le PIN d'approbation doivent être différents."
+    },
+    "approvalPin": "PIN d'approbation (6 à 8 chiffres, différent du précédent, optionnel)"
   },
   "quotes": {
     "title": "Devis",
@@ -1464,15 +1468,17 @@
       "username": "Pseudo",
       "email": "Email (optionnel)",
       "password": "Mot de passe",
-      "pin": "Code PIN (6 à 8 chiffres) — pour le verrouillage rapide et les approbations",
+      "pin": "PIN de déverrouillage (6 à 8 chiffres) — pour rouvrir rapidement la session verrouillée",
       "creating": "Création...",
       "submit": "Créer le compte administrateur",
       "errors": {
         "usernameRequired": "Le pseudo est requis.",
         "passwordLength": "Le mot de passe doit contenir au moins 8 caractères.",
         "pinFormat": "Le code PIN doit contenir entre 6 et 8 chiffres.",
-        "emailInUse": "Cet email est déjà utilisé."
-      }
+        "emailInUse": "Cet email est déjà utilisé.",
+        "pinsDiffer": "Les deux PIN doivent être différents."
+      },
+      "approvalPin": "PIN d'approbation (6 à 8 chiffres, différent du précédent) — pour valider remises, remboursements, dépenses…"
     },
     "moduleSetup": {
       "title": "Modules à activer",
@@ -1527,7 +1533,8 @@
       "wrongCurrentPassword": "Mot de passe actuel incorrect.",
       "userNotFound": "Utilisateur introuvable.",
       "accountDisabled": "Ce compte est désactivé.",
-      "permissionDenied": "Action non autorisée pour ce rôle."
+      "permissionDenied": "Action non autorisée pour ce rôle.",
+      "pinsMustDiffer": "Le PIN de déverrouillage et le PIN d'approbation doivent être différents."
     },
     "backup": {
       "fileTooSmall": "Ce fichier est trop petit pour être une sauvegarde valide.",
@@ -1615,7 +1622,7 @@
     "approval": {
       "required": "Cette action ({{kind}} de {{amount}}) dépasse le plafond de {{threshold}} : l'approbation d'un responsable est requise.",
       "invalidApprover": "Ce responsable ne peut pas approuver cette action.",
-      "wrongPin": "Code PIN du responsable incorrect.",
+      "wrongPin": "PIN d'approbation du responsable incorrect.",
       "requiredPoints": "Cette action ({{kind}} de {{amount}} points) dépasse le plafond de {{threshold}} points : l'approbation d'un responsable est requise.",
       "overApproverLimit": "Ce montant dépasse le plafond d'approbation de ce responsable : il faut un responsable de niveau supérieur."
     },
@@ -1658,6 +1665,13 @@
       "nameRequired": "Le nom du service est obligatoire.",
       "priceInvalid": "Le prix doit être un nombre positif ou nul.",
       "notFound": "Ce tarif de service est introuvable."
+    },
+    "focus": {
+      "codeTooShort": "Le code du mode focus doit contenir au moins {{min}} caractères.",
+      "settingsMissing": "Paramètres introuvables.",
+      "currentCodeRequired": "Saisis le code actuel du mode focus (ou le code de maintenance s'il est oublié) pour le modifier.",
+      "wrongCurrentCode": "Code actuel du mode focus incorrect.",
+      "wrongMaintenanceCode": "Code de maintenance incorrect."
     }
   },
   "whatsapp": {
@@ -2004,11 +2018,11 @@
     },
     "title": "Approbation requise",
     "approver": "Responsable",
-    "pin": "Code PIN du responsable",
+    "pin": "PIN d'approbation du responsable",
     "approve": "Approuver",
     "cancel": "Annuler",
     "cancelled": "Action annulée : approbation non donnée.",
-    "noApprover": "Aucun responsable n'a de code PIN. Définis un PIN pour un Propriétaire ou un Admin (Utilisateurs).",
+    "noApprover": "Aucun responsable n'a de PIN d'approbation. Définis-en un pour un Propriétaire ou un Admin (Utilisateurs).",
     "reject": "Refuser",
     "rejected": "Demande refusée par le responsable."
   },
@@ -2252,9 +2266,9 @@
     "limitRefund": "Remboursement max sans approbation",
     "limitStock": "Mouvement de stock max sans approbation (valeur au coût)",
     "limitCredit": "Vente à crédit max sans approbation",
-    "newPin": "Nouveau code PIN (4 chiffres)",
-    "pinSet": "Code PIN défini",
-    "pinMissing": "Pas de code PIN",
+    "newPin": "Nouveau PIN de déverrouillage (6 à 8 chiffres)",
+    "pinSet": "PIN de déverrouillage défini",
+    "pinMissing": "Pas de PIN de déverrouillage",
     "limitDiscount": "Remise hors promotion max sans approbation",
     "limitExpense": "Dépense max sans approbation",
     "limitPoints": "Ajustement de points max sans approbation",
@@ -2262,7 +2276,10 @@
     "limitApprove": "Plafond d'approbation : montant maximal que cette personne peut approuver (vide = illimité)",
     "limitApproveHint": "Au-dessus de ce montant, la demande doit être tranchée par un responsable de niveau supérieur (propriétaire). Sans effet sur les points de fidélité.",
     "template": "Partir d'un modèle",
-    "templateNone": "— Aucun (rôle vide) —"
+    "templateNone": "— Aucun (rôle vide) —",
+    "newApprovalPin": "Nouveau PIN d'approbation (6 à 8 chiffres)",
+    "approvalPinSet": "PIN d'approbation défini",
+    "approvalPinMissing": "Pas de PIN d'approbation (ne peut pas approuver)"
   },
   "permissions": {
     "view_margins": "Voir les marges",
@@ -2450,8 +2467,8 @@
     "batchDone": "{{count}} demande(s) approuvée(s).",
     "selectAll": "Tout sélectionner",
     "approveSelected": "Approuver la sélection ({{count}})",
-    "remotePinLabel": "Ton code PIN (vérifié par le Maître)",
-    "remotePinHint": "Cet appareil est relié à un Maître : ta décision est envoyée au Maître avec une preuve de ton PIN (le PIN lui-même ne circule jamais). Il faut être connecté au Maître.",
+    "remotePinLabel": "Ton PIN d'approbation (vérifié par le Maître)",
+    "remotePinHint": "Cet appareil est relié à un Maître : ta décision est envoyée au Maître avec une preuve de ton PIN d'approbation (le PIN lui-même ne circule jamais). Il faut être connecté au Maître.",
     "remotePinRequired": "Saisis ton code PIN pour trancher depuis cet appareil.",
     "select": "Sélectionner",
     "new": "Nouveau"
@@ -2476,6 +2493,41 @@
     "supervisor": {
       "name": "Superviseur",
       "description": "lecture seule : rapports, marges, contrôles"
+    }
+  },
+  "focus": {
+    "enterButton": "Plein écran",
+    "exitButton": "Quitter le mode focus",
+    "exit": {
+      "title": "Quitter le mode focus",
+      "hint": "Saisis le code du mode focus pour revenir en mode fenêtre.",
+      "code": "Code du mode focus",
+      "wrongCode": "Code incorrect.",
+      "confirm": "Quitter le plein écran",
+      "cancel": "Rester en plein écran",
+      "forgotten": "Code oublié ? Utiliser le code de maintenance",
+      "useFocusCode": "Utiliser le code du mode focus",
+      "maintenanceHint": "Le code de maintenance du propriétaire permet aussi de quitter le plein écran.",
+      "maintenanceCode": "Code de maintenance",
+      "wrongMaintenanceCode": "Code de maintenance incorrect."
+    },
+    "settings": {
+      "heading": "Mode focus (plein écran)",
+      "hint": "Sur PC et tablette, l'appli se lance en plein écran pour que l'équipe reste concentrée dessus. Ce code est demandé pour revenir en mode fenêtre ; sans code défini, la sortie est libre. Ce n'est ni le code de maintenance ni un PIN de compte.",
+      "unavailableHere": "Le plein écran n'est pas disponible sur cet appareil (téléphone ou plateforme non compatible).",
+      "codeSet": "Un code du mode focus est défini.",
+      "codeMissing": "Aucun code défini : n'importe qui peut quitter le plein écran.",
+      "currentCode": "Code du mode focus actuel",
+      "maintenanceCode": "Code de maintenance",
+      "forgotten": "Code oublié ? Utiliser le code de maintenance",
+      "useFocusCode": "Utiliser le code du mode focus actuel",
+      "newCode": "Nouveau code du mode focus",
+      "setCode": "Définir le code du mode focus",
+      "codePlaceholder": "Au moins {{min}} caractères",
+      "saved": "Code enregistré.",
+      "saving": "Enregistrement...",
+      "save": "Enregistrer le code",
+      "saveFailed": "Impossible d'enregistrer le code."
     }
   }
 }

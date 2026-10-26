@@ -15,6 +15,7 @@ import { useSessionStore } from "../../stores/session";
 import { useThemeStore } from "../../stores/theme";
 import { LoginScreen } from "./LoginScreen";
 import { ModuleSetupScreen } from "./ModuleSetupScreen";
+import { FocusToggleButton } from "../focus/FocusToggleButton";
 import { PinLockScreen } from "./PinLockScreen";
 import { SetupAdminScreen } from "./SetupAdminScreen";
 
@@ -124,11 +125,21 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // compte et appelé setUser(), il ne faut plus revenir sur cet écran même si
   // `needsSetup` (calculé une seule fois au montage) n'a pas été recalculé.
   if (!user) {
-    return needsSetup ? <SetupAdminScreen /> : <LoginScreen />;
+    return (
+      <>
+        {needsSetup ? <SetupAdminScreen /> : <LoginScreen />}
+        <FocusToggleButton floating />
+      </>
+    );
   }
 
   if (isLocked) {
-    return <PinLockScreen />;
+    return (
+      <>
+        <PinLockScreen />
+        <FocusToggleButton floating />
+      </>
+    );
   }
 
   if (!bootstrapped) {

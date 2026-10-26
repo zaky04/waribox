@@ -15,6 +15,7 @@ export function SetupAdminScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
+  const [approvalPin, setApprovalPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -30,8 +31,12 @@ export function SetupAdminScreen() {
       setError(t("auth.setupAdmin.errors.passwordLength"));
       return;
     }
-    if (!/^\d{6,8}$/.test(pin)) {
+    if (!/^\d{6,8}$/.test(pin) || !/^\d{6,8}$/.test(approvalPin)) {
       setError(t("auth.setupAdmin.errors.pinFormat"));
+      return;
+    }
+    if (pin === approvalPin) {
+      setError(t("auth.setupAdmin.errors.pinsDiffer"));
       return;
     }
 
@@ -46,6 +51,7 @@ export function SetupAdminScreen() {
           email: email.trim() || undefined,
           password,
           pin,
+          approvalPin,
           roleId: roles.admin,
         },
         {},
@@ -116,6 +122,19 @@ export function SetupAdminScreen() {
             maxLength={8}
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+            required
+          />
+        </label>
+
+        <label>
+          {t("auth.setupAdmin.approvalPin")}
+          <input
+            style={authInputStyle}
+            inputMode="numeric"
+            pattern="\d{6,8}"
+            maxLength={8}
+            value={approvalPin}
+            onChange={(e) => setApprovalPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
             required
           />
         </label>

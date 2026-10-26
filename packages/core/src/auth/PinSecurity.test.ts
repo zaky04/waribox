@@ -1,9 +1,9 @@
 import { schema } from "@gestion-boutique/database";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ADMIN_PIN, CASHIER_PIN, seedBusiness, type SeededBusiness } from "../test/seed";
+import { ADMIN_APPROVAL_PIN, ADMIN_PIN, CASHIER_PIN, seedBusiness, type SeededBusiness } from "../test/seed";
 import { createDevice, releaseDevices, type TestDevice } from "../test/testDb";
-import { createUser, setPin, updateUser, verifyPin } from "./AuthService";
+import { createUser, setPin, updateUser, verifyApprovalPin, verifyPin } from "./AuthService";
 import { lockoutSecondsForAttempts, remainingLockSeconds } from "./lockout";
 import { isValidNewPin, REMOTE_PIN_HASH } from "./pin";
 import { setRemotePinVerifier } from "./remotePin";
@@ -108,13 +108,78 @@ describe("PIN sur une vraie base", () => {
     setRemotePinVerifier(null);
     await expect(verifyPin(db, biz.cashier.id, CASHIER_PIN)).rejects.toThrow();
     const calls: Array<[number, string]> = [];
-    setRemotePinVerifier(async (id, pin) => {
+    setRemotePinVerifier(async (id, pin, kind) => {
+      expect(kind).toBe("unlock");
       calls.push([id, pin]);
       return pin === CASHIER_PIN;
     });
     expect(await verifyPin(db, biz.cashier.id, CASHIER_PIN)).toBe(true);
     expect(await verifyPin(db, biz.cashier.id, "111111")).toBe(false);
     expect(calls).toHaveLength(2);
+    setRemotePinVerifier(null);
+  });
+});
+
+
+describe("PIN d'approbation distinct du PIN de déverrouillage", () => {
+  let device: TestDevice;
+  let biz: SeededBusiness;
+
+  beforeAll(async () => {
+    device = await createDevice("master");
+    biz = await seedBusiness(device.db!);
+  });
+
+  const userRow = (id: number) => device.db!.select().from(schema.users).where(eq(schema.users.id, id)).get();
+
+  it("chaque PIN n'ouvre que son propre usage", async () => {
+    const db = device.db!;
+    expect(await verifyApprovalPin(db, biz.admin.id, ADMIN_APPROVAL_PIN)).toBe(true);
+    expect(await verifyPin(db, biz.admin.id, ADMIN_PIN)).toBe(true);
+    expect(await verifyApprovalPin(db, biz.admin.id, ADMIN_PIN)).toBe(false);
+    expect(await verifyPin(db, biz.admin.id, ADMIN_APPROVAL_PIN)).toBe(false);
+  });
+
+  it("les compteurs d'essais sont séparés : rater l'un ne bloque pas l'autre", async () => {
+    const db = device.db!;
+    for (let i = 0; i < 5; i++) expect(await verifyPin(db, biz.manager.id, "000000")).toBe(false);
+    expect(remainingLockSeconds((await userRow(biz.manager.id))!.lockedUntil)).toBeGreaterThan(0);
+    // Le déverrouillage est bloqué, pas les approbations.
+    expect((await userRow(biz.manager.id))!.approvalLockedUntil).toBeNull();
+    expect(await verifyApprovalPin(db, biz.manager.id, "902357")).toBe(true);
+    for (let i = 0; i < 5; i++) expect(await verifyApprovalPin(db, biz.cashier.id, "000000")).toBe(false);
+    await expect(verifyApprovalPin(db, biz.cashier.id, "518406")).rejects.toThrow();
+    expect(await verifyPin(db, biz.cashier.id, CASHIER_PIN)).toBe(true);
+  });
+
+  it("refuse deux PIN identiques à la création et à la modification", async () => {
+    const db = device.db!;
+    await expect(
+      createUser(db, { fullName: "Y", username: "y1", password: "motdepasse-y", pin: "246802", approvalPin: "246802", roleId: biz.roles.vendeur }, biz.admin.permissions),
+    ).rejects.toThrow();
+    await expect(updateUser(db, biz.admin.id, { approvalPin: ADMIN_PIN }, biz.admin.permissions)).rejects.toThrow();
+    await expect(updateUser(db, biz.admin.id, { pin: ADMIN_APPROVAL_PIN }, biz.admin.permissions)).rejects.toThrow();
+    expect(await verifyApprovalPin(db, biz.admin.id, ADMIN_APPROVAL_PIN)).toBe(true);
+  });
+
+  it("changer le PIN d'approbation ne touche pas le PIN de déverrouillage", async () => {
+    const db = device.db!;
+    await updateUser(db, biz.admin.id, { approvalPin: "6543210" }, biz.admin.permissions);
+    expect(await verifyApprovalPin(db, biz.admin.id, "6543210")).toBe(true);
+    expect(await verifyApprovalPin(db, biz.admin.id, ADMIN_APPROVAL_PIN)).toBe(false);
+    expect(await verifyPin(db, biz.admin.id, ADMIN_PIN)).toBe(true);
+  });
+
+  it("un appareil relié : PIN d'approbation distant demandé avec le bon type", async () => {
+    const db = device.db!;
+    await db.update(schema.users).set({ approvalPinHash: REMOTE_PIN_HASH }).where(eq(schema.users.id, biz.manager.id)).run();
+    const kinds: string[] = [];
+    setRemotePinVerifier(async (_id, pin, kind) => {
+      kinds.push(kind);
+      return pin === "902357";
+    });
+    expect(await verifyApprovalPin(db, biz.manager.id, "902357")).toBe(true);
+    expect(kinds).toEqual(["approval"]);
     setRemotePinVerifier(null);
   });
 });

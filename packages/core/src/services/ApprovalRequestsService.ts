@@ -269,7 +269,7 @@ export interface DecideApprovalRequestRemoteInput {
 // ordinaire (droit, plafond, pas son propre demandeur), qui émet l'événement
 // `approvalRequest.decided` rediffusé ensuite à tous les appareils.
 export async function decideApprovalRequestRemote(db: Database, input: DecideApprovalRequestRemoteInput): Promise<void> {
-  const proofOk = await verifyPinProof(db, input.approverId, input.nonce, pinDecisionContext(input.requestSyncId, input.approve), input.proof);
+  const proofOk = await verifyPinProof(db, input.approverId, input.nonce, pinDecisionContext(input.requestSyncId, input.approve), input.proof, Date.now(), "approval");
   if (!proofOk) throw new ApprovalDeniedError(t("coreErrors.approval.wrongPin"));
 
   const approver = await loadApprover(db, input.approverId);

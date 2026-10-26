@@ -141,7 +141,7 @@ export const ADVANCED_SETTING_KEYS = [
 
 // Colonnes qu'aucun appel public ne doit pouvoir écrire (elles ont leur
 // propre chemin : setMaintenanceCode / checkMaintenanceCode).
-const NEVER_WRITABLE_KEYS = ["id", "maintenanceCodeHash", "maintenanceCodeFailedAttempts", "maintenanceCodeLockedUntil", "controlsReviewedAt", "controlsReviewedBy"];
+const NEVER_WRITABLE_KEYS = ["id", "maintenanceCodeHash", "maintenanceCodeFailedAttempts", "maintenanceCodeLockedUntil", "focusCodeHash", "focusCodeFailedAttempts", "focusCodeLockedUntil", "controlsReviewedAt", "controlsReviewedBy"];
 
 // Champs avancés que `input` change réellement par rapport à `current`
 // (une valeur identique n'est pas un changement — la page renvoie tous ses

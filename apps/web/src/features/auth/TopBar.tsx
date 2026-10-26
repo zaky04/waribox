@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useLanguageStore } from "../../stores/language";
 import { useThemeStore } from "../../stores/theme";
 import { IconMoon, IconSun } from "../../components/icons";
+import { FocusToggleButton } from "../focus/FocusToggleButton";
 import { StoreSwitcher } from "../stores/StoreSwitcher";
 import { ChangePasswordModal } from "./ChangePasswordModal";
 import { useAuth } from "./useAuth";
@@ -124,6 +125,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
             {theme === "dark" ? <IconMoon size={15} /> : <IconSun size={15} />}
             {theme === "dark" ? t("topbar.themeDark") : t("topbar.themeLight")}
           </button>
+          <FocusToggleButton />
           <button
             onClick={lock}
             style={{

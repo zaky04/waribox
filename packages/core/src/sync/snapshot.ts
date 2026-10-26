@@ -102,8 +102,11 @@ export async function buildCatalogSnapshot(db: Database): Promise<CatalogSnapsho
     users: users.map((u) => ({
       ...u,
       pinHash: u.pinHash ? REMOTE_PIN_HASH : null,
+      approvalPinHash: u.approvalPinHash ? REMOTE_PIN_HASH : null,
       failedAttempts: 0,
       lockedUntil: null,
+      approvalFailedAttempts: 0,
+      approvalLockedUntil: null,
     })),
     approvalRequests: pendingRequests.filter((r) => r.syncId),
     businessSettings,

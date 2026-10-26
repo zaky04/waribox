@@ -38,3 +38,20 @@ export async function registerFailedAttempt(db: Database, userId: number, curren
 export async function clearFailedAttempts(db: Database, userId: number): Promise<void> {
   await db.update(schema.users).set({ failedAttempts: 0, lockedUntil: null }).where(eq(schema.users.id, userId)).run();
 }
+
+// Le PIN d'approbation a son propre compteur (voir schema/users.ts) : des essais
+// ratés à l'écran de verrouillage ne bloquent pas les approbations, et inversement.
+export async function registerFailedApprovalAttempt(db: Database, userId: number, currentAttempts: number): Promise<void> {
+  const attempts = currentAttempts + 1;
+  const lockSeconds = lockoutSecondsForAttempts(attempts);
+  const lockedUntil = lockSeconds > 0 ? new Date(Date.now() + lockSeconds * 1000).toISOString().replace("T", " ").slice(0, 19) : null;
+  await db
+    .update(schema.users)
+    .set(lockedUntil ? { approvalFailedAttempts: attempts, approvalLockedUntil: lockedUntil } : { approvalFailedAttempts: attempts })
+    .where(eq(schema.users.id, userId))
+    .run();
+}
+
+export async function clearFailedApprovalAttempts(db: Database, userId: number): Promise<void> {
+  await db.update(schema.users).set({ approvalFailedAttempts: 0, approvalLockedUntil: null }).where(eq(schema.users.id, userId)).run();
+}

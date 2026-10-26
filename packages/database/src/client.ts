@@ -405,6 +405,22 @@ export const MIGRATIONS: Migration[] = [
     id: 18,
     statements: ["ALTER TABLE __sync_outbox ADD COLUMN rejected_at TEXT", "ALTER TABLE __sync_outbox ADD COLUMN reject_reason TEXT"],
   },
+  // Mode focus (code dédié pour quitter le plein écran) et PIN d'approbation
+  // séparé du PIN de déverrouillage. Les comptes existants gardent leur PIN
+  // actuel comme PIN d'approbation (copie) pour que les responsables puissent
+  // continuer d'approuver ; ils le changent ensuite dans Utilisateurs.
+  {
+    id: 19,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN focus_code_hash TEXT",
+      "ALTER TABLE business_settings ADD COLUMN focus_code_failed_attempts INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN focus_code_locked_until TEXT",
+      "ALTER TABLE users ADD COLUMN approval_pin_hash TEXT",
+      "ALTER TABLE users ADD COLUMN approval_failed_attempts INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE users ADD COLUMN approval_locked_until TEXT",
+      "UPDATE users SET approval_pin_hash = pin_hash WHERE pin_hash IS NOT NULL",
+    ],
+  },
 ];
 
 async function runMigrations(): Promise<void> {

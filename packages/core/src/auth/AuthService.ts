@@ -12,7 +12,13 @@ import {
 } from "../domain/permissions";
 import { logAction } from "../services/AuditService";
 import { hashSecret, verifySecret } from "./hash";
-import { clearFailedAttempts, registerFailedAttempt, remainingLockSeconds } from "./lockout";
+import {
+  clearFailedApprovalAttempts,
+  clearFailedAttempts,
+  registerFailedApprovalAttempt,
+  registerFailedAttempt,
+  remainingLockSeconds,
+} from "./lockout";
 import { assertValidPin, isRemotePinHash } from "./pin";
 import { getRemotePinVerifier } from "./remotePin";
 
@@ -38,8 +44,10 @@ export interface AuthenticatedUser {
   limitTicket: number | null;
   // Montant max que cette personne peut approuver (null = illimité).
   limitApprove: number | null;
-  // Vrai si un code PIN est défini (jamais le hash).
+  // Vrai si un code PIN de déverrouillage est défini (jamais le hash).
   hasPin: boolean;
+  // Vrai si un PIN d'approbation est défini (secret distinct du précédent).
+  hasApprovalPin: boolean;
   // Droits particuliers (par-dessus le rôle) ; `permissions` est déjà le résultat fusionné.
   permissionOverrides: PermissionOverrides;
 }
@@ -68,6 +76,7 @@ async function toAuthenticatedUser(
     limitTicket: user.limitTicket,
     limitApprove: user.limitApprove,
     hasPin: !!user.pinHash,
+    hasApprovalPin: !!user.approvalPinHash,
     permissionOverrides: parseOverrides(user.permissionOverrides),
   };
 }
@@ -88,6 +97,8 @@ export async function createUser(
     email?: string;
     password: string;
     pin?: string;
+    // PIN d'approbation : un secret différent du PIN de déverrouillage.
+    approvalPin?: string;
     roleId: number;
     storeId?: number | null;
     limitRefund?: number | null;
@@ -127,8 +138,13 @@ export async function createUser(
   }
 
   if (input.pin) assertValidPin(input.pin);
+  if (input.approvalPin) {
+    assertValidPin(input.approvalPin);
+    if (input.approvalPin === input.pin) throw new Error(t("coreErrors.auth.pinsMustDiffer"));
+  }
   const passwordHash = await hashSecret(input.password);
   const pinHash = input.pin ? await hashSecret(input.pin) : null;
+  const approvalPinHash = input.approvalPin ? await hashSecret(input.approvalPin) : null;
 
   const created = await db
     .insert(schema.users)
@@ -138,6 +154,7 @@ export async function createUser(
       email: input.email,
       passwordHash,
       pinHash,
+      approvalPinHash,
       roleId: input.roleId,
       storeId: input.storeId,
       limitRefund: input.limitRefund,
@@ -227,7 +244,7 @@ export async function verifyPin(db: Database, userId: number, pin: string): Prom
   if (isRemotePinHash(user.pinHash)) {
     const remote = getRemotePinVerifier();
     if (!remote) throw new Error(t("coreErrors.auth.pinRemoteOnly"));
-    return remote(userId, pin);
+    return remote(userId, pin, "unlock");
   }
 
   const lockedSeconds = remainingLockSeconds(user.lockedUntil);
@@ -255,6 +272,43 @@ export async function setPin(
   assertValidPin(pin);
   const pinHash = await hashSecret(pin);
   await db.update(schema.users).set({ pinHash }).where(eq(schema.users.id, userId)).run();
+}
+
+// PIN d'approbation : celui qu'un responsable saisit pour valider une action
+// (remise, remboursement, dépense...). Distinct du PIN de déverrouillage, avec son
+// propre compteur d'essais. Sur un appareil relié il se vérifie chez le Maître.
+export async function verifyApprovalPin(db: Database, userId: number, pin: string): Promise<boolean> {
+  const user = await db
+    .select({
+      approvalPinHash: schema.users.approvalPinHash,
+      approvalFailedAttempts: schema.users.approvalFailedAttempts,
+      approvalLockedUntil: schema.users.approvalLockedUntil,
+    })
+    .from(schema.users)
+    .where(eq(schema.users.id, userId))
+    .get();
+
+  if (!user?.approvalPinHash) return false;
+
+  if (isRemotePinHash(user.approvalPinHash)) {
+    const remote = getRemotePinVerifier();
+    if (!remote) throw new Error(t("coreErrors.auth.pinRemoteOnly"));
+    return remote(userId, pin, "approval");
+  }
+
+  const lockedSeconds = remainingLockSeconds(user.approvalLockedUntil);
+  if (lockedSeconds > 0) {
+    throw new Error(t("coreErrors.common.tooManyAttempts", { seconds: lockedSeconds }));
+  }
+
+  const valid = await verifySecret(pin, user.approvalPinHash);
+  if (!valid) {
+    await registerFailedApprovalAttempt(db, userId, user.approvalFailedAttempts);
+    return false;
+  }
+
+  await clearFailedApprovalAttempts(db, userId);
+  return true;
 }
 
 // Désactiver un compte bloque immédiatement la connexion (verifyPassword
@@ -335,6 +389,8 @@ export interface UpdateUserInput {
   // Nouveau code PIN (4 chiffres) — nécessaire pour qu'un responsable puisse
   // approuver des actions.
   pin?: string;
+  // Nouveau PIN d'approbation (secret distinct du PIN de déverrouillage).
+  approvalPin?: string;
   // Droits particuliers (remplace l'ensemble ; {} ou null = aucun).
   permissionOverrides?: PermissionOverrides | null;
   // Réinitialisation par l'Admin — contrairement à changeOwnPassword, ne
@@ -368,11 +424,24 @@ export async function updateUser(
   if (input.limitPoints !== undefined) updates.limitPoints = input.limitPoints;
   if (input.limitTicket !== undefined) updates.limitTicket = input.limitTicket;
   if (input.limitApprove !== undefined) updates.limitApprove = input.limitApprove;
+  const before = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get();
   if (input.pin) {
     assertValidPin(input.pin);
     updates.pinHash = await hashSecret(input.pin);
   }
-  const before = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get();
+  if (input.approvalPin) {
+    assertValidPin(input.approvalPin);
+    updates.approvalPinHash = await hashSecret(input.approvalPin);
+  }
+  // Les deux PIN doivent rester différents, même quand un seul est modifié :
+  // on compare au PIN saisi, ou au hash enregistré de l'autre.
+  if (input.pin && input.approvalPin && input.pin === input.approvalPin) throw new Error(t("coreErrors.auth.pinsMustDiffer"));
+  if (input.pin && !input.approvalPin && before?.approvalPinHash && !isRemotePinHash(before.approvalPinHash) && (await verifySecret(input.pin, before.approvalPinHash))) {
+    throw new Error(t("coreErrors.auth.pinsMustDiffer"));
+  }
+  if (input.approvalPin && !input.pin && before?.pinHash && !isRemotePinHash(before.pinHash) && (await verifySecret(input.approvalPin, before.pinHash))) {
+    throw new Error(t("coreErrors.auth.pinsMustDiffer"));
+  }
   if (input.permissionOverrides !== undefined) {
     updates.permissionOverrides =
       input.permissionOverrides && Object.keys(input.permissionOverrides).length > 0 ? JSON.stringify(input.permissionOverrides) : null;
@@ -417,6 +486,7 @@ export async function updateUser(
         roleId: updated.roleId,
         passwordReset: !!input.newPassword,
         pinChanged: !!input.pin,
+        approvalPinChanged: !!input.approvalPin,
         overrides: input.permissionOverrides !== undefined ? { from: before?.permissionOverrides ?? null, to: updated.permissionOverrides ?? null } : undefined,
         // Changement de rôle ou de plafonds : ancienne et nouvelle valeur.
         roleFrom: before && before.roleId !== updated.roleId ? before.roleId : undefined,

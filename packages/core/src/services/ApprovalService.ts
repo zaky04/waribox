@@ -2,7 +2,7 @@ import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { formatAmount, t } from "@gestion-boutique/i18n";
 import { eq } from "drizzle-orm";
-import { verifyPin } from "../auth/AuthService";
+import { verifyApprovalPin } from "../auth/AuthService";
 import { roundMoney } from "../domain/money";
 import { applyOverrides, hasPermission, parseOverrides, type Permission, type PermissionSet } from "../domain/permissions";
 import { logAction } from "./AuditService";
@@ -152,7 +152,7 @@ export async function listApprovers(db: Database, kind?: ApprovalKind, amount?: 
       id: schema.users.id,
       fullName: schema.users.fullName,
       isActive: schema.users.isActive,
-      pinHash: schema.users.pinHash,
+      approvalPinHash: schema.users.approvalPinHash,
       limit: schema.users.limitApprove,
       permissions: schema.roles.permissions,
       overrides: schema.users.permissionOverrides,
@@ -161,7 +161,7 @@ export async function listApprovers(db: Database, kind?: ApprovalKind, amount?: 
     .innerJoin(schema.roles, eq(schema.roles.id, schema.users.roleId));
   return rows
     .filter((r) => {
-      if (!r.isActive || !r.pinHash) return false;
+      if (!r.isActive || !r.approvalPinHash) return false;
       const perms = applyOverrides(JSON.parse(r.permissions) as PermissionSet, parseOverrides(r.overrides));
       if (!(kind ? canApprove(perms, kind) : canApproveAnything(perms))) return false;
       return kind && amount != null ? withinApproveLimit(r.limit, kind, amount) : true;
@@ -181,7 +181,7 @@ export async function verifyApprovalInput(
   const approver = await loadApprover(db, approval.approverId);
   if (!approver || approver.id === userId) throw new ApprovalDeniedError(t("coreErrors.approval.invalidApprover"));
 
-  const valid = await verifyPin(db, approver.id, approval.pin);
+  const valid = await verifyApprovalPin(db, approver.id, approval.pin);
   if (!valid) {
     await logAction(db, {
       userId: userId ?? null,

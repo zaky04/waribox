@@ -49,6 +49,7 @@ export function UsersPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
+  const [approvalPin, setApprovalPin] = useState("");
   const [roleId, setRoleId] = useState<string>("");
   const [storeId, setStoreId] = useState<string>("");
   const [overrides, setOverrides] = useState<PermissionOverrides>({});
@@ -94,6 +95,7 @@ export function UsersPage() {
     setEmail("");
     setPassword("");
     setPin("");
+    setApprovalPin("");
     setRoleId("");
     setStoreId("");
     setLimitRefund("");
@@ -120,6 +122,7 @@ export function UsersPage() {
     setEmail(target.email ?? "");
     setPassword("");
     setPin("");
+    setApprovalPin("");
     const role = roles.find((r) => r.name === target.roleName);
     setRoleId(role ? String(role.id) : "");
     setStoreId(target.storeId ? String(target.storeId) : "");
@@ -150,8 +153,12 @@ export function UsersPage() {
       setError(t("users.errors.newPasswordLength"));
       return;
     }
-    if (pin && !/^\d{6,8}$/.test(pin)) {
+    if ((pin && !/^\d{6,8}$/.test(pin)) || (approvalPin && !/^\d{6,8}$/.test(approvalPin))) {
       setError(t("users.errors.pinFormat"));
+      return;
+    }
+    if (pin && approvalPin && pin === approvalPin) {
+      setError(t("users.errors.pinsDiffer"));
       return;
     }
     const needsStore = multiStoreEnabled && !roleCanSwitchStore(roleId);
@@ -195,6 +202,7 @@ export function UsersPage() {
             storeId: resolvedStoreId,
             newPassword: password || undefined,
             pin: pin || undefined,
+            approvalPin: approvalPin || undefined,
             permissionOverrides: overrides,
             limitRefund: limits.limitRefund,
             limitStock: limits.limitStock,
@@ -217,6 +225,7 @@ export function UsersPage() {
             email: email.trim() || undefined,
             password,
             pin: pin || undefined,
+            approvalPin: approvalPin || undefined,
             roleId: Number(roleId),
             storeId: resolvedStoreId,
             permissionOverrides: overrides,
@@ -327,6 +336,24 @@ export function UsersPage() {
             return target ? (
               <span style={{ fontSize: 12.5, color: target.hasPin ? "var(--color-success)" : "var(--color-warning)" }}>
                 {target.hasPin ? t("approvalRoles.pinSet") : t("approvalRoles.pinMissing")}
+              </span>
+            ) : null;
+          })()}
+          <label>
+            {editingUserId ? t("approvalRoles.newApprovalPin") : t("users.approvalPin")}
+            <input
+              style={inputStyle}
+              inputMode="numeric"
+              maxLength={8}
+              value={approvalPin}
+              onChange={(e) => setApprovalPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+            />
+          </label>
+          {(() => {
+            const target = users.find((u) => u.id === editingUserId);
+            return target ? (
+              <span style={{ fontSize: 12.5, color: target.hasApprovalPin ? "var(--color-success)" : "var(--color-warning)" }}>
+                {target.hasApprovalPin ? t("approvalRoles.approvalPinSet") : t("approvalRoles.approvalPinMissing")}
               </span>
             ) : null;
           })()}

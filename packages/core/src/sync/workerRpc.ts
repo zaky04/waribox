@@ -1,5 +1,6 @@
 import { WsMessage, WsMessageTypes } from "@gestion-boutique/network";
 import { computePinProof, PIN_VERIFY_CONTEXT, pinDecisionContext, type PinChallenge } from "../auth/pinProof";
+import type { PinKind } from "../auth/remotePin";
 
 // Côté appareil relié : requêtes/réponses vers le Maître (vérifier un PIN,
 // trancher une demande d'approbation). Sans réseau ni interface — la couche
@@ -32,8 +33,8 @@ export function createWorkerRpc(options: WorkerRpcOptions) {
     });
   }
 
-  async function challenge(approverId: number): Promise<PinChallenge> {
-    const reply = await call(WsMessageTypes.pinChallenge, { approverId });
+  async function challenge(approverId: number, kind: PinKind): Promise<PinChallenge> {
+    const reply = await call(WsMessageTypes.pinChallenge, { approverId, kind });
     if (reply.payload.ok !== true) throw new Error(String(reply.payload.error ?? "Défi refusé."));
     return reply.payload.challenge as PinChallenge;
   }
@@ -58,9 +59,9 @@ export function createWorkerRpc(options: WorkerRpcOptions) {
       }
     },
 
-    /** Vérifie le PIN d'un responsable chez le Maître (utilisable comme RemotePinVerifier). */
-    async verifyPin(approverId: number, pin: string): Promise<boolean> {
-      const ch = await challenge(approverId);
+    /** Vérifie un PIN chez le Maître (utilisable comme RemotePinVerifier) : déverrouillage ou approbation. */
+    async verifyPin(approverId: number, pin: string, kind: PinKind = "unlock"): Promise<boolean> {
+      const ch = await challenge(approverId, kind);
       const proof = await computePinProof(pin, ch, PIN_VERIFY_CONTEXT);
       const reply = await call(WsMessageTypes.pinVerify, { approverId, nonce: ch.nonce, proof });
       if (reply.payload.error) throw new Error(String(reply.payload.error));
@@ -69,7 +70,7 @@ export function createWorkerRpc(options: WorkerRpcOptions) {
 
     /** Tranche une demande d'approbation chez le Maître ; lève l'erreur du Maître en cas de refus. */
     async decide(input: { requestSyncId: string; approverId: number; pin: string; approve: boolean; note?: string }): Promise<void> {
-      const ch = await challenge(input.approverId);
+      const ch = await challenge(input.approverId, "approval");
       const proof = await computePinProof(input.pin, ch, pinDecisionContext(input.requestSyncId, input.approve));
       const reply = await call(WsMessageTypes.approvalDecision, {
         requestSyncId: input.requestSyncId,

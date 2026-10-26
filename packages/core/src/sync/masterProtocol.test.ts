@@ -2,14 +2,14 @@ import { schema } from "@gestion-boutique/database";
 import { WsMessage, WsMessageTypes } from "@gestion-boutique/network";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { verifyPin } from "../auth/AuthService";
+import { verifyApprovalPin, verifyPin } from "../auth/AuthService";
 import { REMOTE_PIN_HASH } from "../auth/pin";
 import { computePinProof, issuePinChallenge, PIN_CHALLENGE_TTL_MS, pinDecisionContext, verifyPinProof } from "../auth/pinProof";
 import { setRemotePinVerifier } from "../auth/remotePin";
 import { createApprovalRequest, snapshotApprovalRequest } from "../services/ApprovalService";
 import { createExpense } from "../services/ExpensesService";
 import { getSettings } from "../services/SettingsService";
-import { ADMIN_PIN, CASHIER_PIN, MANAGER_PIN, seedBusiness, type SeededBusiness } from "../test/seed";
+import { ADMIN_APPROVAL_PIN, ADMIN_PIN, CASHIER_APPROVAL_PIN, MANAGER_PIN, seedBusiness, type SeededBusiness } from "../test/seed";
 import { createDevice, releaseDevices, useDevice, type TestDevice } from "../test/testDb";
 import { applyRemoteSyncEvent } from "./applyRemoteEvents";
 import { createMasterProtocol, type MasterProtocol } from "./masterProtocol";
@@ -277,7 +277,7 @@ describe("décisions d'approbation : le décideur est authentifié", () => {
     });
   }
   const requestRow = async (id: number) => (await asMaster().select().from(schema.approvalRequests).where(eq(schema.approvalRequests.id, id)).get())!;
-  const failedAttempts = async (id: number) => (await asMaster().select().from(schema.users).where(eq(schema.users.id, id)).get())!.failedAttempts;
+  const failedAttempts = async (id: number) => (await asMaster().select().from(schema.users).where(eq(schema.users.id, id)).get())!.approvalFailedAttempts;
 
   it("un événement « décidé » envoyé par un appareil relié est REFUSÉ (le décideur serait déclaratif)", async () => {
     const request = await newExpenseRequest(biz.cashier.id);
@@ -320,7 +320,7 @@ describe("décisions d'approbation : le décideur est authentifié", () => {
   it("décision à distance avec le bon PIN : approuvée, dépense créée une seule fois, rediffusée", async () => {
     const request = await newExpenseRequest(biz.cashier.id, 7000, "Loyer-OK");
     toWorker = [];
-    await rpc.decide({ requestSyncId: request.syncId!, approverId: biz.admin.id, pin: ADMIN_PIN, approve: true });
+    await rpc.decide({ requestSyncId: request.syncId!, approverId: biz.admin.id, pin: ADMIN_APPROVAL_PIN, approve: true });
     await protocol.idle();
     const row = await requestRow(request.id);
     expect(row.status).toBe("approved");
@@ -338,16 +338,16 @@ describe("décisions d'approbation : le décideur est authentifié", () => {
     expect((await requestRow(request.id)).status).toBe("pending");
     expect(await failedAttempts(biz.admin.id)).toBe(before + 1);
     // Le bon PIN passe toujours ensuite.
-    await rpc.decide({ requestSyncId: request.syncId!, approverId: biz.admin.id, pin: ADMIN_PIN, approve: false, note: "refusé" });
+    await rpc.decide({ requestSyncId: request.syncId!, approverId: biz.admin.id, pin: ADMIN_APPROVAL_PIN, approve: false, note: "refusé" });
     expect((await requestRow(request.id)).status).toBe("rejected");
   });
 
   it("le défi est à usage unique : rejouer la même preuve échoue", async () => {
     const request = await newExpenseRequest(biz.cashier.id, 2000, "Rejeu");
     toWorker = [];
-    await sendToMaster(new WsMessage({ type: WsMessageTypes.pinChallenge, payload: { approverId: biz.admin.id } }));
+    await sendToMaster(new WsMessage({ type: WsMessageTypes.pinChallenge, payload: { approverId: biz.admin.id, kind: "approval" } }));
     const challenge = lastReply(WsMessageTypes.pinChallengeResult)!.payload.challenge as Parameters<typeof computePinProof>[1];
-    const proof = await computePinProof(ADMIN_PIN, challenge, pinDecisionContext(request.syncId!, true));
+    const proof = await computePinProof(ADMIN_APPROVAL_PIN, challenge, pinDecisionContext(request.syncId!, true));
     const decision = { requestSyncId: request.syncId, approverId: biz.admin.id, approve: true, nonce: challenge.nonce, proof };
     toWorker = [];
     await sendToMaster(new WsMessage({ type: WsMessageTypes.approvalDecision, payload: decision }));
@@ -363,9 +363,9 @@ describe("décisions d'approbation : le décideur est authentifié", () => {
   it("une preuve pour « approuver » ne sert pas à « refuser » (et inversement)", async () => {
     const request = await newExpenseRequest(biz.cashier.id, 2200, "Contexte");
     toWorker = [];
-    await sendToMaster(new WsMessage({ type: WsMessageTypes.pinChallenge, payload: { approverId: biz.admin.id } }));
+    await sendToMaster(new WsMessage({ type: WsMessageTypes.pinChallenge, payload: { approverId: biz.admin.id, kind: "approval" } }));
     const challenge = lastReply(WsMessageTypes.pinChallengeResult)!.payload.challenge as Parameters<typeof computePinProof>[1];
-    const proofForApprove = await computePinProof(ADMIN_PIN, challenge, pinDecisionContext(request.syncId!, true));
+    const proofForApprove = await computePinProof(ADMIN_APPROVAL_PIN, challenge, pinDecisionContext(request.syncId!, true));
     toWorker = [];
     await sendToMaster(
       new WsMessage({
@@ -380,9 +380,9 @@ describe("décisions d'approbation : le décideur est authentifié", () => {
   it("une preuve « vérification de PIN » ne peut pas trancher une demande", async () => {
     const request = await newExpenseRequest(biz.cashier.id, 2300, "Contexte-2");
     toWorker = [];
-    await sendToMaster(new WsMessage({ type: WsMessageTypes.pinChallenge, payload: { approverId: biz.admin.id } }));
+    await sendToMaster(new WsMessage({ type: WsMessageTypes.pinChallenge, payload: { approverId: biz.admin.id, kind: "approval" } }));
     const challenge = lastReply(WsMessageTypes.pinChallengeResult)!.payload.challenge as Parameters<typeof computePinProof>[1];
-    const proofForVerify = await computePinProof(ADMIN_PIN, challenge, "verify");
+    const proofForVerify = await computePinProof(ADMIN_APPROVAL_PIN, challenge, "verify");
     toWorker = [];
     await sendToMaster(
       new WsMessage({
@@ -429,15 +429,32 @@ describe("décisions d'approbation : le décideur est authentifié", () => {
     expect(lastReply(WsMessageTypes.pinVerifyResult)?.payload.ok).toBe(false);
   });
 
+  it("une décision d'approbation refuse une preuve du PIN de déverrouillage", async () => {
+    const request = await newExpenseRequest(biz.cashier.id, 2600, "Mauvais-PIN-type");
+    toWorker = [];
+    await sendToMaster(new WsMessage({ type: WsMessageTypes.pinChallenge, payload: { approverId: biz.admin.id, kind: "unlock" } }));
+    const challenge = lastReply(WsMessageTypes.pinChallengeResult)!.payload.challenge as Parameters<typeof computePinProof>[1];
+    const proof = await computePinProof(ADMIN_PIN, challenge, pinDecisionContext(request.syncId!, true));
+    toWorker = [];
+    await sendToMaster(
+      new WsMessage({
+        type: WsMessageTypes.approvalDecision,
+        payload: { requestSyncId: request.syncId, approverId: biz.admin.id, approve: true, nonce: challenge.nonce, proof },
+      }),
+    );
+    expect(lastReply(WsMessageTypes.approvalDecisionResult)?.payload.ok).toBe(false);
+    expect((await requestRow(request.id)).status).toBe("pending");
+  });
+
   it("un utilisateur sans droit d'approbation (caissier) ne peut pas trancher, même avec son vrai PIN", async () => {
     const request = await newExpenseRequest(biz.manager.id, 2400, "Sans-droit");
-    await expect(rpc.decide({ requestSyncId: request.syncId!, approverId: biz.cashier.id, pin: CASHIER_PIN, approve: true })).rejects.toThrow();
+    await expect(rpc.decide({ requestSyncId: request.syncId!, approverId: biz.cashier.id, pin: CASHIER_APPROVAL_PIN, approve: true })).rejects.toThrow();
     expect((await requestRow(request.id)).status).toBe("pending");
   });
 
   it("on ne peut pas trancher sa propre demande, même avec son vrai PIN", async () => {
     const request = await newExpenseRequest(biz.admin.id, 2500, "Soi-même");
-    await expect(rpc.decide({ requestSyncId: request.syncId!, approverId: biz.admin.id, pin: ADMIN_PIN, approve: true })).rejects.toThrow();
+    await expect(rpc.decide({ requestSyncId: request.syncId!, approverId: biz.admin.id, pin: ADMIN_APPROVAL_PIN, approve: true })).rejects.toThrow();
     expect((await requestRow(request.id)).status).toBe("pending");
   });
 
@@ -445,7 +462,7 @@ describe("décisions d'approbation : le décideur est authentifié", () => {
     asMaster();
     await master.db!.update(schema.users).set({ limitApprove: 1000 }).where(eq(schema.users.id, biz.admin.id)).run();
     const request = await newExpenseRequest(biz.cashier.id, 5000, "Plafond");
-    await expect(rpc.decide({ requestSyncId: request.syncId!, approverId: biz.admin.id, pin: ADMIN_PIN, approve: true })).rejects.toThrow();
+    await expect(rpc.decide({ requestSyncId: request.syncId!, approverId: biz.admin.id, pin: ADMIN_APPROVAL_PIN, approve: true })).rejects.toThrow();
     expect((await requestRow(request.id)).status).toBe("pending");
     asMaster();
     await master.db!.update(schema.users).set({ limitApprove: null }).where(eq(schema.users.id, biz.admin.id)).run();
@@ -462,7 +479,7 @@ describe("décisions d'approbation : le décideur est authentifié", () => {
   });
 
   it("une demande inconnue est refusée proprement", async () => {
-    await expect(rpc.decide({ requestSyncId: "inconnue", approverId: biz.admin.id, pin: ADMIN_PIN, approve: true })).rejects.toThrow();
+    await expect(rpc.decide({ requestSyncId: "inconnue", approverId: biz.admin.id, pin: ADMIN_APPROVAL_PIN, approve: true })).rejects.toThrow();
   });
 });
 
@@ -477,6 +494,20 @@ describe("PIN vérifié à distance (approbation immédiate sur l'appareil reli�
     useDevice(worker);
     expect(await verifyPin(worker.db!, biz.admin.id, "999999")).toBe(false);
     setRemotePinVerifier(null);
+  });
+
+  it("le PIN d'approbation se vérifie à distance séparément du PIN de déverrouillage", async () => {
+    useDevice(worker);
+    setRemotePinVerifier(rpc.verifyPin);
+    expect(await verifyApprovalPin(worker.db!, biz.admin.id, ADMIN_APPROVAL_PIN)).toBe(true);
+    useDevice(worker);
+    // Le PIN de déverrouillage n'ouvre PAS les approbations, ni l'inverse.
+    expect(await verifyApprovalPin(worker.db!, biz.admin.id, ADMIN_PIN)).toBe(false);
+    useDevice(worker);
+    expect(await verifyPin(worker.db!, biz.admin.id, ADMIN_APPROVAL_PIN)).toBe(false);
+    setRemotePinVerifier(null);
+    asMaster();
+    await master.db!.update(schema.users).set({ failedAttempts: 0, lockedUntil: null, approvalFailedAttempts: 0, approvalLockedUntil: null }).where(eq(schema.users.id, biz.admin.id)).run();
   });
 
   it("hors connexion (aucun vérificateur) l'approbation par PIN est impossible, avec un message explicite", async () => {

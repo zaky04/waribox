@@ -53,6 +53,12 @@ export const businessSettings = sqliteTable("business_settings", {
   // mérite la même protection contre les essais répétés.
   maintenanceCodeFailedAttempts: integer("maintenance_code_failed_attempts").notNull().default(0),
   maintenanceCodeLockedUntil: text("maintenance_code_locked_until"),
+  // Code du mode focus (plein écran) : un troisième secret, distinct du code de
+  // maintenance et des PIN, qui sert uniquement à quitter le plein écran sur PC
+  // et tablette. Même anti-brute-force, écrit seulement par FocusCodeService.
+  focusCodeHash: text("focus_code_hash"),
+  focusCodeFailedAttempts: integer("focus_code_failed_attempts").notNull().default(0),
+  focusCodeLockedUntil: text("focus_code_locked_until"),
   // Verrouille automatiquement la session (retour à l'écran PIN) après ce
   // délai d'inactivité — 0 désactive la fonctionnalité.
   autoLockMinutes: integer("auto_lock_minutes").notNull().default(0),

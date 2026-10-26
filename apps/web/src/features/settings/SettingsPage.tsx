@@ -1,3 +1,4 @@
+import { FocusCodeSection } from "../focus/FocusCodeSection";
 import {
   CONTROL_PROFILE_IDS,
   emitFneQueued,
@@ -1641,6 +1642,8 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
         </label>
         <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("settings.security.autoLockHint")}</p>
       </div>
+
+      <FocusCodeSection />
 
       <div style={canBackup ? cardStyle : { ...cardStyle, display: "none" }}>
         <strong>{t("settings.backups.heading")}</strong>

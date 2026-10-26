@@ -19,7 +19,15 @@ export const users = sqliteTable("users", {
   username: text("username"),
   email: text("email").unique(),
   passwordHash: text("password_hash"),
+  // PIN de déverrouillage de session (écran de verrouillage).
   pinHash: text("pin_hash"),
+  // PIN d'approbation, distinct du précédent : celui qu'un responsable saisit pour
+  // valider une remise, un remboursement, une dépense... Un PIN deviné par-dessus
+  // l'épaule à l'écran de verrouillage ne permet donc pas d'approuver. Compteur
+  // d'essais séparé pour que l'un ne bloque pas l'autre.
+  approvalPinHash: text("approval_pin_hash"),
+  approvalFailedAttempts: integer("approval_failed_attempts").notNull().default(0),
+  approvalLockedUntil: text("approval_locked_until"),
   biometricCredentialId: text("biometric_credential_id"),
   roleId: integer("role_id")
     .notNull()
