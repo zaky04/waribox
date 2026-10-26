@@ -175,6 +175,10 @@ export async function closeStockCount(
   if (uncountedLines === lines.length) throw new Error(t("coreErrors.inventory.nothingCounted"));
 
   const result = await withTransaction(async () => {
+    // Même raison que receivePurchase : le statut lu avant la transaction peut
+    // être périmé si une autre clôture vient de passer.
+    const fresh = await db.select({ status: schema.stockCounts.status }).from(schema.stockCounts).where(eq(schema.stockCounts.id, count.id)).get();
+    if (fresh?.status !== "open") throw new Error(t("coreErrors.inventory.notOpen"));
     const systemNow = new Map<number, number>();
     for (const line of lines) {
       if (line.countedQuantity != null) systemNow.set(line.variantId, await balanceAt(db, line.variantId, count.locationId));

@@ -1,11 +1,12 @@
 import type { Database } from "@gestion-boutique/database";
-import { schema } from "@gestion-boutique/database";
+import { schema, withTransaction } from "@gestion-boutique/database";
 import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
 import { t } from "@gestion-boutique/i18n";
 import { roundMoney } from "../domain/money";
 import { getSettings } from "./SettingsService";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
+import { assertValidAmount } from "../domain/validation";
 
 // Une session est scopée par (utilisateur, boutique) — un même caissier peut
 // avoir une session ouverte par boutique s'il opère sur plusieurs.
@@ -35,24 +36,29 @@ export async function openSession(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "open_close_cash");
-  const existing = await getActiveSession(db, input.userId, input.storeId);
-  if (existing) return existing;
+  assertValidAmount(input.openingAmount, { allowZero: true });
+  // Vérification et création dans une seule transaction : deux ouvertures
+  // simultanées (double clic) créaient deux sessions ouvertes pour la même personne.
+  return withTransaction(async () => {
+    const existing = await getActiveSession(db, input.userId, input.storeId);
+    if (existing) return existing;
 
-  const session = await db
-    .insert(schema.cashSessions)
-    .values({ userId: input.userId, storeId: input.storeId, openingAmount: input.openingAmount })
-    .returning()
-    .get();
+    const session = await db
+      .insert(schema.cashSessions)
+      .values({ userId: input.userId, storeId: input.storeId, openingAmount: input.openingAmount })
+      .returning()
+      .get();
 
-  await logAction(db, {
-    userId: input.userId,
-    action: "open_cash_session",
-    entity: "cash_session",
-    entityId: session.id,
-    metadata: { openingAmount: input.openingAmount },
+    await logAction(db, {
+      userId: input.userId,
+      action: "open_cash_session",
+      entity: "cash_session",
+      entityId: session.id,
+      metadata: { openingAmount: input.openingAmount },
+    });
+
+    return session;
   });
-
-  return session;
 }
 
 // Montant théoriquement présent dans le tiroir : le fond de caisse d'ouverture
@@ -126,6 +132,7 @@ export async function closeSession(
     .get();
   if (!current) throw new Error(t("coreErrors.cashSession.notFound"));
   if (current.closedAt) throw new Error(t("coreErrors.cashSession.alreadyClosed"));
+  assertValidAmount(input.closingAmount, { allowZero: true });
 
   const expectedAmount = roundMoney(await getExpectedCashAmount(db, current));
   const closingAmount = roundMoney(input.closingAmount);
@@ -144,9 +151,11 @@ export async function closeSession(
       // incohérente à côté d'openedAt dans le rapport Caisse.
       closedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
     })
-    .where(eq(schema.cashSessions.id, input.sessionId))
+    // Garde atomique : deux clôtures simultanées ne passent pas toutes les deux.
+    .where(and(eq(schema.cashSessions.id, input.sessionId), isNull(schema.cashSessions.closedAt)))
     .returning()
     .get();
+  if (!session) throw new Error(t("coreErrors.cashSession.alreadyClosed"));
 
   await logAction(db, {
     userId: session.userId,

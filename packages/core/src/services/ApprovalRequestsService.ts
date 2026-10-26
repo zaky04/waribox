@@ -219,6 +219,10 @@ export async function decideApprovalRequest(db: Database, input: DecideApprovalR
     await markDecided();
   } else {
     await withTransaction(async () => {
+      // Statut relu dans la transaction : deux « Approuver » simultanés créditaient
+      // deux fois les points (ou contre-passaient deux fois le stock).
+      const fresh = await db.select({ status: schema.approvalRequests.status }).from(schema.approvalRequests).where(eq(schema.approvalRequests.id, request.id)).get();
+      if (fresh?.status !== "pending") throw new Error(t("approvalRequests.errors.alreadyDecided"));
       if (input.approve && request.kind === "points") await applyPointsAdjustment(db, payload.input, input.userId);
       else await applyStockDecisionEffects(db, request, payload, input.approve, input.userId);
       await markDecided();

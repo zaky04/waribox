@@ -1,3 +1,4 @@
+import { assertValidAmount } from "../domain/validation";
 import { nextDocumentNumber } from "./documentNumber";
 import { roundMoney } from "../domain/money";
 import type { Database } from "@gestion-boutique/database";
@@ -118,6 +119,7 @@ export async function createPurchase(
     if (item.quantity <= 0) {
       throw new Error(t("coreErrors.purchases.quantityPositive"));
     }
+    assertValidAmount(item.unitCost, { allowZero: true });
   }
 
   const invoiceReference = input.invoiceReference?.trim() || undefined;
@@ -311,6 +313,12 @@ export async function receivePurchase(db: Database, input: ReceivePurchaseInput,
 
   const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
   const result = await withTransaction(async () => {
+    // Le statut lu plus haut date d'avant la transaction : deux réceptions
+    // lancées en même temps (double clic, deux postes) le voyaient toutes deux
+    // « en attente » et faisaient entrer la marchandise deux fois. On le relit
+    // ici, à l'abri de toute autre écriture.
+    const current = await db.select({ status: schema.purchases.status }).from(schema.purchases).where(eq(schema.purchases.id, purchase.id)).get();
+    if (current?.status !== "ordered") throw new Error(t("coreErrors.purchases.notAwaitingReceipt"));
     // Valeur de ce qui entre réellement en stock (quantités comptées).
     const receivedValue = roundMoney(items.reduce((sum, item) => sum + (receivedById.get(item.id) ?? 0) * item.unitCost, 0));
     const approval = await checkApprovalDeferrable(db, { kind: "stock", amount: receivedValue, userId: input.userId, actingPermissions, verifiedApproverId });

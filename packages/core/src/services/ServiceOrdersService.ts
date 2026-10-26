@@ -1,3 +1,4 @@
+import { assertValidAmount, assertValidLines } from "../domain/validation";
 import { nextDocumentNumber } from "./documentNumber";
 import { roundMoney } from "../domain/money";
 import type { Database } from "@gestion-boutique/database";
@@ -175,6 +176,8 @@ export async function createServiceOrder(
   if (input.items.length === 0) {
     throw new Error(t("coreErrors.serviceOrders.itemRequired"));
   }
+  assertValidLines(input.items);
+  if (input.amountPaid !== undefined) assertValidAmount(input.amountPaid, { allowZero: true });
   const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
 
   return withTransaction(async () => {
@@ -387,13 +390,19 @@ export async function updateServiceOrderItemStatus(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "manage_service_orders");
+  // Responsable vérifié hors transaction (son compteur d'essais doit survivre à
+  // une annulation). Tout le reste — relire le solde dû, créer la créance, changer
+  // le statut — est UNE transaction : un double clic sur « Retiré », ou deux
+  // articles retirés en même temps, calculaient chacun le même solde et créaient
+  // chacun une créance, donc le client était débité deux fois.
+  const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
+  return withTransaction(async () => {
   const now = new Date().toISOString();
 
   const current = await db.select().from(schema.serviceOrderItems).where(eq(schema.serviceOrderItems.id, input.itemId)).get();
   if (!current) throw new Error(t("coreErrors.serviceOrders.itemNotFound"));
   const order = await db.select().from(schema.serviceOrders).where(eq(schema.serviceOrders.id, current.serviceOrderId)).get();
   if (order?.cancelledAt) throw new Error(t("coreErrors.serviceOrders.cancelled"));
-  const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
   // Un article ne part pas tant que le ticket n'est pas soldé, et un retrait
   // enregistré ne se défait pas sans un responsable : sinon il suffirait de
   // « reprendre » l'article après avoir gardé l'argent.
@@ -463,6 +472,7 @@ export async function updateServiceOrderItemStatus(
   });
 
   return item;
+  });
 }
 
 // Correction d'un ticket déjà créé (client, date prévue, notes) — réservé à
@@ -619,6 +629,11 @@ export async function cancelServiceOrder(db: Database, input: CancelServiceOrder
   const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
 
   const approvedBy = await withTransaction(async () => {
+    // État relu ici : deux annulations simultanées (double clic) remboursaient
+    // toutes deux l'encaissé, et un article retiré entre-temps passait inaperçu.
+    const fresh = await db.select({ cancelledAt: schema.serviceOrders.cancelledAt }).from(schema.serviceOrders).where(eq(schema.serviceOrders.id, order.id)).get();
+    if (fresh?.cancelledAt) throw new Error(t("coreErrors.serviceOrders.cancelled"));
+    if ((await listServiceOrderItems(db, order.id)).some((i) => i.status === "picked_up")) throw new Error(t("coreErrors.serviceOrders.cancelPickedUp"));
     const approver = await checkApproval(db, { kind: "ticket", amount: order.total, userId: input.userId, actingPermissions, verifiedApproverId });
     const paid = await getPaidTotal(db, order.id);
     if (paid > 0.01) {

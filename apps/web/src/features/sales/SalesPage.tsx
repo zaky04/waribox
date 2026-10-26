@@ -20,7 +20,7 @@ import {
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { buildReceipt, buildReceiptPdf, type ReceiptData } from "@gestion-boutique/printer";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { SearchableSelect } from "../../components/SearchableSelect";
@@ -350,7 +350,12 @@ export function SalesPage() {
     setEquivalents({ sourceName: source.name, items: await findEquivalents(db, productId, currentStoreId ?? undefined) });
   };
 
+  // Garde de ré-entrée : l'état « en cours » ne se met à jour qu'au prochain rendu,
+  // alors que deux activations rapprochées (scanner, clavier, tactile) peuvent
+  // arriver avant — chacune encaissait alors le même panier.
+  const checkingOutRef = useRef(false);
   const handleCheckout = async () => {
+    if (checkingOutRef.current) return;
     setCheckoutError(null);
     if (!user || !surfaceLocationId || !currentStoreId) return;
     if (cart.length === 0) {
@@ -362,6 +367,7 @@ export function SalesPage() {
       return;
     }
 
+    checkingOutRef.current = true;
     setCheckingOut(true);
     try {
       const paidValue = amountPaid === "" ? total : Number(amountPaid);
@@ -458,6 +464,7 @@ export function SalesPage() {
       setCheckoutError(err instanceof Error ? err.message : t("sales.saleError"));
     } finally {
       setCheckingOut(false);
+      checkingOutRef.current = false;
     }
   };
 

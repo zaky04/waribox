@@ -1,10 +1,11 @@
 import type { Database } from "@gestion-boutique/database";
-import { schema } from "@gestion-boutique/database";
+import { schema, withTransaction } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
 import { eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requireApproval, type ApprovalInput } from "./ApprovalService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
+import { assertValidAmount, assertValidTaxRate } from "../domain/validation";
 
 export interface CategoryInput {
   name: string;
@@ -91,12 +92,15 @@ export interface ProductWithVariant {
 
 // Chaque produit possède toujours au moins une variante "de base" (attributes: {})
 // pour rester vendable même sans déclinaisons (taille/couleur, etc.).
-export async function createProduct(
+async function createProductUnsafe(
   db: Database,
   input: ProductInput,
   actingPermissions: PermissionSet,
 ): Promise<ProductWithVariant> {
   requirePermission(actingPermissions, "manage_products");
+  assertValidAmount(input.purchasePrice, { allowZero: true });
+  assertValidAmount(input.salePrice, { allowZero: true });
+  assertValidTaxRate(input.taxRate);
   const product = await db
     .insert(schema.products)
     .values({
@@ -159,6 +163,12 @@ export interface UpdateProductInput {
   requiresPrescription?: boolean;
 }
 
+// Produit + variante par défaut + trace d'audit : tout ou rien (un produit sans
+// variante n'est ni vendable ni modifiable depuis l'écran).
+export function createProduct(db: Database, input: ProductInput, actingPermissions: PermissionSet): Promise<ProductWithVariant> {
+  return withTransaction(() => createProductUnsafe(db, input, actingPermissions));
+}
+
 export async function updateProduct(
   db: Database,
   productId: number,
@@ -166,6 +176,9 @@ export async function updateProduct(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "manage_products");
+  if (input.salePrice !== undefined) assertValidAmount(input.salePrice, { allowZero: true });
+  if (input.purchasePrice !== undefined) assertValidAmount(input.purchasePrice, { allowZero: true });
+  assertValidTaxRate(input.taxRate);
   const before = await db.select().from(schema.products).where(eq(schema.products.id, productId)).get();
   // Changer un prix (vente ou achat) : droit dédié et, au-delà du seuil, approbation.
   let priceApprovedBy: number | null = null;

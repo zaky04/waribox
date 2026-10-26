@@ -1,5 +1,5 @@
 import type { Database } from "@gestion-boutique/database";
-import { schema } from "@gestion-boutique/database";
+import { schema, withTransaction } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
 import { desc, eq } from "drizzle-orm";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
@@ -206,7 +206,7 @@ export async function adjustPoints(db: Database, input: AdjustPointsInput, actin
     });
     throw new ApprovalQueuedError(request.id);
   }
-  return applyPointsAdjustment(db, input, approvedBy);
+  return withTransaction(() => applyPointsAdjustment(db, input, approvedBy));
 }
 
 // Applique l'ajustement (revalide le solde à l'instant de l'application) : appelée
