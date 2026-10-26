@@ -262,12 +262,39 @@ async function createRefundInTransaction(
     }
   }
 
+  // Vente (en partie) à crédit : la marchandise rendue annule d'abord ce que le
+  // client DEVAIT encore, on ne rembourse en argent que le surplus. Avant, le
+  // remboursement sortait la totalité en espèces alors que le client n'en avait
+  // payé qu'une partie, et la créance restait due pour des articles rendus.
+  let creditReduced = 0;
   if (total > 0) {
+    const openCredits = await db
+      .select()
+      .from(schema.customerCredits)
+      .where(eq(schema.customerCredits.saleId, input.saleId))
+      .orderBy(asc(schema.customerCredits.id));
+    let toCancel = total;
+    for (const credit of openCredits) {
+      if (toCancel <= 0.005) break;
+      if (credit.remainingBalance <= 0) continue;
+      const reduction = roundMoney(Math.min(toCancel, credit.remainingBalance));
+      const remainingBalance = roundMoney(credit.remainingBalance - reduction);
+      await db
+        .update(schema.customerCredits)
+        .set({ remainingBalance, status: remainingBalance <= 0 ? "settled" : "partial" })
+        .where(eq(schema.customerCredits.id, credit.id))
+        .run();
+      creditReduced = roundMoney(creditReduced + reduction);
+      toCancel = roundMoney(toCancel - reduction);
+    }
+  }
+  const cashRefund = roundMoney(total - creditReduced);
+  if (cashRefund > 0) {
     await db.insert(schema.payments).values({
       referenceType: "refund",
       referenceId: refund.id,
       method: input.method,
-      amount: total,
+      amount: cashRefund,
       receivedBy: input.userId,
       storeId: sale.storeId,
     });
@@ -291,7 +318,7 @@ async function createRefundInTransaction(
     action: "create_refund",
     entity: "refund",
     entityId: refund.id,
-    metadata: { saleNumber: sale.number, total, reason: input.reason, method: input.method, approvedBy },
+    metadata: { saleNumber: sale.number, total, cashRefund, creditReduced, reason: input.reason, method: input.method, approvedBy },
   });
 
   return refund;
