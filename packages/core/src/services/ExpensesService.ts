@@ -5,6 +5,7 @@ import { logAction } from "./AuditService";
 import { formatMoneyPlain, t } from "@gestion-boutique/i18n";
 import { ApprovalQueuedError, buildApprovalRequestCreatedEvent, checkApproval, createApprovalRequest, requireApproval, requireApprovalDeferrable, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
+import { assertValidAmount } from "../domain/validation";
 import { buildSyncEvent, emitSyncEvent, type ExpenseCreatedEventPayload } from "../sync/syncEvents";
 
 // Suggestions pour un datalist en UI — la catégorie reste un champ texte
@@ -48,6 +49,7 @@ export async function createExpense(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "manage_expenses");
+  assertValidAmount(input.amount);
   const { approvedBy, deferred } = await requireApprovalDeferrable(db, {
     kind: "expense",
     amount: input.amount,

@@ -1507,6 +1507,11 @@
   },
   "coreErrors": {
     "common": {
+      "invalidQuantity": "Quantité invalide : elle doit être un nombre supérieur à 0.",
+      "invalidPrice": "Prix invalide : il doit être un nombre positif ou nul.",
+      "invalidDiscount": "Remise invalide : elle doit être positive et ne pas dépasser le montant de la ligne.",
+      "invalidAmount": "Montant invalide : il doit être un nombre supérieur à 0.",
+      "invalidTaxRate": "Taux de TVA invalide : il doit être compris entre 0 et 100.",
       "tooManyAttempts": "Trop de tentatives. Réessaie dans {{seconds}} seconde(s).",
       "amountExceedsBalance": "Le montant dépasse le solde restant ({{balance}}).",
       "insufficientLoyaltyPoints": "Le client ne dispose que de {{points}} points."

@@ -1507,6 +1507,11 @@
   },
   "coreErrors": {
     "common": {
+      "invalidQuantity": "Invalid quantity: it must be a number greater than 0.",
+      "invalidPrice": "Invalid price: it must be zero or a positive number.",
+      "invalidDiscount": "Invalid discount: it must be positive and not exceed the line amount.",
+      "invalidAmount": "Invalid amount: it must be a number greater than 0.",
+      "invalidTaxRate": "Invalid tax rate: it must be between 0 and 100.",
       "tooManyAttempts": "Too many attempts. Try again in {{seconds}} second(s).",
       "amountExceedsBalance": "The amount exceeds the remaining balance ({{balance}}).",
       "insufficientLoyaltyPoints": "The customer only has {{points}} points."

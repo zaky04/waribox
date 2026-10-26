@@ -11,6 +11,7 @@ import { checkApproval, checkCreditApproval, computeUnauthorizedDiscount, verify
 import { getActivePromotionsWithProducts } from "./PromotionsService";
 import { earnPoints, pointsToDiscount, redeemPoints } from "./LoyaltyService";
 import { getSettings } from "./SettingsService";
+import { assertValidAmount, assertValidLines } from "../domain/validation";
 import { nextDocumentNumber } from "./documentNumber";
 import { ExpiredStockError, todayISO } from "../domain/expiry";
 import { missingPrescription } from "../domain/pharmacy";
@@ -79,6 +80,9 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
   if (input.items.length === 0) {
     throw new Error(t("coreErrors.sales.itemRequired"));
   }
+  assertValidLines(input.items);
+  if (input.discount !== undefined) assertValidAmount(input.discount, { allowZero: true });
+  if (input.amountPaid !== undefined) assertValidAmount(input.amountPaid, { allowZero: true });
   // Responsable vérifié hors transaction (voir RefundsService.createRefund).
   const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
 
