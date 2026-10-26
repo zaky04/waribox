@@ -4363,6 +4363,23 @@ Vérifié avec un **faux Maître WebSocket** (Node, sans dépendance) contre l'a
 
 **Risques connus restants** : un appareil relié qui connaît le jeton peut émettre une dépense/vente sans approbation (le Maître ne revérifie pas les seuils d'approbation sur ces événements) ; canal `ws://` en clair ; `__sync_log` et `audit_log` grossissent sans purge ; dates de rapport en UTC alors que `todayISO()` est en heure locale (écart d'un jour possible hors UTC) ; le stock d'un appareil relié ne contient que les lots de l'instantané, pas l'historique des mouvements.
 
+### 2026-10-26 — Deuxième passe de recherche de bugs (parcours métier sur base SQLite réelle)
+
+**Méthode** : parcours complets sur le harnais SQLite réel ([BusinessFlows.test.ts](packages/core/src/services/BusinessFlows.test.ts), [BusinessFlows2.test.ts](packages/core/src/services/BusinessFlows2.test.ts)) en vérifiant des invariants (stock, argent, marge, créances) et en lançant les mêmes actions **en parallèle** (`Promise.allSettled`) pour simuler un double clic ou deux postes. Chaque correctif a été validé en réintroduisant le bug : le test correspondant échoue.
+
+**Bugs réels corrigés** :
+1. **Vente avec quantité nulle/négative/NaN, prix négatif, remise supérieure à la ligne** acceptée par `createSale` (une vente à 0 était enregistrée, une quantité négative pouvait ajouter du stock). Nouveau [validation.ts](packages/core/src/domain/validation.ts) (`assertValidLines`, `assertValidAmount`, `assertValidTaxRate`) appliqué aux ventes, devis, tickets de service, achats (coût), dépenses, produits (prix/TVA), caisse.
+2. **Remboursement d'une vente à crédit** : il sortait la totalité en espèces alors que le client n'avait payé qu'une partie, et la créance restait due pour des articles rendus. Maintenant `createRefund` réduit d'abord la créance ouverte, et ne rend en espèces que le surplus (journal : `cashRefund`, `creditReduced`).
+3. **Règlement de créance / paiement de dette** non atomiques : deux règlements simultanés dépassaient le solde, un montant NaN passait. Mis en transaction ; une créance soldée passe maintenant la **vente** (ou le ticket) à « payée » (elle restait « partielle/crédit » à jamais).
+4. **Retrait d'un article de ticket** : double clic ou deux articles retirés ensemble créaient **deux créances** pour le même solde (client débité deux fois). Mis en transaction (approbation vérifiée avant, hors transaction).
+5. **Vérifications faites avant la transaction, donc périmées** (même famille) : réception d'un achat deux fois (marchandise entrée deux fois), clôture d'inventaire deux fois, annulation d'un ticket deux fois (encaissé remboursé deux fois), approbation d'une demande de points deux fois (points crédités deux fois), conversion d'un devis deux fois (deux ventes), ouverture/clôture de caisse en double. L'état est relu **dans** la transaction (ou réservé par une instruction atomique pour le devis, qui revient à son statut d'origine si la vente échoue).
+6. `createProduct`, `createQuote` et l'ajustement de points sont atomiques (produit sans variante, devis sans lignes).
+7. `SalesPage` : garde de ré-entrée (`useRef`) sur l'encaissement ; vérifié au navigateur (3 activations simultanées = 1 vente).
+
+**Règle à retenir** : `withTransaction` n'est PAS réentrante (verrou en file : une transaction imbriquée se bloque). Tout contrôle d'état (statut, solde, « déjà fait ») doit être relu **à l'intérieur** de la transaction qui écrit, et une vérification de PIN doit rester **hors** transaction (un échec doit laisser son compteur d'essais). Ne jamais appeler une fonction qui ouvre sa propre transaction depuis l'intérieur d'une autre.
+
+**Connu, non corrigé** : les rapports (`getSalesSummary`, marges, trésorerie) relisent des tables entières puis filtrent en JavaScript — lent au-delà de quelques dizaines de milliers de lignes ; dates des rapports en UTC alors que « aujourd'hui » est en heure locale ; les actions de l'interface autres que l'encaissement s'appuient sur le bouton désactivé + l'atomicité des services (pas de garde de ré-entrée dédiée).
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du
