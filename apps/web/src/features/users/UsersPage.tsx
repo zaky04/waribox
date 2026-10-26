@@ -150,7 +150,7 @@ export function UsersPage() {
       setError(t("users.errors.newPasswordLength"));
       return;
     }
-    if (pin && !/^\d{4}$/.test(pin)) {
+    if (pin && !/^\d{6,8}$/.test(pin)) {
       setError(t("users.errors.pinFormat"));
       return;
     }
@@ -317,9 +317,9 @@ export function UsersPage() {
             <input
               style={inputStyle}
               inputMode="numeric"
-              maxLength={4}
+              maxLength={8}
               value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
             />
           </label>
           {(() => {

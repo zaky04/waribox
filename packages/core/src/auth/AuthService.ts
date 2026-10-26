@@ -12,6 +12,9 @@ import {
 } from "../domain/permissions";
 import { logAction } from "../services/AuditService";
 import { hashSecret, verifySecret } from "./hash";
+import { clearFailedAttempts, registerFailedAttempt, remainingLockSeconds } from "./lockout";
+import { assertValidPin, isRemotePinHash } from "./pin";
+import { getRemotePinVerifier } from "./remotePin";
 
 export interface AuthenticatedUser {
   id: number;
@@ -69,36 +72,8 @@ async function toAuthenticatedUser(
   };
 }
 
-// Anti-brute-force : même compteur pour le mot de passe et le code PIN,
-// puisqu'ils protègent le même compte. Verrouillage court (30s) plutôt
-// qu'un blocage définitif — ralentit une attaque automatisée sans jamais
-// nécessiter l'intervention d'un administrateur pour un oubli ordinaire.
-const MAX_FAILED_ATTEMPTS = 5;
-const LOCKOUT_MS = 30_000;
-
-function remainingLockSeconds(lockedUntil: string | null): number {
-  if (!lockedUntil) return 0;
-  const until = new Date(`${lockedUntil.replace(" ", "T")}Z`).getTime();
-  return Math.max(0, Math.ceil((until - Date.now()) / 1000));
-}
-
-async function registerFailedAttempt(db: Database, userId: number, currentAttempts: number): Promise<void> {
-  const attempts = currentAttempts + 1;
-  if (attempts >= MAX_FAILED_ATTEMPTS) {
-    const lockedUntil = new Date(Date.now() + LOCKOUT_MS).toISOString().replace("T", " ").slice(0, 19);
-    await db.update(schema.users).set({ failedAttempts: 0, lockedUntil }).where(eq(schema.users.id, userId)).run();
-  } else {
-    await db.update(schema.users).set({ failedAttempts: attempts }).where(eq(schema.users.id, userId)).run();
-  }
-}
-
-async function clearFailedAttempts(db: Database, userId: number): Promise<void> {
-  await db
-    .update(schema.users)
-    .set({ failedAttempts: 0, lockedUntil: null })
-    .where(eq(schema.users.id, userId))
-    .run();
-}
+// Anti-brute-force : voir lockout.ts (verrouillage progressif, compteur partagé
+// entre mot de passe et code PIN puisqu'ils protègent le même compte).
 
 export async function hasAnyUser(db: Database): Promise<boolean> {
   const existing = await db.select({ id: schema.users.id }).from(schema.users).limit(1).get();
@@ -151,6 +126,7 @@ export async function createUser(
     throw new Error(t("coreErrors.auth.usernameTaken"));
   }
 
+  if (input.pin) assertValidPin(input.pin);
   const passwordHash = await hashSecret(input.password);
   const pinHash = input.pin ? await hashSecret(input.pin) : null;
 
@@ -246,6 +222,14 @@ export async function verifyPin(db: Database, userId: number, pin: string): Prom
 
   if (!user?.pinHash) return false;
 
+  // PIN vérifiable seulement chez le Maître (voir pin.ts) : le défi/réponse, le
+  // compteur d'essais et le verrouillage y sont gérés (verifyPinProof).
+  if (isRemotePinHash(user.pinHash)) {
+    const remote = getRemotePinVerifier();
+    if (!remote) throw new Error(t("coreErrors.auth.pinRemoteOnly"));
+    return remote(userId, pin);
+  }
+
   const lockedSeconds = remainingLockSeconds(user.lockedUntil);
   if (lockedSeconds > 0) {
     throw new Error(t("coreErrors.common.tooManyAttempts", { seconds: lockedSeconds }));
@@ -268,6 +252,7 @@ export async function setPin(
   actingPermissions: PermissionSet,
 ): Promise<void> {
   requirePermission(actingPermissions, "manage_users");
+  assertValidPin(pin);
   const pinHash = await hashSecret(pin);
   await db.update(schema.users).set({ pinHash }).where(eq(schema.users.id, userId)).run();
 }
@@ -383,7 +368,10 @@ export async function updateUser(
   if (input.limitPoints !== undefined) updates.limitPoints = input.limitPoints;
   if (input.limitTicket !== undefined) updates.limitTicket = input.limitTicket;
   if (input.limitApprove !== undefined) updates.limitApprove = input.limitApprove;
-  if (input.pin) updates.pinHash = await hashSecret(input.pin);
+  if (input.pin) {
+    assertValidPin(input.pin);
+    updates.pinHash = await hashSecret(input.pin);
+  }
   const before = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get();
   if (input.permissionOverrides !== undefined) {
     updates.permissionOverrides =

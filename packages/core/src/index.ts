@@ -1,5 +1,9 @@
 export * from "./auth/AuthService";
 export * from "./auth/hash";
+export * from "./auth/pin";
+export * from "./auth/lockout";
+export * from "./auth/remotePin";
+export * from "./auth/pinProof";
 export * from "./domain/permissions";
 export * from "./domain/stock";
 export * from "./domain/expiry";
@@ -45,3 +49,5 @@ export * from "./sync/snapshot";
 export * from "./sync/syncEvents";
 export * from "./sync/syncStore";
 export * from "./domain/roleTemplates";
+export * from "./sync/masterProtocol";
+export * from "./sync/workerRpc";

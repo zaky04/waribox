@@ -11,8 +11,9 @@
 // exactement comme le protocole applicatif (WsMessage) défini côté TypeScript
 // dans @gestion-boutique/network.
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
@@ -20,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::Message;
 
 /// Port par défaut du serveur Master — fixe (pas choisi par l'OS) pour que
@@ -32,7 +34,70 @@ pub const DEFAULT_MASTER_PORT: u16 = 51823;
 /// (voir aussi `discovery.rs`, côté Worker).
 const SERVICE_TYPE: &str = "_waribox._tcp.local.";
 
+// Limites contre un appareil malveillant (ou simplement bogué) sur le réseau
+// local : le port est ouvert à tout le Wi-Fi, le jeton n'est vérifié qu'au premier
+// message. Sans ces garde-fous, des connexions « muettes » ou énormes suffisaient
+// à épuiser le Maître.
+/// Connexions simultanées maximum (authentifiées ou en cours de poignée de main).
+const MAX_CONNECTIONS: usize = 32;
+/// Délai pour envoyer un `hello` valide après l'ouverture de la connexion.
+const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
+/// Taille maximale du premier message (le `hello`) : il ne contient que quelques champs.
+const MAX_HELLO_BYTES: usize = 4096;
+/// Taille maximale d'un message et d'une trame, une fois authentifié (un événement de vente reste très en dessous).
+const MAX_MESSAGE_BYTES: usize = 2 * 1024 * 1024;
+/// Après ce nombre d'échecs de poignée de main depuis une même adresse, on l'écarte un moment.
+const BAN_AFTER_FAILURES: u32 = 5;
+const FAILURE_WINDOW: Duration = Duration::from_secs(60);
+const BAN_DURATION: Duration = Duration::from_secs(60);
+
 type ConnectionId = String;
+
+struct FailureRecord {
+    count: u32,
+    window_start: Instant,
+    banned_until: Option<Instant>,
+}
+
+/// Suivi des poignées de main ratées par adresse IP (mauvais jeton, silence, message
+/// énorme). Pur, sans horloge cachée : l'instant est fourni par l'appelant (testable).
+#[derive(Default)]
+struct HelloFailures {
+    by_ip: HashMap<IpAddr, FailureRecord>,
+}
+
+impl HelloFailures {
+    fn is_banned(&self, ip: IpAddr, now: Instant) -> bool {
+        self.by_ip
+            .get(&ip)
+            .and_then(|r| r.banned_until)
+            .map_or(false, |until| until > now)
+    }
+
+    fn register_failure(&mut self, ip: IpAddr, now: Instant) {
+        // Ménage : on oublie les adresses dont ni la fenêtre ni le bannissement ne sont actifs.
+        self.by_ip.retain(|_, r| {
+            r.banned_until.map_or(false, |u| u > now) || now.duration_since(r.window_start) < FAILURE_WINDOW
+        });
+        let record = self.by_ip.entry(ip).or_insert(FailureRecord {
+            count: 0,
+            window_start: now,
+            banned_until: None,
+        });
+        if now.duration_since(record.window_start) >= FAILURE_WINDOW {
+            record.count = 0;
+            record.window_start = now;
+        }
+        record.count += 1;
+        if record.count >= BAN_AFTER_FAILURES {
+            record.banned_until = Some(now + BAN_DURATION);
+        }
+    }
+
+    fn register_success(&mut self, ip: IpAddr) {
+        self.by_ip.remove(&ip);
+    }
+}
 
 struct Connection {
     sender: mpsc::UnboundedSender<String>,
@@ -48,6 +113,7 @@ struct Inner {
     shutdown: Option<mpsc::UnboundedSender<()>>,
     mdns: Option<ServiceDaemon>,
     mdns_fullname: Option<String>,
+    failures: HelloFailures,
 }
 
 /// Annonce ce Master par mDNS (best-effort : un échec ici — pas d'interface
@@ -158,6 +224,7 @@ pub async fn network_start_master(
         inner.port = bound_port;
         inner.shutdown = Some(shutdown_tx);
         inner.connections.clear();
+        inner.failures = HelloFailures::default();
         inner.next_id = 0;
         if let Some((daemon, fullname)) = mdns {
             inner.mdns = Some(daemon);
@@ -176,6 +243,17 @@ pub async fn network_start_master(
                 accepted = listener.accept() => {
                     match accepted {
                         Ok((stream, addr)) => {
+                            // Refus immédiat (avant toute poignée de main) d'une adresse écartée
+                            // ou quand le Maître est déjà plein.
+                            {
+                                let inner = state_arc.lock().await;
+                                if inner.connections.len() >= MAX_CONNECTIONS
+                                    || inner.failures.is_banned(addr.ip(), Instant::now())
+                                {
+                                    drop(stream);
+                                    continue;
+                                }
+                            }
                             let state_arc = state_arc.clone();
                             let app_handle = app_handle.clone();
                             let expected_token = expected_token.clone();
@@ -195,14 +273,29 @@ pub async fn network_start_master(
 
 async fn handle_connection(
     stream: TcpStream,
-    _addr: SocketAddr,
+    addr: SocketAddr,
     state_arc: Arc<Mutex<Inner>>,
     app_handle: AppHandle,
     expected_token: String,
 ) {
-    let ws_stream = match tokio_tungstenite::accept_async(stream).await {
-        Ok(s) => s,
-        Err(_) => return,
+    let config = WebSocketConfig {
+        max_message_size: Some(MAX_MESSAGE_BYTES),
+        max_frame_size: Some(MAX_MESSAGE_BYTES),
+        ..Default::default()
+    };
+    // La poignée de main HTTP/WebSocket elle-même a un délai : une connexion TCP qui
+    // ne dit rien ne doit pas occuper une place indéfiniment.
+    let ws_stream = match tokio::time::timeout(
+        HELLO_TIMEOUT,
+        tokio_tungstenite::accept_async_with_config(stream, Some(config)),
+    )
+    .await
+    {
+        Ok(Ok(s)) => s,
+        _ => {
+            state_arc.lock().await.failures.register_failure(addr.ip(), Instant::now());
+            return;
+        }
     };
 
     let (mut write, mut read) = ws_stream.split();
@@ -234,7 +327,20 @@ async fn handle_connection(
 
     let mut authenticated = false;
 
-    while let Some(msg) = read.next().await {
+    loop {
+        // Tant que le `hello` n'est pas arrivé, on n'attend que HELLO_TIMEOUT.
+        let next = if authenticated {
+            read.next().await
+        } else {
+            match tokio::time::timeout(HELLO_TIMEOUT, read.next()).await {
+                Ok(next) => next,
+                Err(_) => {
+                    state_arc.lock().await.failures.register_failure(addr.ip(), Instant::now());
+                    break;
+                }
+            }
+        };
+        let Some(msg) = next else { break };
         let msg = match msg {
             Ok(m) => m,
             Err(_) => break,
@@ -247,9 +353,11 @@ async fn handle_connection(
             // événement applicatif ne soit émis au frontend (voir CLAUDE.md,
             // sécurité réseau local : c'est ce jeton, pas un certificat
             // TLS, qui protège la connexion).
-            if !is_valid_hello(&text, &expected_token) {
+            if text.len() > MAX_HELLO_BYTES || !is_valid_hello(&text, &expected_token) {
+                state_arc.lock().await.failures.register_failure(addr.ip(), Instant::now());
                 break;
             }
+            state_arc.lock().await.failures.register_success(addr.ip());
             authenticated = true;
             let _ = app_handle.emit(
                 "network:master-event",
@@ -342,4 +450,74 @@ pub fn network_local_ip() -> Result<String, String> {
     local_ip_address::local_ip()
         .map(|ip| ip.to_string())
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ip(last: u8) -> IpAddr {
+        IpAddr::from([192, 168, 1, last])
+    }
+
+    #[test]
+    fn token_comparison_is_exact() {
+        assert!(constant_time_eq(b"abc123", b"abc123"));
+        assert!(!constant_time_eq(b"abc123", b"abc124"));
+        assert!(!constant_time_eq(b"abc123", b"abc12"));
+        assert!(!constant_time_eq(b"", b"a"));
+    }
+
+    #[test]
+    fn hello_needs_the_right_token_and_type() {
+        let ok = r#"{"type":"hello","payload":{"token":"secret"}}"#;
+        assert!(is_valid_hello(ok, "secret"));
+        assert!(!is_valid_hello(ok, "autre"));
+        assert!(!is_valid_hello(r#"{"type":"sync","payload":{"token":"secret"}}"#, "secret"));
+        assert!(!is_valid_hello(r#"{"type":"hello","payload":{}}"#, "secret"));
+        assert!(!is_valid_hello(r#"{"type":"hello"}"#, "secret"));
+        assert!(!is_valid_hello("pas du json", "secret"));
+        assert!(!is_valid_hello("", "secret"));
+    }
+
+    #[test]
+    fn address_is_banned_after_repeated_failures_then_released() {
+        let mut f = HelloFailures::default();
+        let t0 = Instant::now();
+        for i in 0..(BAN_AFTER_FAILURES - 1) {
+            f.register_failure(ip(7), t0 + Duration::from_secs(i as u64));
+            assert!(!f.is_banned(ip(7), t0 + Duration::from_secs(i as u64)));
+        }
+        f.register_failure(ip(7), t0 + Duration::from_secs(5));
+        assert!(f.is_banned(ip(7), t0 + Duration::from_secs(6)));
+        // Les autres adresses ne sont pas touchées.
+        assert!(!f.is_banned(ip(8), t0 + Duration::from_secs(6)));
+        // Le bannissement finit par se lever.
+        assert!(!f.is_banned(ip(7), t0 + Duration::from_secs(5) + BAN_DURATION + Duration::from_secs(1)));
+    }
+
+    #[test]
+    fn failures_outside_the_window_do_not_add_up() {
+        let mut f = HelloFailures::default();
+        let t0 = Instant::now();
+        for i in 0..(BAN_AFTER_FAILURES - 1) {
+            f.register_failure(ip(9), t0 + Duration::from_secs(i as u64));
+        }
+        // Bien plus tard : le compteur est reparti de zéro.
+        let later = t0 + FAILURE_WINDOW + Duration::from_secs(30);
+        f.register_failure(ip(9), later);
+        assert!(!f.is_banned(ip(9), later));
+    }
+
+    #[test]
+    fn a_successful_hello_clears_the_record() {
+        let mut f = HelloFailures::default();
+        let t0 = Instant::now();
+        for _ in 0..(BAN_AFTER_FAILURES - 1) {
+            f.register_failure(ip(3), t0);
+        }
+        f.register_success(ip(3));
+        f.register_failure(ip(3), t0);
+        assert!(!f.is_banned(ip(3), t0));
+    }
 }

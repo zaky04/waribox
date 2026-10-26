@@ -525,7 +525,13 @@
         "searchFailed": "Maître introuvable sur ce réseau — rescannez son QR ou saisissez son adresse manuellement.",
         "connectionClosed": "La connexion s'est fermée avant même d'atteindre le Maître — probablement l'adresse/le port, un pare-feu, ou le fait que les deux appareils ne sont pas sur le même réseau Wi-Fi."
       },
-      "manualEntryHint": "Trouve ces 3 valeurs sur l'écran du Maître (Configuration avancée → Mode réseau), sous le QR code — bouton « Copier ces informations »."
+      "manualEntryHint": "Trouve ces 3 valeurs sur l'écran du Maître (Configuration avancée → Mode réseau), sous le QR code — bouton « Copier ces informations ».",
+      "rejectedTitle": "Événements refusés par le Maître",
+      "rejectedHint": "Le Maître n'a pas accepté ces opérations faites sur cet appareil (elles ne sont donc PAS dans sa comptabilité). Corrige la cause, puis réessaie, ou abandonne-les.",
+      "retry": "Réessayer",
+      "retryAll": "Tout réessayer",
+      "discard": "Abandonner",
+      "applyError": "Un événement reçu du Maître n'a pas pu être appliqué ici : {{message}}"
     }
   },
   "storesSection": {
@@ -1137,7 +1143,7 @@
     "emailColumn": "Email",
     "newPassword": "Nouveau mot de passe (laisser vide = inchangé)",
     "password": "Mot de passe",
-    "pin": "Code PIN (4 chiffres, optionnel)",
+    "pin": "Code PIN (6 à 8 chiffres, optionnel)",
     "role": "Rôle",
     "chooseOption": "— Choisir —",
     "storeLabel": "Boutique (ce rôle ne peut pas en changer lui-même)",
@@ -1159,7 +1165,7 @@
       "requiredFields": "Nom, pseudo et rôle sont requis.",
       "passwordLength": "Le mot de passe doit contenir au moins 8 caractères.",
       "newPasswordLength": "Le nouveau mot de passe doit contenir au moins 8 caractères.",
-      "pinFormat": "Le code PIN doit contenir exactement 4 chiffres.",
+      "pinFormat": "Le code PIN doit contenir entre 6 et 8 chiffres.",
       "storeRequired": "Ce rôle doit être rattaché à une boutique (il ne peut pas en changer lui-même).",
       "emailInUse": "Cet email est déjà utilisé.",
       "impersonateFailed": "Impossible d'ouvrir une session pour ce compte.",
@@ -1458,13 +1464,13 @@
       "username": "Pseudo",
       "email": "Email (optionnel)",
       "password": "Mot de passe",
-      "pin": "Code PIN (4 chiffres) — pour le verrouillage rapide",
+      "pin": "Code PIN (6 à 8 chiffres) — pour le verrouillage rapide et les approbations",
       "creating": "Création...",
       "submit": "Créer le compte administrateur",
       "errors": {
         "usernameRequired": "Le pseudo est requis.",
         "passwordLength": "Le mot de passe doit contenir au moins 8 caractères.",
-        "pinFormat": "Le code PIN doit contenir exactement 4 chiffres.",
+        "pinFormat": "Le code PIN doit contenir entre 6 et 8 chiffres.",
         "emailInUse": "Cet email est déjà utilisé."
       }
     },
@@ -1507,6 +1513,11 @@
     },
     "auth": {
       "usernameTaken": "Ce pseudo est déjà utilisé.",
+      "pinInvalid": "Le code PIN doit contenir entre 6 et 8 chiffres.",
+      "pinRemoteOnly": "Ce code PIN ne peut être vérifié que par le Maître : connecte-toi au Maître, ou déconnecte-toi et reconnecte-toi avec ton mot de passe.",
+      "pinChallengeInvalid": "Vérification du code PIN expirée ou invalide : recommence.",
+      "syncEventNotAllowed": "Ce type d'événement n'est pas accepté d'un appareil relié.",
+      "syncEventUnknown": "Type d'événement de synchronisation inconnu.",
       "accountNotFound": "Compte introuvable.",
       "wrongCurrentPassword": "Mot de passe actuel incorrect.",
       "userNotFound": "Utilisateur introuvable.",
@@ -1919,9 +1930,20 @@
     "reserve": "Réserve",
     "surface_vente": "Surface de vente"
   },
+  "app": {
+    "pageLoading": "Chargement…"
+  },
+  "errorBoundary": {
+    "title": "Cet écran a rencontré une erreur.",
+    "hint": "Tes données ne sont pas perdues. Essaie de réafficher la page ; si cela se reproduit, recharge l'application et préviens le support avec le message ci-dessous.",
+    "retry": "Réessayer",
+    "reload": "Recharger l'application"
+  },
   "database": {
     "initError": "Impossible d'initialiser la base de données locale : {{error}}",
-    "initializing": "Initialisation de la base locale..."
+    "initializing": "Initialisation de la base locale...",
+    "reload": "Recharger",
+    "initErrorHint": "Tes données restent sur cet appareil. Ne désinstalle pas l'application : recharge, et si le problème persiste contacte le support avant toute autre action."
   },
   "updateBanner": {
     "message": "Une nouvelle version de l'application est disponible.",
@@ -2423,6 +2445,9 @@
     "batchDone": "{{count}} demande(s) approuvée(s).",
     "selectAll": "Tout sélectionner",
     "approveSelected": "Approuver la sélection ({{count}})",
+    "remotePinLabel": "Ton code PIN (vérifié par le Maître)",
+    "remotePinHint": "Cet appareil est relié à un Maître : ta décision est envoyée au Maître avec une preuve de ton PIN (le PIN lui-même ne circule jamais). Il faut être connecté au Maître.",
+    "remotePinRequired": "Saisis ton code PIN pour trancher depuis cet appareil.",
     "select": "Sélectionner",
     "new": "Nouveau"
   },

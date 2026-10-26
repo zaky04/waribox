@@ -3,12 +3,15 @@ import { schema, withTransaction } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { PermissionError, type PermissionSet } from "../domain/permissions";
+import { pinDecisionContext, verifyPinProof } from "../auth/pinProof";
 import {
+  ApprovalDeniedError,
   assertCanDecide,
   assertWithinApproveLimit,
   canApprove,
   canApproveAnything,
   isReplicableRequest,
+  loadApprover,
   snapshotApprovalRequest,
   type ApprovalKind,
 } from "./ApprovalService";
@@ -243,4 +246,32 @@ export async function decideApprovalRequest(db: Database, input: DecideApprovalR
     entityId: request.id,
     metadata: { kind: request.kind, amount: request.amount, requestedBy: request.requestedBy, note, summary: request.summary },
   });
+}
+
+export interface DecideApprovalRequestRemoteInput {
+  requestSyncId: string;
+  approverId: number;
+  approve: boolean;
+  note?: string;
+  nonce: string;
+  proof: string;
+}
+
+// Décision prise depuis un appareil relié, exécutée par le Maître. L'identité du
+// décideur n'est pas crue sur parole : elle est prouvée par le PIN (défi/réponse,
+// voir auth/pinProof.ts), la preuve étant liée à CETTE demande et CETTE décision.
+// La vérification se fait hors transaction (un PIN faux incrémente le compteur
+// d'essais, qui doit survivre à une annulation). Le reste est la décision
+// ordinaire (droit, plafond, pas son propre demandeur), qui émet l'événement
+// `approvalRequest.decided` rediffusé ensuite à tous les appareils.
+export async function decideApprovalRequestRemote(db: Database, input: DecideApprovalRequestRemoteInput): Promise<void> {
+  const proofOk = await verifyPinProof(db, input.approverId, input.nonce, pinDecisionContext(input.requestSyncId, input.approve), input.proof);
+  if (!proofOk) throw new ApprovalDeniedError(t("coreErrors.approval.wrongPin"));
+
+  const approver = await loadApprover(db, input.approverId);
+  if (!approver) throw new ApprovalDeniedError(t("coreErrors.approval.invalidApprover"));
+  const request = await db.select().from(schema.approvalRequests).where(eq(schema.approvalRequests.syncId, input.requestSyncId)).get();
+  if (!request) throw new Error(t("approvalRequests.errors.notFound"));
+
+  await decideApprovalRequest(db, { requestId: request.id, approve: input.approve, note: input.note, userId: approver.id }, approver.perms);
 }

@@ -30,7 +30,7 @@ export function SetupAdminScreen() {
       setError(t("auth.setupAdmin.errors.passwordLength"));
       return;
     }
-    if (!/^\d{4}$/.test(pin)) {
+    if (!/^\d{6,8}$/.test(pin)) {
       setError(t("auth.setupAdmin.errors.pinFormat"));
       return;
     }
@@ -112,10 +112,10 @@ export function SetupAdminScreen() {
           <input
             style={authInputStyle}
             inputMode="numeric"
-            pattern="\d{4}"
-            maxLength={4}
+            pattern="\d{6,8}"
+            maxLength={8}
             value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
             required
           />
         </label>

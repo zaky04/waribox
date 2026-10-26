@@ -1,25 +1,12 @@
-import {
-  appendToSyncLog,
-  applyRemoteSyncEvent,
-  buildCatalogSnapshot,
-  getMaxSyncSeq,
-  listSyncLogSince,
-  onSyncEvent,
-  type SyncEvent,
-} from "@gestion-boutique/core";
+import { createMasterProtocol, onSyncEvent, type ConnectedWorker } from "@gestion-boutique/core";
 import type { Database } from "@gestion-boutique/database";
-import { withTransaction } from "@gestion-boutique/database";
-import { MasterPairingPayload, WsMessage, WsMessageTypes } from "@gestion-boutique/network";
+import { MasterPairingPayload, type WsMessage } from "@gestion-boutique/network";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-export interface ConnectedWorker {
-  connectionId: string;
-  deviceId: string;
-  deviceName: string;
-}
+export type { ConnectedWorker };
 
 type MasterEvent =
   | { kind: "connected"; connectionId: string }
@@ -52,15 +39,6 @@ async function sendToWorker(connectionId: string, message: WsMessage): Promise<v
   await invoke("network_send_to_worker", { connectionId, raw: message.encode() });
 }
 
-async function broadcastExcept(connectionIds: string[], exceptConnectionId: string | null, message: WsMessage): Promise<void> {
-  const raw = message.encode();
-  await Promise.all(
-    connectionIds
-      .filter((id) => id !== exceptConnectionId)
-      .map((id) => invoke("network_send_to_worker", { connectionId: id, raw }).catch(() => undefined)),
-  );
-}
-
 /**
  * Pilote le serveur Master : démarrage/arrêt du serveur Rust, poignée de main
  * avec chaque Worker, et depuis la Phase 2 (voir CLAUDE.md) la réplication
@@ -78,112 +56,30 @@ export function useMasterServer(db: Database, masterId: string, masterName: stri
   const [error, setError] = useState<string | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
   const unsubscribeSyncRef = useRef<(() => void) | null>(null);
-  const workersRef = useRef<ConnectedWorker[]>([]);
-  workersRef.current = workers;
-
-  // Diffuse un événement (créé par CE PC en tant que Master, ou déjà reçu et
-  // accepté d'un Worker) à tous les Workers connectés autres que `origin`.
-  const broadcastEvent = useCallback(
-    async (event: SyncEvent, seq: number, exceptConnectionId: string | null) => {
-      await broadcastExcept(
-        workersRef.current.map((w) => w.connectionId),
-        exceptConnectionId,
-        new WsMessage({ type: WsMessageTypes.sync, payload: { event, seq } }),
-      );
-    },
-    [],
-  );
-
-  const handleHello = useCallback(
-    async (connectionId: string, message: WsMessage) => {
-      const { deviceId, deviceName, lastSyncSeq } = message.payload;
-      if (typeof deviceId !== "string" || typeof deviceName !== "string" || !deviceId || !deviceName) {
-        void sendToWorker(connectionId, message.errorReply("INVALID_HELLO", "deviceId/deviceName requis"));
-        return;
-      }
-      setWorkers((prev) => [...prev.filter((w) => w.connectionId !== connectionId), { connectionId, deviceId, deviceName }]);
-      await sendToWorker(
-        connectionId,
-        new WsMessage({
-          type: WsMessageTypes.helloAck,
-          payload: { masterId, masterName, protocolVersion: 1, accepted: true },
-          correlationId: message.correlationId,
-        }),
-      );
-
-      // Voir CLAUDE.md, mode réseau Phase 2 : un Worker jamais synchronisé
-      // (aucun `lastSyncSeq` connu) reçoit l'instantané complet du
-      // catalogue ; un Worker déjà connu reçoit le rattrapage de ce qu'il a
-      // manqué depuis sa dernière connexion.
-      if (typeof lastSyncSeq !== "number") {
-        const snapshot = await buildCatalogSnapshot(db);
-        const asOfSeq = await getMaxSyncSeq(db);
-        await sendToWorker(
-          connectionId,
-          new WsMessage({ type: WsMessageTypes.snapshotResponse, payload: { snapshot, asOfSeq } }),
-        );
-      } else {
-        const backlog = await listSyncLogSince(db, lastSyncSeq);
-        for (const { seq, event } of backlog) {
-          await sendToWorker(connectionId, new WsMessage({ type: WsMessageTypes.sync, payload: { event, seq } }));
-        }
-      }
-    },
+  // Tout le protocole (poignée de main, synchronisation, vérification de PIN,
+  // décisions d'approbation) vit dans packages/core : ici on ne fait que le
+  // brancher sur le serveur Rust et sur l'état React.
+  const protocol = useMemo(
+    () =>
+      createMasterProtocol({
+        db,
+        masterId,
+        masterName,
+        send: sendToWorker,
+        onWorkersChanged: setWorkers,
+      }),
     [db, masterId, masterName],
   );
+  const protocolRef = useRef(protocol);
+  protocolRef.current = protocol;
 
-  const handleSync = useCallback(
-    async (connectionId: string, message: WsMessage) => {
-      const event = message.payload.event as SyncEvent | undefined;
-      if (!event) return;
-      await withTransaction(() => applyRemoteSyncEvent(db, event));
-      const originDeviceId = workersRef.current.find((w) => w.connectionId === connectionId)?.deviceId ?? connectionId;
-      const seq = await appendToSyncLog(db, event, originDeviceId);
-      await sendToWorker(connectionId, new WsMessage({ type: WsMessageTypes.syncAck, correlationId: message.correlationId }));
-      await broadcastEvent(event, seq, connectionId);
-    },
-    [broadcastEvent, db],
-  );
-
-  const handleSnapshotRequest = useCallback(
-    async (connectionId: string) => {
-      const snapshot = await buildCatalogSnapshot(db);
-      const asOfSeq = await getMaxSyncSeq(db);
-      await sendToWorker(
-        connectionId,
-        new WsMessage({ type: WsMessageTypes.snapshotResponse, payload: { snapshot, asOfSeq } }),
-      );
-    },
-    [db],
-  );
-
-  const handleEvent = useCallback(
-    (evt: MasterEvent) => {
-      if (evt.kind === "disconnected") {
-        setWorkers((prev) => prev.filter((w) => w.connectionId !== evt.connectionId));
-        return;
-      }
-      if (evt.kind !== "message") return;
-
-      let message: WsMessage;
-      try {
-        message = WsMessage.decode(evt.raw);
-      } catch {
-        return;
-      }
-
-      if (message.type === WsMessageTypes.hello) {
-        void handleHello(evt.connectionId, message);
-      } else if (message.type === WsMessageTypes.ping) {
-        void sendToWorker(evt.connectionId, new WsMessage({ type: WsMessageTypes.pong, correlationId: message.correlationId }));
-      } else if (message.type === WsMessageTypes.sync) {
-        void handleSync(evt.connectionId, message);
-      } else if (message.type === WsMessageTypes.snapshotRequest) {
-        void handleSnapshotRequest(evt.connectionId);
-      }
-    },
-    [handleHello, handleSnapshotRequest, handleSync],
-  );
+  const handleEvent = useCallback((evt: MasterEvent) => {
+    if (evt.kind === "disconnected") {
+      protocolRef.current.handleDisconnect(evt.connectionId);
+    } else if (evt.kind === "message") {
+      void protocolRef.current.handleMessage(evt.connectionId, evt.raw);
+    }
+  }, []);
 
   const handleEventRef = useRef(handleEvent);
   handleEventRef.current = handleEvent;
@@ -201,7 +97,7 @@ export function useMasterServer(db: Database, masterId: string, masterName: stri
     }
     setRunning(false);
     setPairingPayload(null);
-    setWorkers([]);
+    protocolRef.current.reset();
   }, []);
 
   const start = useCallback(async () => {
@@ -236,14 +132,11 @@ export function useMasterServer(db: Database, masterId: string, masterName: stri
       // chaque événement local devient directement autorité (pas d'aller-
       // retour réseau nécessaire) et se diffuse à tous les Workers connectés.
       unsubscribeSyncRef.current = onSyncEvent((event) => {
-        void (async () => {
-          const seq = await appendToSyncLog(db, event, masterId);
-          await broadcastEvent(event, seq, null);
-        })();
+        void protocolRef.current.broadcastLocalEvent(event);
       });
 
       setPairingPayload(new MasterPairingPayload({ masterId, masterName, host, port, token }));
-      setWorkers([]);
+      protocolRef.current.reset();
       setRunning(true);
       try {
         localStorage.setItem(MASTER_RUNNING_KEY, "1");
@@ -259,7 +152,7 @@ export function useMasterServer(db: Database, masterId: string, masterName: stri
     } finally {
       setStarting(false);
     }
-  }, [broadcastEvent, db, masterId, masterName, t]);
+  }, [masterId, masterName, t]);
 
   // Arrête le serveur Rust si le composant qui pilote cet écran est démonté
   // pendant qu'il tourne (navigation ailleurs) — évite un serveur fantôme

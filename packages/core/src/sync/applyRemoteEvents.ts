@@ -1,6 +1,8 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
+import { t } from "@gestion-boutique/i18n";
 import { eq, sql } from "drizzle-orm";
+import { uniqueSaleNumber } from "../services/documentNumber";
 import { computeSaleItemTotal, computeTaxAmount } from "../services/SalesService";
 import { applyApprovalRequestCreated, applyApprovalRequestDecided } from "../services/ApprovalRequestsService";
 import type {
@@ -255,7 +257,7 @@ async function applySaleCreated(db: Database, payload: SaleCreatedEventPayload):
     .insert(schema.sales)
     .values({
       syncId: payload.sale.syncId,
-      number: payload.sale.number,
+      number: await uniqueSaleNumber(db, payload.sale.number, payload.sale.syncId),
       customerId,
       userId: payload.sale.userId,
       storeId: payload.sale.storeId,
@@ -554,7 +556,23 @@ async function applyExpenseCreated(db: Database, payload: ExpenseCreatedEventPay
  * simplement une erreur : c'est la transaction ouverte par l'appelant qui
  * annule tout ce que cette fonction avait déjà écrit.
  */
-export async function applyRemoteSyncEvent(db: Database, event: SyncEvent): Promise<void> {
+// D'où vient l'événement : `master` (le Maître fait autorité, c'est le cas d'un
+// appareil relié qui reçoit) ou `worker` (le Maître reçoit d'un appareil relié,
+// qui n'est PAS cru sur parole).
+export type SyncOrigin = "master" | "worker";
+
+// Événements qu'un appareil relié n'a pas le droit d'émettre lui-même. Une
+// décision d'approbation porte l'identité du décideur (`decidedBy`) en simple
+// donnée : n'importe quel appareil connaissant le jeton de pairage pourrait donc
+// se faire passer pour le propriétaire. Une décision venant d'un appareil relié
+// doit passer par la preuve de PIN (message `approvalDecision`, voir
+// decideApprovalRequestRemote) ; le Maître la rediffuse ensuite lui-même.
+const FORBIDDEN_FROM_WORKER: ReadonlySet<SyncEvent["type"]> = new Set(["approvalRequest.decided"]);
+
+export async function applyRemoteSyncEvent(db: Database, event: SyncEvent, origin: SyncOrigin = "master"): Promise<void> {
+  if (origin === "worker" && FORBIDDEN_FROM_WORKER.has(event.type)) {
+    throw new Error(t("coreErrors.auth.syncEventNotAllowed"));
+  }
   switch (event.type) {
     case "sale.created":
       return applySaleCreated(db, event.payload as SaleCreatedEventPayload);
@@ -572,5 +590,9 @@ export async function applyRemoteSyncEvent(db: Database, event: SyncEvent): Prom
       return applyApprovalRequestCreated(db, event.payload as ApprovalRequestCreatedEventPayload);
     case "approvalRequest.decided":
       return applyApprovalRequestDecided(db, event.payload as ApprovalRequestDecidedEventPayload);
+    default:
+      // Un type inconnu était ignoré en silence, puis consigné et rediffusé à tous
+      // les appareils comme s'il avait été appliqué.
+      throw new Error(t("coreErrors.auth.syncEventUnknown"));
   }
 }

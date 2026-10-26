@@ -1,6 +1,7 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { eq } from "drizzle-orm";
+import { REMOTE_PIN_HASH } from "../auth/pin";
 
 // Instantané initial du catalogue — voir CLAUDE.md, mode réseau Phase 2.
 // Téléchargement à SENS UNIQUE (Master → Worker), une seule fois à la toute
@@ -36,10 +37,11 @@ export interface CatalogSnapshot {
   // sans rapport avec ce qu'un Worker a besoin de faire — l'envoyer dans
   // l'instantané ne ferait qu'exposer un secret supplémentaire sur un
   // appareil qui n'en a aucun usage. Voir l'audit de sécurité du 2026-09-07
-  // (Vuln 2) : contrairement à passwordHash/pinHash (nécessaires pour que
-  // "le gérant se connecte depuis un Worker avec son compte habituel",
-  // décision déjà actée — voir CLAUDE.md Phase 1), maintenanceCodeHash n'a
-  // aucune contrepartie fonctionnelle à perdre.
+  // (Vuln 2) : contrairement à passwordHash (nécessaire pour que "le gérant
+  // se connecte depuis un Worker avec son compte habituel", décision déjà
+  // actée — voir CLAUDE.md Phase 1), maintenanceCodeHash n'a aucune
+  // contrepartie fonctionnelle à perdre. pinHash est lui aussi remplacé par un
+  // marqueur (voir buildCatalogSnapshot).
   businessSettings: Omit<typeof schema.businessSettings.$inferSelect, "maintenanceCodeHash" | "maintenanceCodeFailedAttempts" | "maintenanceCodeLockedUntil"> | undefined;
 }
 
@@ -94,7 +96,15 @@ export async function buildCatalogSnapshot(db: Database): Promise<CatalogSnapsho
     customers,
     suppliers,
     roles,
-    users,
+    // Le hash du PIN (qui valide les approbations) ne quitte jamais le Maître :
+    // l'appareil relié reçoit un marqueur et fait vérifier le PIN par le Maître
+    // (voir auth/pin.ts). Les compteurs d'essais n'ont pas à être copiés non plus.
+    users: users.map((u) => ({
+      ...u,
+      pinHash: u.pinHash ? REMOTE_PIN_HASH : null,
+      failedAttempts: 0,
+      lockedUntil: null,
+    })),
     approvalRequests: pendingRequests.filter((r) => r.syncId),
     businessSettings,
   };

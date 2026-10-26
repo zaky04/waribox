@@ -1,13 +1,20 @@
 import {
   applyCatalogSnapshot,
   applyRemoteSyncEvent,
+  createWorkerRpc,
+  discardRejectedOutbox,
   enqueueOutbox,
   getLastAppliedSeq,
   listPendingOutbox,
+  listRejectedOutbox,
+  markOutboxRejected,
   markOutboxSent,
   onSyncEvent,
+  retryRejectedOutbox,
   setLastAppliedSeq,
+  setRemotePinVerifier,
   type CatalogSnapshot,
+  type RejectedOutboxEntry,
   type SyncEvent,
 } from "@gestion-boutique/core";
 import type { Database } from "@gestion-boutique/database";
@@ -15,7 +22,7 @@ import { withTransaction } from "@gestion-boutique/database";
 import { MasterPairingPayload, WsMessage, WsMessageTypes } from "@gestion-boutique/network";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { isTauriRuntime } from "../settings/tauriRuntime";
 import { scanForMaster } from "./lanScan";
@@ -69,7 +76,34 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
+  // Événements que le Maître a refusés (et pourquoi) : ils ne sont plus renvoyés
+  // tout seuls mais restent visibles jusqu'à ce que l'utilisateur les traite.
+  const [rejected, setRejected] = useState<RejectedOutboxEntry[]>([]);
+  // Un événement reçu du Maître qu'on n'a pas pu appliquer ici.
+  const [applyError, setApplyError] = useState<string | null>(null);
+
   const socketRef = useRef<WebSocket | null>(null);
+  // Requêtes vers le Maître (vérifier un PIN, trancher une demande) : le PIN
+  // saisi ne quitte jamais l'appareil, seule une preuve liée à un défi part.
+  const rpc = useMemo(
+    () =>
+      createWorkerRpc({
+        send: (message) => {
+          const socket = socketRef.current;
+          if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+          socket.send(message.encode());
+          return true;
+        },
+      }),
+    [],
+  );
+
+  const refreshRejected = useCallback(async () => {
+    setRejected(await listRejectedOutbox(db));
+  }, [db]);
+  useEffect(() => {
+    if (enabled) void refreshRejected();
+  }, [enabled, refreshRejected]);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // correlationId du message `sync` envoyé → id de la ligne __sync_outbox
   // correspondante, le temps d'en recevoir le `syncAck` (voir handleSyncAck).
@@ -158,6 +192,9 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
           return;
         }
 
+        // Réponse à une requête en cours (défi de PIN, décision d'approbation...).
+        if (rpc.handle(message)) return;
+
         if (message.type === WsMessageTypes.helloAck) {
           clearHandshakeTimeout();
           if (message.payload.accepted === true) {
@@ -195,9 +232,22 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
             const remoteEvent = message.payload.event as SyncEvent | undefined;
             const seq = message.payload.seq as number | undefined;
             if (!remoteEvent) return;
-            await withTransaction(() => applyRemoteSyncEvent(db, remoteEvent));
-            if (typeof seq === "number") await setLastAppliedSeq(db, seq);
+            try {
+              await withTransaction(() => applyRemoteSyncEvent(db, remoteEvent));
+              if (typeof seq === "number") await setLastAppliedSeq(db, seq);
+              setApplyError(null);
+            } catch (err) {
+              // Ne plus rester silencieux : l'événement du Maître n'a pas pu être appliqué ici.
+              setApplyError(err instanceof Error ? err.message : String(err));
+            }
           })();
+        } else if (message.type === WsMessageTypes.syncRejected) {
+          const outboxId = pendingAcksRef.current.get(message.correlationId);
+          if (outboxId != null) {
+            pendingAcksRef.current.delete(message.correlationId);
+            const reason = typeof message.payload.reason === "string" ? message.payload.reason : t("network.worker.errors.rejected");
+            void markOutboxRejected(db, outboxId, reason).then(refreshRejected);
+          }
         } else if (message.type === WsMessageTypes.syncAck) {
           const outboxId = pendingAcksRef.current.get(message.correlationId);
           if (outboxId != null) {
@@ -229,6 +279,7 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
         const closedBeforeResolution = timeoutRef.current !== null;
         clearHandshakeTimeout();
         socketRef.current = null;
+        rpc.rejectAll(t("network.worker.errors.connectionClosed"));
         if (closedBeforeResolution) {
           setError(t("network.worker.errors.connectionClosed"));
           setStatus("error");
@@ -240,7 +291,7 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
         }
       };
     },
-    [db, deviceId, deviceName, flushOutbox, t],
+    [db, deviceId, deviceName, flushOutbox, refreshRejected, rpc, t],
   );
 
   // Toute vente/mouvement/dépense créé localement (hors ligne ou non) part
@@ -354,9 +405,44 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
     setSearching(false);
   }, [connect, deviceId, deviceName, lastPayload, t]);
 
+  // Tant qu'on est relié au Maître, les PIN de ses responsables (dont le hash
+  // n'est jamais copié ici) se vérifient chez lui ; hors connexion, plus de
+  // vérification possible et le message le dit.
+  useEffect(() => {
+    if (!enabled || status !== "connected") {
+      setRemotePinVerifier(null);
+      return;
+    }
+    setRemotePinVerifier(rpc.verifyPin);
+    return () => setRemotePinVerifier(null);
+  }, [enabled, status, rpc]);
+
+  const retryRejected = useCallback(
+    async (id?: number) => {
+      await retryRejectedOutbox(db, id);
+      await refreshRejected();
+      const socket = socketRef.current;
+      if (socket && socket.readyState === WebSocket.OPEN) await flushOutbox(socket);
+    },
+    [db, flushOutbox, refreshRejected],
+  );
+  const discardRejected = useCallback(
+    async (id: number) => {
+      await discardRejectedOutbox(db, id);
+      await refreshRejected();
+    },
+    [db, refreshRejected],
+  );
+
   return {
     status,
     masterName,
+    rejected,
+    applyError,
+    retryRejected,
+    discardRejected,
+    /** Tranche une demande d'approbation chez le Maître (preuve de PIN, jamais le PIN lui-même). */
+    decideApprovalRemotely: rpc.decide,
     error,
     lastPayload,
     searching,

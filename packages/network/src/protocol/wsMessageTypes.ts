@@ -35,6 +35,21 @@ export const WsMessageTypes = {
   snapshotRequest: "snapshotRequest",
   /** Réponse du Master à `snapshotRequest` — porte un `CatalogSnapshot`. */
   snapshotResponse: "snapshotResponse",
+  /**
+   * Le Maître refuse un `sync` (validation échouée) — référence son correlationId.
+   * Sans ce message, l'appareil relié renvoyait indéfiniment un événement que
+   * le Maître n'acceptera jamais, sans en être informé.
+   */
+  syncRejected: "syncRejected",
+  /** Worker → Maître : demande d'un défi pour vérifier le PIN d'un responsable (voir pinProof.ts). */
+  pinChallenge: "pinChallenge",
+  pinChallengeResult: "pinChallengeResult",
+  /** Worker → Maître : preuve de PIN pour une approbation immédiate. */
+  pinVerify: "pinVerify",
+  pinVerifyResult: "pinVerifyResult",
+  /** Worker → Maître : décision sur une demande d'approbation, avec preuve de PIN. */
+  approvalDecision: "approvalDecision",
+  approvalDecisionResult: "approvalDecisionResult",
 } as const;
 
 export type WsMessageType = (typeof WsMessageTypes)[keyof typeof WsMessageTypes] | (string & {});

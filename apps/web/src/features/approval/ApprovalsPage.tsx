@@ -5,7 +5,9 @@ import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { badgeStyle, cardStyle, inputStyle, pageStyle, primaryButtonStyle, tableStyle, tdStyle, thStyle } from "../../components/sharedStyles";
 import { formatAmount } from "../../lib/format";
+import { useDeviceRoleStore } from "../../stores/deviceRole";
 import { useAuth } from "../auth/useAuth";
+import { useNetwork } from "../network/NetworkProvider";
 
 type Request = typeof schema.approvalRequests.$inferSelect;
 
@@ -25,6 +27,12 @@ export function ApprovalsPage() {
   const [unseenIds, setUnseenIds] = useState<Set<number>>(new Set());
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [batchNote, setBatchNote] = useState<string | null>(null);
+
+  // Sur un appareil relié, la décision se prend chez le Maître, avec une preuve
+  // du PIN : un événement « décidé » envoyé par un appareil n'est plus accepté.
+  const isWorker = useDeviceRoleStore((s) => s.role) === "worker";
+  const { worker } = useNetwork();
+  const [remotePin, setRemotePin] = useState("");
 
   const perms = user?.permissions ?? {};
   const refresh = useCallback(async () => {
@@ -49,15 +57,34 @@ export function ApprovalsPage() {
   const mine = requests.filter((r) => r.requestedBy === user?.id);
   const history = requests.filter((r) => r.status !== "pending" && (canApprove(perms, r.kind as ApprovalKind) || r.requestedBy === user?.id)).slice(0, 40);
 
+  // Exécute une décision, ici ou chez le Maître selon le rôle de l'appareil.
+  const decideOne = async (request: Request, approve: boolean, noteText?: string) => {
+    if (!user) return;
+    if (!isWorker) {
+      await decideApprovalRequest(db, { requestId: request.id, approve, note: noteText, userId: user.id }, user.permissions);
+      return;
+    }
+    if (!remotePin) throw new Error(t("approvalRequests.remotePinRequired"));
+    if (!request.syncId) throw new Error(t("approvalRequests.errors.notFound"));
+    await worker.decideApprovalRemotely({ requestSyncId: request.syncId, approverId: user.id, pin: remotePin, approve, note: noteText });
+  };
+
+  // La décision revient du Maître sous forme d'événement : on laisse un instant
+  // pour qu'il arrive avant de relire la liste.
+  const refreshAfterDecision = async () => {
+    await refresh();
+    if (isWorker) setTimeout(() => void refresh(), 1500);
+  };
+
   const decide = async (request: Request, approve: boolean) => {
     if (!user) return;
     setError(null);
     setBusyId(request.id);
     try {
-      await decideApprovalRequest(db, { requestId: request.id, approve, note: approve ? undefined : note, userId: user.id }, user.permissions);
+      await decideOne(request, approve, approve ? undefined : note);
       setRejectingId(null);
       setNote("");
-      await refresh();
+      await refreshAfterDecision();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -85,7 +112,7 @@ export function ApprovalsPage() {
       const request = requests.find((r) => r.id === id);
       if (!request) continue;
       try {
-        await decideApprovalRequest(db, { requestId: id, approve: true, userId: user.id }, user.permissions);
+        await decideOne(request, true);
         done++;
       } catch (err) {
         failures.push(`${request.summary} : ${err instanceof Error ? err.message : String(err)}`);
@@ -93,7 +120,7 @@ export function ApprovalsPage() {
     }
     setSelected(new Set());
     setBatchNote(t("approvalRequests.batchDone", { count: done }) + (failures.length > 0 ? " " + failures.join(" | ") : ""));
-    await refresh();
+    await refreshAfterDecision();
   };
 
   const statusBadge = (r: Request) => (
@@ -109,6 +136,20 @@ export function ApprovalsPage() {
       {toDecide.length > 0 || requests.length === 0 || perms.approve_actions ? (
         <div style={{ ...cardStyle, borderColor: toDecide.length > 0 ? "var(--color-warning)" : undefined }}>
           <strong>{t("approvalRequests.pendingTitle", { count: toDecide.length })}</strong>
+          {isWorker && toDecide.length > 0 && (
+            <label style={{ display: "block", maxWidth: 320 }}>
+              {t("approvalRequests.remotePinLabel")}
+              <input
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                style={inputStyle}
+                value={remotePin}
+                onChange={(e) => setRemotePin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+              />
+              <span style={{ display: "block", fontSize: 12, color: "var(--color-text-muted)" }}>{t("approvalRequests.remotePinHint")}</span>
+            </label>
+          )}
           {toDecide.length === 0 ? (
             <p style={{ margin: 0, color: "var(--color-text-muted)" }}>{t("approvalRequests.nonePending")}</p>
           ) : (

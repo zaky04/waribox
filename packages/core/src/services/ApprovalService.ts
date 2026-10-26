@@ -106,7 +106,7 @@ export function exceedsThreshold(amount: number, threshold: number | null): bool
   return threshold != null && amount > threshold;
 }
 
-async function loadApprover(db: Database, approverId: number) {
+export async function loadApprover(db: Database, approverId: number) {
   const row = await db
     .select({ id: schema.users.id, isActive: schema.users.isActive, permissions: schema.roles.permissions, overrides: schema.users.permissionOverrides, limit: schema.users.limitApprove })
     .from(schema.users)

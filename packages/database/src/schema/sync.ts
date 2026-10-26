@@ -32,6 +32,10 @@ export const syncOutbox = sqliteTable("__sync_outbox", {
   eventJson: text("event_json").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   sentAt: text("sent_at"),
+  // Refusé par le Maître (`syncRejected`) : n'est plus renvoyé automatiquement,
+  // mais reste listé avec sa raison jusqu'à ce que l'utilisateur le traite.
+  rejectedAt: text("rejected_at"),
+  rejectReason: text("reject_reason"),
 });
 
 // Repère de progression de CET appareil dans le journal du Master

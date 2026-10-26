@@ -41,7 +41,26 @@ function getWorker(): Promise<Worker> {
   return workerPromise;
 }
 
+export type { WorkerResponse };
+
+// Remplace le worker SQLite du navigateur par un autre moteur — réservé aux
+// tests (voir packages/core/src/test/testDb.ts, qui branche `node:sqlite`) :
+// le reste du code (bootstrap, migrations, withTransaction, drizzle) passe
+// alors par ce moteur sans la moindre modification. `null` revient au worker.
+export type DatabaseBackend = (type: string, payload: Record<string, unknown>) => Promise<WorkerResponse>;
+
+let backendOverride: DatabaseBackend | null = null;
+const DEFAULT_BACKEND_KEY = {};
+const bootstrapByBackend = new WeakMap<object, Promise<void>>();
+
+export function setDatabaseBackend(backend: DatabaseBackend | null): void {
+  backendOverride = backend;
+  // Les transactions en file appartenaient à l'ancien moteur.
+  txLock = Promise.resolve();
+}
+
 async function callWorker(type: string, payload: Record<string, unknown> = {}): Promise<WorkerResponse> {
+  if (backendOverride) return backendOverride(type, payload);
   const worker = await getWorker();
   const id = nextId++;
   return new Promise((resolve, reject) => {
@@ -50,11 +69,11 @@ async function callWorker(type: string, payload: Record<string, unknown> = {}): 
   });
 }
 
-let bootstrapPromise: Promise<void> | null = null;
-
-// Exécute le bootstrap + les migrations une seule fois (singleton), peu
-// importe le nombre d'appels à createDatabase()/exportDatabaseFile().
+// Exécute le bootstrap + les migrations une seule fois par moteur (singleton),
+// peu importe le nombre d'appels à createDatabase()/exportDatabaseFile().
 function ensureBootstrapped(): Promise<void> {
+  const key: object = backendOverride ?? DEFAULT_BACKEND_KEY;
+  let bootstrapPromise = bootstrapByBackend.get(key);
   if (!bootstrapPromise) {
     bootstrapPromise = (async () => {
       for (const statement of BOOTSTRAP_SQL) {
@@ -77,6 +96,7 @@ function ensureBootstrapped(): Promise<void> {
 
       await runMigrations();
     })();
+    bootstrapByBackend.set(key, bootstrapPromise);
   }
   return bootstrapPromise;
 }
@@ -352,15 +372,15 @@ export const MIGRATIONS: Migration[] = [
       "ALTER TABLE business_settings ADD COLUMN approval_payment_threshold REAL DEFAULT 0",
     ],
   },
-  // Pays du commerce (indicatif téléphonique des numéros nationaux).
-  {
-    id: 16,
-    statements: ["ALTER TABLE business_settings ADD COLUMN country TEXT"],
-  },
   // Le demandeur est prévenu quand sa demande a été tranchée.
   {
     id: 15,
     statements: ["ALTER TABLE approval_requests ADD COLUMN decision_seen INTEGER NOT NULL DEFAULT 1"],
+  },
+  // Pays du commerce (indicatif téléphonique des numéros nationaux).
+  {
+    id: 16,
+    statements: ["ALTER TABLE business_settings ADD COLUMN country TEXT"],
   },
   // Pack Pharmacie : fiche médicament (DCI, dosage, forme, laboratoire, sur
   // ordonnance), ordonnance enregistrée avec la vente, et lien boîte → plaquette
@@ -378,6 +398,12 @@ export const MIGRATIONS: Migration[] = [
       "ALTER TABLE product_variants ADD COLUMN parent_variant_id INTEGER",
       "ALTER TABLE product_variants ADD COLUMN units_per_parent REAL",
     ],
+  },
+  // Événement refusé par le Maître : il reste visible dans la file de l'appareil
+  // relié (avec la raison) au lieu d'être renvoyé indéfiniment sans qu'on le sache.
+  {
+    id: 18,
+    statements: ["ALTER TABLE __sync_outbox ADD COLUMN rejected_at TEXT", "ALTER TABLE __sync_outbox ADD COLUMN reject_reason TEXT"],
   },
 ];
 

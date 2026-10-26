@@ -247,6 +247,10 @@ function WorkerView() {
     reconnect,
     disconnect,
     searchForMaster,
+    rejected,
+    applyError,
+    retryRejected,
+    discardRejected,
   } = useNetwork().worker;
   const [scanning, setScanning] = useState(false);
 
@@ -271,6 +275,36 @@ function WorkerView() {
 
       {error && <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{error}</p>}
       {searchError && <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{searchError}</p>}
+      {applyError && <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{t("network.worker.applyError", { message: applyError })}</p>}
+
+      {rejected.length > 0 && (
+        <div style={{ border: "1px solid var(--color-danger)", borderRadius: 8, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+          <strong style={{ color: "var(--color-danger)" }}>
+            {t("network.worker.rejectedTitle")} ({rejected.length})
+          </strong>
+          <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-muted)" }}>{t("network.worker.rejectedHint")}</p>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
+            {rejected.map((entry) => (
+              <li key={entry.id} style={{ marginBottom: 6 }}>
+                <code>{entry.event.type}</code> — {entry.event.createdAt.slice(0, 16).replace("T", " ")} — {entry.reason}{" "}
+                <button style={secondaryButtonStyle} onClick={() => void retryRejected(entry.id)}>
+                  {t("network.worker.retry")}
+                </button>{" "}
+                <button style={secondaryButtonStyle} onClick={() => void discardRejected(entry.id)}>
+                  {t("network.worker.discard")}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {rejected.length > 1 && (
+            <div>
+              <button style={secondaryButtonStyle} onClick={() => void retryRejected()}>
+                {t("network.worker.retryAll")}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {(status === "idle" || status === "error" || status === "disconnected") && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
