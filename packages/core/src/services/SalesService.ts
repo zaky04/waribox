@@ -11,6 +11,7 @@ import { checkApproval, checkCreditApproval, computeUnauthorizedDiscount, verify
 import { getActivePromotionsWithProducts } from "./PromotionsService";
 import { earnPoints, pointsToDiscount, redeemPoints } from "./LoyaltyService";
 import { getSettings } from "./SettingsService";
+import { nextDocumentNumber } from "./documentNumber";
 import { ExpiredStockError, todayISO } from "../domain/expiry";
 import { missingPrescription } from "../domain/pharmacy";
 import { consumeStockFefo, getSellableQuantity } from "./StockService";
@@ -18,12 +19,7 @@ import { buildSyncEvent, emitSyncEvent, type SaleCreatedEventPayload, type SyncS
 import { enqueueFneCertification } from "../fne/fneQueue";
 import { emitFneQueued } from "../fne/fneEvents";
 
-async function nextSaleNumber(db: Database): Promise<string> {
-  const row = await db.select({ count: sql<number>`COUNT(*)` }).from(schema.sales).get();
-  const year = new Date().getFullYear();
-  const seq = ((row?.count as unknown as number) ?? 0) + 1;
-  return `VTE-${year}-${String(seq).padStart(6, "0")}`;
-}
+const nextSaleNumber = (db: Database) => nextDocumentNumber(db, schema.sales, "VTE");
 
 export interface SaleItemInput {
   variantId: number;

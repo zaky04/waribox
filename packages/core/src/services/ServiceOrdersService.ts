@@ -1,3 +1,4 @@
+import { nextDocumentNumber } from "./documentNumber";
 import { roundMoney } from "../domain/money";
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
@@ -13,12 +14,7 @@ import { getSettings } from "./SettingsService";
 
 // Même algorithme que SalesService.nextSaleNumber/PurchasesService.nextPurchaseNumber
 // (COUNT(*)+1, pas MAX(id)) — compteur simple, cohérent avec le reste de l'app.
-async function nextServiceOrderNumber(db: Database): Promise<string> {
-  const row = await db.select({ count: sql<number>`COUNT(*)` }).from(schema.serviceOrders).get();
-  const year = new Date().getFullYear();
-  const seq = ((row?.count as unknown as number) ?? 0) + 1;
-  return `TCK-${year}-${String(seq).padStart(6, "0")}`;
-}
+const nextServiceOrderNumber = (db: Database) => nextDocumentNumber(db, schema.serviceOrders, "TCK");
 
 export interface ServiceOrderItemInput {
   // Saisie manuelle, jamais liée au catalogue Produits — un pressing n'a pas

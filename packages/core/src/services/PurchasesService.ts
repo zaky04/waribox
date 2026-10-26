@@ -1,3 +1,4 @@
+import { nextDocumentNumber } from "./documentNumber";
 import { roundMoney } from "../domain/money";
 import type { Database } from "@gestion-boutique/database";
 import { schema, withTransaction } from "@gestion-boutique/database";
@@ -10,12 +11,7 @@ import { getSettings } from "./SettingsService";
 import { isExpired, todayISO } from "../domain/expiry";
 import { createBatch, listLocations, recordMovement } from "./StockService";
 
-async function nextPurchaseNumber(db: Database): Promise<string> {
-  const row = await db.select({ count: sql<number>`COUNT(*)` }).from(schema.purchases).get();
-  const year = new Date().getFullYear();
-  const seq = ((row?.count as unknown as number) ?? 0) + 1;
-  return `ACH-${year}-${String(seq).padStart(6, "0")}`;
-}
+const nextPurchaseNumber = (db: Database) => nextDocumentNumber(db, schema.purchases, "ACH");
 
 export interface PurchaseItemInput {
   variantId: number;

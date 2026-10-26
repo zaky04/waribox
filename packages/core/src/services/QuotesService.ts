@@ -1,3 +1,4 @@
+import { nextDocumentNumber } from "./documentNumber";
 import type { ApprovalInput } from "./ApprovalService";
 import { roundMoney } from "../domain/money";
 import type { Database } from "@gestion-boutique/database";
@@ -9,12 +10,7 @@ import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { createSale, type PaymentMethod } from "./SalesService";
 import { findOrCreateCustomerByName } from "./CustomersService";
 
-async function nextQuoteNumber(db: Database): Promise<string> {
-  const row = await db.select({ count: sql<number>`COUNT(*)` }).from(schema.quotes).get();
-  const year = new Date().getFullYear();
-  const seq = ((row?.count as unknown as number) ?? 0) + 1;
-  return `DEV-${year}-${String(seq).padStart(6, "0")}`;
-}
+const nextQuoteNumber = (db: Database) => nextDocumentNumber(db, schema.quotes, "DEV");
 
 export interface QuoteItemInput {
   variantId: number;
