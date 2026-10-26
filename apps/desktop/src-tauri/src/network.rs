@@ -41,7 +41,7 @@ const SERVICE_TYPE: &str = "_waribox._tcp.local.";
 /// Connexions simultanées maximum (authentifiées ou en cours de poignée de main).
 const MAX_CONNECTIONS: usize = 32;
 /// Délai pour envoyer un `hello` valide après l'ouverture de la connexion.
-const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
+const HELLO_TIMEOUT: Duration = if cfg!(test) { Duration::from_millis(800) } else { Duration::from_secs(10) };
 /// Taille maximale du premier message (le `hello`) : il ne contient que quelques champs.
 const MAX_HELLO_BYTES: usize = 4096;
 /// Taille maximale d'un message et d'une trame, une fois authentifié (un événement de vente reste très en dessous).
@@ -152,6 +152,10 @@ enum MasterEvent {
     Disconnected { connection_id: String },
 }
 
+/// Où vont les événements du serveur : l'application (événement Tauri) en production,
+/// une liste en mémoire dans les tests — le serveur lui-même ne dépend pas de Tauri.
+type EventSink = Arc<dyn Fn(MasterEvent) + Send + Sync + 'static>;
+
 #[derive(Deserialize)]
 struct HelloEnvelope {
     #[serde(rename = "type")]
@@ -202,10 +206,32 @@ pub async fn network_start_master(
     master_id: String,
     master_name: String,
 ) -> Result<u16, String> {
+    let emit: EventSink = Arc::new(move |event| {
+        let _ = app.emit("network:master-event", event);
+    });
+    let (bound_port, started) = start_server(state.inner.clone(), port, token, emit).await?;
+    if started {
+        if let Some((daemon, fullname)) = register_mdns(&master_id, &master_name, bound_port) {
+            let mut inner = state.inner.lock().await;
+            inner.mdns = Some(daemon);
+            inner.mdns_fullname = Some(fullname);
+        }
+    }
+    Ok(bound_port)
+}
+
+/// Lie le port et lance la boucle d'acceptation. Renvoie (port, démarré maintenant ?) :
+/// `false` si le serveur tournait déjà (idempotent).
+async fn start_server(
+    state_arc: Arc<Mutex<Inner>>,
+    port: u16,
+    token: String,
+    emit: EventSink,
+) -> Result<(u16, bool), String> {
     {
-        let inner = state.inner.lock().await;
+        let inner = state_arc.lock().await;
         if inner.running {
-            return Ok(inner.port);
+            return Ok((inner.port, false));
         }
     }
 
@@ -213,12 +239,10 @@ pub async fn network_start_master(
         .await
         .map_err(|e| e.to_string())?;
     let bound_port = listener.local_addr().map_err(|e| e.to_string())?.port();
-
     let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel::<()>();
-    let mdns = register_mdns(&master_id, &master_name, bound_port);
 
     {
-        let mut inner = state.inner.lock().await;
+        let mut inner = state_arc.lock().await;
         inner.running = true;
         inner.token = token.clone();
         inner.port = bound_port;
@@ -226,16 +250,9 @@ pub async fn network_start_master(
         inner.connections.clear();
         inner.failures = HelloFailures::default();
         inner.next_id = 0;
-        if let Some((daemon, fullname)) = mdns {
-            inner.mdns = Some(daemon);
-            inner.mdns_fullname = Some(fullname);
-        }
     }
 
-    let state_arc = state.inner.clone();
-    let app_handle = app.clone();
     let expected_token = token;
-
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::select! {
@@ -255,10 +272,10 @@ pub async fn network_start_master(
                                 }
                             }
                             let state_arc = state_arc.clone();
-                            let app_handle = app_handle.clone();
+                            let emit = emit.clone();
                             let expected_token = expected_token.clone();
                             tauri::async_runtime::spawn(async move {
-                                handle_connection(stream, addr, state_arc, app_handle, expected_token).await;
+                                handle_connection(stream, addr, state_arc, emit, expected_token).await;
                             });
                         }
                         Err(_) => break,
@@ -268,14 +285,14 @@ pub async fn network_start_master(
         }
     });
 
-    Ok(bound_port)
+    Ok((bound_port, true))
 }
 
 async fn handle_connection(
     stream: TcpStream,
     addr: SocketAddr,
     state_arc: Arc<Mutex<Inner>>,
-    app_handle: AppHandle,
+    emit: EventSink,
     expected_token: String,
 ) {
     let config = WebSocketConfig {
@@ -317,7 +334,7 @@ async fn handle_connection(
     // Un seul writer par connexion : évite un accès concurrent au Sink
     // WebSocket (qui n'est pas conçu pour être écrit depuis plusieurs
     // endroits à la fois).
-    let writer_task = tauri::async_runtime::spawn(async move {
+    let mut writer_task = tauri::async_runtime::spawn(async move {
         while let Some(text) = rx.recv().await {
             if write.send(Message::Text(text)).await.is_err() {
                 break;
@@ -327,18 +344,40 @@ async fn handle_connection(
 
     let mut authenticated = false;
 
+    // Résultat d'une attente : un message (ou la fin du flux), le délai du `hello` dépassé,
+    // ou l'arrêt du serveur.
+    enum Wait {
+        Frame(Option<Result<Message, tokio_tungstenite::tungstenite::Error>>),
+        HelloTimedOut,
+        ServerStopped,
+    }
+
     loop {
-        // Tant que le `hello` n'est pas arrivé, on n'attend que HELLO_TIMEOUT.
-        let next = if authenticated {
-            read.next().await
-        } else {
-            match tokio::time::timeout(HELLO_TIMEOUT, read.next()).await {
-                Ok(next) => next,
-                Err(_) => {
-                    state_arc.lock().await.failures.register_failure(addr.ip(), Instant::now());
-                    break;
+        // Tant que le `hello` n'est pas arrivé, on n'attend que HELLO_TIMEOUT. Quand le
+        // serveur s'arrête, `stop_server` vide la table des connexions : l'émetteur de cette
+        // connexion disparaît, le writer se termine, et la lecture doit s'arrêter avec lui —
+        // sans quoi une connexion déjà authentifiée continuait de relayer ses messages
+        // à l'application après l'arrêt du Maître.
+        let waited = tokio::select! {
+            _ = &mut writer_task => Wait::ServerStopped,
+            frame = async {
+                if authenticated {
+                    Wait::Frame(read.next().await)
+                } else {
+                    match tokio::time::timeout(HELLO_TIMEOUT, read.next()).await {
+                        Ok(next) => Wait::Frame(next),
+                        Err(_) => Wait::HelloTimedOut,
+                    }
                 }
+            } => frame,
+        };
+        let next = match waited {
+            Wait::ServerStopped => break,
+            Wait::HelloTimedOut => {
+                state_arc.lock().await.failures.register_failure(addr.ip(), Instant::now());
+                break;
             }
+            Wait::Frame(next) => next,
         };
         let Some(msg) = next else { break };
         let msg = match msg {
@@ -359,21 +398,10 @@ async fn handle_connection(
             }
             state_arc.lock().await.failures.register_success(addr.ip());
             authenticated = true;
-            let _ = app_handle.emit(
-                "network:master-event",
-                MasterEvent::Connected {
-                    connection_id: connection_id.clone(),
-                },
-            );
+            emit(MasterEvent::Connected { connection_id: connection_id.clone(), });
         }
 
-        let _ = app_handle.emit(
-            "network:master-event",
-            MasterEvent::Message {
-                connection_id: connection_id.clone(),
-                raw: text,
-            },
-        );
+        emit(MasterEvent::Message { connection_id: connection_id.clone(), raw: text, });
     }
 
     {
@@ -383,10 +411,7 @@ async fn handle_connection(
     writer_task.abort();
 
     if authenticated {
-        let _ = app_handle.emit(
-            "network:master-event",
-            MasterEvent::Disconnected { connection_id },
-        );
+        emit(MasterEvent::Disconnected { connection_id });
     }
 }
 
@@ -394,7 +419,12 @@ async fn handle_connection(
 /// Idempotent.
 #[tauri::command]
 pub async fn network_stop_master(state: State<'_, MasterServerState>) -> Result<(), String> {
-    let mut inner = state.inner.lock().await;
+    stop_server(&state.inner).await;
+    Ok(())
+}
+
+async fn stop_server(state_arc: &Arc<Mutex<Inner>>) {
+    let mut inner = state_arc.lock().await;
     if let Some(shutdown) = inner.shutdown.take() {
         let _ = shutdown.send(());
     }
@@ -406,7 +436,6 @@ pub async fn network_stop_master(state: State<'_, MasterServerState>) -> Result<
         }
         let _ = daemon.shutdown();
     }
-    Ok(())
 }
 
 /// Port par défaut sur lequel le Master écoute — voir [DEFAULT_MASTER_PORT].
@@ -519,5 +548,185 @@ mod tests {
         f.register_success(ip(3));
         f.register_failure(ip(3), t0);
         assert!(!f.is_banned(ip(3), t0));
+    }
+}
+
+// Tests d'intégration du serveur sur de VRAIES connexions TCP/WebSocket (client
+// tokio-tungstenite) : jeton, bannissement, délai de poignée de main, taille des
+// messages, plafond de connexions, arrêt. Aucun runtime Tauri n'est nécessaire.
+#[cfg(test)]
+mod integration {
+    use super::*;
+    use std::sync::Mutex as StdMutex;
+    use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+
+    const TOKEN: &str = "0123456789abcdef0123456789abcdef";
+    type Client = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+    struct Harness {
+        state: Arc<Mutex<Inner>>,
+        port: u16,
+        seen: Arc<StdMutex<Vec<String>>>,
+    }
+
+    fn harness() -> Harness {
+        let seen = Arc::new(StdMutex::new(Vec::new()));
+        let sink = seen.clone();
+        let emit: EventSink = Arc::new(move |event| sink.lock().unwrap().push(serde_json::to_string(&event).unwrap()));
+        let state = Arc::new(Mutex::new(Inner::default()));
+        let (port, started) = tauri::async_runtime::block_on(start_server(state.clone(), 0, TOKEN.to_string(), emit)).expect("demarrage");
+        assert!(started);
+        Harness { state, port, seen }
+    }
+
+    fn url(h: &Harness) -> String {
+        format!("ws://127.0.0.1:{}", h.port)
+    }
+
+    fn hello(token: &str) -> String {
+        format!(r#"{{"type":"hello","payload":{{"token":"{token}","deviceId":"d","deviceName":"n"}},"correlationId":"c"}}"#)
+    }
+
+    // Vrai si le serveur ferme (ou coupe) la connexion dans le délai donné.
+    async fn closed_within(ws: &mut Client, ms: u64) -> bool {
+        loop {
+            match tokio::time::timeout(Duration::from_millis(ms), ws.next()).await {
+                Err(_) => return false,
+                Ok(None) | Ok(Some(Err(_))) | Ok(Some(Ok(Message::Close(_)))) => return true,
+                Ok(Some(Ok(_))) => continue,
+            }
+        }
+    }
+
+    #[test]
+    fn start_is_idempotent() {
+        let h = harness();
+        let emit: EventSink = Arc::new(|_| {});
+        let (port, started) = tauri::async_runtime::block_on(start_server(h.state.clone(), 0, TOKEN.to_string(), emit)).unwrap();
+        assert_eq!(port, h.port);
+        assert!(!started, "un second demarrage ne doit pas relancer un serveur");
+    }
+
+    #[test]
+    fn wrong_token_is_closed_without_event_then_the_address_is_banned() {
+        let h = harness();
+        tauri::async_runtime::block_on(async {
+            for _ in 0..BAN_AFTER_FAILURES {
+                let (mut ws, _) = connect_async(url(&h)).await.expect("connexion");
+                ws.send(Message::Text(hello("mauvais-jeton"))).await.unwrap();
+                assert!(closed_within(&mut ws, 3000).await, "un mauvais jeton doit couper la connexion");
+            }
+            // Adresse écartée : la connexion est coupée avant même la poignée de main WebSocket.
+            assert!(connect_async(url(&h)).await.is_err(), "une adresse bannie ne doit plus pouvoir se connecter");
+        });
+        assert!(h.seen.lock().unwrap().is_empty(), "aucun evenement ne doit atteindre l'application sans jeton valide");
+    }
+
+    #[test]
+    fn valid_hello_is_relayed_then_messages_flow_both_ways() {
+        let h = harness();
+        tauri::async_runtime::block_on(async {
+            let (mut ws, _) = connect_async(url(&h)).await.unwrap();
+            ws.send(Message::Text(hello(TOKEN))).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            {
+                let got = h.seen.lock().unwrap();
+                assert!(got.iter().any(|e| e.contains("connected")), "evenement connected attendu : {got:?}");
+                assert!(got.iter().any(|e| e.contains("message") && e.contains("hello")), "le hello doit etre relaye : {got:?}");
+            }
+            // Serveur -> client : network_send_to_worker passe par la table des connexions.
+            let id = h.state.lock().await.connections.keys().next().cloned().expect("connexion enregistree");
+            h.state.lock().await.connections.get(&id).unwrap().sender.send("bonjour".to_string()).unwrap();
+            let reply = tokio::time::timeout(Duration::from_secs(2), ws.next()).await.expect("reponse").unwrap().unwrap();
+            assert_eq!(reply, Message::Text("bonjour".to_string()));
+            // Client -> serveur : un message applicatif est relayé.
+            ws.send(Message::Text(r#"{"type":"ping"}"#.to_string())).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            assert!(h.seen.lock().unwrap().iter().any(|e| e.contains("ping")));
+        });
+    }
+
+    #[test]
+    fn an_oversized_message_closes_the_connection() {
+        let h = harness();
+        tauri::async_runtime::block_on(async {
+            let (mut ws, _) = connect_async(url(&h)).await.unwrap();
+            ws.send(Message::Text(hello(TOKEN))).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let huge = format!(r#"{{"type":"sync","payload":{{"x":"{}"}}}}"#, "a".repeat(3 * 1024 * 1024));
+            let _ = ws.send(Message::Text(huge)).await;
+            assert!(closed_within(&mut ws, 5000).await, "un message geant doit couper la connexion");
+        });
+    }
+
+    #[test]
+    fn a_silent_connection_is_dropped_after_the_hello_timeout() {
+        let h = harness();
+        tauri::async_runtime::block_on(async {
+            let (mut ws, _) = connect_async(url(&h)).await.unwrap();
+            // HELLO_TIMEOUT vaut 800 ms en test : sans hello, le serveur coupe.
+            assert!(closed_within(&mut ws, 4000).await, "une connexion muette doit etre coupee");
+        });
+    }
+
+    #[test]
+    fn a_tcp_connection_that_never_speaks_websocket_is_dropped() {
+        let h = harness();
+        tauri::async_runtime::block_on(async {
+            let mut raw = TcpStream::connect(("127.0.0.1", h.port)).await.unwrap();
+            let mut buf = [0u8; 16];
+            let closed = tokio::time::timeout(Duration::from_secs(4), tokio::io::AsyncReadExt::read(&mut raw, &mut buf)).await;
+            assert!(matches!(closed, Ok(Ok(0)) | Ok(Err(_))), "la connexion TCP muette doit etre coupee par le serveur : {closed:?}");
+        });
+    }
+
+    #[test]
+    fn an_oversized_first_message_is_refused_even_with_the_right_token() {
+        let h = harness();
+        tauri::async_runtime::block_on(async {
+            let (mut ws, _) = connect_async(url(&h)).await.unwrap();
+            let padded = format!(
+                r#"{{"type":"hello","payload":{{"token":"{TOKEN}","pad":"{}"}}}}"#,
+                "p".repeat(MAX_HELLO_BYTES + 100)
+            );
+            ws.send(Message::Text(padded)).await.unwrap();
+            assert!(closed_within(&mut ws, 3000).await);
+        });
+        assert!(h.seen.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_server_refuses_connections_beyond_the_cap() {
+        let h = harness();
+        tauri::async_runtime::block_on(async {
+            let mut open = Vec::new();
+            for _ in 0..MAX_CONNECTIONS {
+                let (mut ws, _) = connect_async(url(&h)).await.expect("sous le plafond");
+                ws.send(Message::Text(hello(TOKEN))).await.unwrap();
+                open.push(ws);
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            assert!(connect_async(url(&h)).await.is_err(), "la connexion au-dela du plafond doit etre refusee");
+            drop(open);
+        });
+    }
+
+    #[test]
+    fn stopping_the_server_refuses_new_connections_and_cuts_existing_ones() {
+        let h = harness();
+        tauri::async_runtime::block_on(async {
+            let (mut ws, _) = connect_async(url(&h)).await.unwrap();
+            ws.send(Message::Text(hello(TOKEN))).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            stop_server(&h.state).await;
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            assert!(connect_async(url(&h)).await.is_err(), "apres l'arret plus aucune connexion ne doit aboutir");
+            let before = h.seen.lock().unwrap().len();
+            let _ = ws.send(Message::Text(r#"{"type":"sync","payload":{}}"#.to_string())).await;
+            let cut = closed_within(&mut ws, 3000).await;
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            assert!(cut, "une connexion deja ouverte doit etre coupee a l'arret du serveur");
+            assert_eq!(h.seen.lock().unwrap().len(), before, "plus aucun message ne doit etre relaye apres l'arret");
+        });
     }
 }
