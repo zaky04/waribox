@@ -26,8 +26,12 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
 
   if (error) {
     return (
-      <div style={{ padding: 24, color: "var(--color-danger)" }}>
-        {t("database.initError", { error })}
+      <div role="alert" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 12, maxWidth: 560 }}>
+        <span style={{ color: "var(--color-danger)" }}>{t("database.initError", { error })}</span>
+        <span style={{ color: "var(--color-text-muted)" }}>{t("database.initErrorHint")}</span>
+        <div>
+          <button onClick={() => window.location.reload()}>{t("database.reload")}</button>
+        </div>
       </div>
     );
   }

@@ -1,45 +1,51 @@
-import { InventoryPage } from "../features/inventory/InventoryPage";
-import { ApprovalsPage } from "../features/approval/ApprovalsPage";
-import { ControlsPage } from "../features/controls/ControlsPage";
 import { ApprovalProvider } from "../features/approval/ApprovalProvider";
 import { getSettings, listStores } from "@gestion-boutique/core";
 import { i18next, setCurrency } from "@gestion-boutique/i18n";
 import { schema } from "@gestion-boutique/database";
-import { useEffect, useRef, useState } from "react";
-import { I18nextProvider } from "react-i18next";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { I18nextProvider, useTranslation } from "react-i18next";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { UpdateBanner } from "../components/UpdateBanner";
 import { applyAppearance } from "../lib/appearance";
 import { useLanguageStore } from "../stores/language";
 import { useThemeStore } from "../stores/theme";
 import { BusinessHeader } from "./BusinessHeader";
-import { AccountingPage } from "../features/accounting/AccountingPage";
 import { AuthGate } from "../features/auth/AuthGate";
 import { NetworkProvider } from "../features/network/NetworkProvider";
 import { TopBar } from "../features/auth/TopBar";
 import { useAuth } from "../features/auth/useAuth";
 import { useIdleLock } from "../features/auth/useIdleLock";
-import { CreditsPage } from "../features/credits/CreditsPage";
-import { CustomersPage } from "../features/customers/CustomersPage";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
-import { DebtsPage } from "../features/debts/DebtsPage";
-import { ExpensesPage } from "../features/expenses/ExpensesPage";
-import { JournalsPage } from "../features/journals/JournalsPage";
-import { ProductsPage } from "../features/products/ProductsPage";
-import { PromotionsPage } from "../features/promotions/PromotionsPage";
-import { PurchasesPage } from "../features/purchases/PurchasesPage";
-import { QuotesPage } from "../features/quotes/QuotesPage";
-import { ReportsPage } from "../features/reports/ReportsPage";
-import { SalesHistoryPage } from "../features/sales/SalesHistoryPage";
-import { SalesPage } from "../features/sales/SalesPage";
-import { ServiceOrdersPage } from "../features/serviceOrders/ServiceOrdersPage";
-import { SettingsPage } from "../features/settings/SettingsPage";
 import { useBackupScheduler } from "../features/settings/useBackupScheduler";
 import { useFneQueue } from "../features/fne/useFneQueue";
-import { StockPage } from "../features/stock/StockPage";
-import { SuppliersPage } from "../features/suppliers/SuppliersPage";
-import { UsersPage } from "../features/users/UsersPage";
 import { DatabaseProvider, useDatabase } from "./DatabaseProvider";
 import { Nav, type ModuleTab, type NavTab } from "./Nav";
+
+// Chaque page est chargée à la demande : le premier affichage n'embarque plus
+// tout le code de l'application (2,3 Mo d'un seul bloc), ce qui compte sur un
+// téléphone d'entrée de gamme. Hors ligne rien ne change : le service worker
+// met tous les morceaux en cache à l'installation.
+const InventoryPage = lazy(() => import("../features/inventory/InventoryPage").then((m) => ({ default: m.InventoryPage })));
+const ApprovalsPage = lazy(() => import("../features/approval/ApprovalsPage").then((m) => ({ default: m.ApprovalsPage })));
+const ControlsPage = lazy(() => import("../features/controls/ControlsPage").then((m) => ({ default: m.ControlsPage })));
+const AccountingPage = lazy(() => import("../features/accounting/AccountingPage").then((m) => ({ default: m.AccountingPage })));
+const CreditsPage = lazy(() => import("../features/credits/CreditsPage").then((m) => ({ default: m.CreditsPage })));
+const CustomersPage = lazy(() => import("../features/customers/CustomersPage").then((m) => ({ default: m.CustomersPage })));
+const DebtsPage = lazy(() => import("../features/debts/DebtsPage").then((m) => ({ default: m.DebtsPage })));
+const ExpensesPage = lazy(() => import("../features/expenses/ExpensesPage").then((m) => ({ default: m.ExpensesPage })));
+const JournalsPage = lazy(() => import("../features/journals/JournalsPage").then((m) => ({ default: m.JournalsPage })));
+const ProductsPage = lazy(() => import("../features/products/ProductsPage").then((m) => ({ default: m.ProductsPage })));
+const PromotionsPage = lazy(() => import("../features/promotions/PromotionsPage").then((m) => ({ default: m.PromotionsPage })));
+const PurchasesPage = lazy(() => import("../features/purchases/PurchasesPage").then((m) => ({ default: m.PurchasesPage })));
+const QuotesPage = lazy(() => import("../features/quotes/QuotesPage").then((m) => ({ default: m.QuotesPage })));
+const ReportsPage = lazy(() => import("../features/reports/ReportsPage").then((m) => ({ default: m.ReportsPage })));
+const SalesHistoryPage = lazy(() => import("../features/sales/SalesHistoryPage").then((m) => ({ default: m.SalesHistoryPage })));
+const SalesPage = lazy(() => import("../features/sales/SalesPage").then((m) => ({ default: m.SalesPage })));
+const ServiceOrdersPage = lazy(() => import("../features/serviceOrders/ServiceOrdersPage").then((m) => ({ default: m.ServiceOrdersPage })));
+const SettingsPage = lazy(() => import("../features/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })));
+const StockPage = lazy(() => import("../features/stock/StockPage").then((m) => ({ default: m.StockPage })));
+const SuppliersPage = lazy(() => import("../features/suppliers/SuppliersPage").then((m) => ({ default: m.SuppliersPage })));
+const UsersPage = lazy(() => import("../features/users/UsersPage").then((m) => ({ default: m.UsersPage })));
 
 type Store = typeof schema.stores.$inferSelect;
 
@@ -54,6 +60,7 @@ const DEFAULT_ENABLED_MODULES: Record<ModuleTab, boolean> = {
 };
 
 function MainContent() {
+  const { t } = useTranslation();
   const db = useDatabase();
   const { user } = useAuth();
   const [tab, setTab] = useState<NavTab>("dashboard");
@@ -162,6 +169,8 @@ function MainContent() {
           logoDataUrl={logoDataUrl}
         />
         <div className="app-content">
+      <ErrorBoundary resetKey={tab}>
+      <Suspense fallback={<div style={{ padding: 24 }}>{t("app.pageLoading")}</div>}>
       {tab === "dashboard" && <DashboardPage onNavigate={setTab} />}
       {tab === "sales" && enabledModules.sales && <SalesPage />}
       {tab === "sales_history" && enabledModules.sales && <SalesHistoryPage />}
@@ -186,6 +195,8 @@ function MainContent() {
       {tab === "appearance" && <SettingsPage section="appearance" />}
       {tab === "users" && <UsersPage />}
       {tab === "journals" && <JournalsPage />}
+      </Suspense>
+      </ErrorBoundary>
         </div>
       </div>
     </ApprovalProvider>
@@ -204,13 +215,15 @@ export function App() {
   return (
     <I18nextProvider i18n={i18next}>
       <UpdateBanner />
-      <DatabaseProvider>
-        <NetworkProvider>
-          <AuthGate>
-          <MainContent />
-        </AuthGate>
-        </NetworkProvider>
-      </DatabaseProvider>
+      <ErrorBoundary>
+        <DatabaseProvider>
+          <NetworkProvider>
+            <AuthGate>
+              <MainContent />
+            </AuthGate>
+          </NetworkProvider>
+        </DatabaseProvider>
+      </ErrorBoundary>
     </I18nextProvider>
   );
 }
