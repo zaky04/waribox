@@ -1,6 +1,9 @@
 import { FocusCodeSection } from "../focus/FocusCodeSection";
 import {
+  BackupDecryptionError,
   CONTROL_PROFILE_IDS,
+  decryptBackup,
+  isEncryptedBackup,
   emitFneQueued,
   getControlProfile,
   FNE_TEST_BASE_URL,
@@ -50,6 +53,7 @@ import { NetworkSection } from "../network/NetworkSection";
 import type { AppearanceOptions } from "../../lib/appearance";
 import { StoresSection } from "../stores/StoresSection";
 import { runGoogleDriveBackup, runLocalBackup } from "./backupRunner";
+import { getBackupPassphrase, protectBackup, setBackupPassphrase } from "./backupPassphrase";
 import { resizeImageToDataUrl } from "./imageUtils";
 import { ServiceTariffsSection } from "./ServiceTariffsSection";
 import { SyscohadaAccountsSection } from "./SyscohadaAccountsSection";
@@ -247,6 +251,12 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
   const [importError, setImportError] = useState<string | null>(null);
   const [importInfo, setImportInfo] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  // Chiffrement des sauvegardes (mot de passe gardé sur cet appareil, voir backupPassphrase.ts).
+  const [backupPassphraseSet, setBackupPassphraseSet] = useState(() => getBackupPassphrase() !== null);
+  const [passphraseDraft, setPassphraseDraft] = useState("");
+  // Sauvegarde chiffrée choisie à l'import, en attente de son mot de passe.
+  const [pendingEncrypted, setPendingEncrypted] = useState<Uint8Array | null>(null);
+  const [importPassphrase, setImportPassphrase] = useState("");
 
   const [maintenanceCodeSet, setMaintenanceCodeSet] = useState(false);
   // Menu Modules protégé par le code de maintenance (vendeur/support) : le
@@ -600,7 +610,7 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
     setDownloadBackupError(null);
     setDownloadingBackup(true);
     try {
-      const { bytes, filename } = await exportDatabaseFile();
+      const { bytes, filename } = await protectBackup(await exportDatabaseFile());
       await saveGeneratedFile(new Blob([new Uint8Array(bytes)]), filename);
       await recordBackup(db, { destination: "local", fileRef: filename, status: "success" });
       await refresh();
@@ -628,6 +638,19 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
     }
   };
 
+  // Restaure des octets de base SQLite déjà en clair (déchiffrés si besoin).
+  const restoreFromBytes = async (bytes: Uint8Array) => {
+    const { previousBytes } = await restoreBackupFromFile(bytes, user?.permissions ?? {});
+    // Filet de sécurité : l'état d'avant l'import reste téléchargeable
+    // immédiatement si la sauvegarde importée s'avère finalement inadaptée
+    // une fois la page rechargée.
+    const safety = await protectBackup({ bytes: previousBytes, filename: `avant-import-${timestampForFilename()}.sqlite3` });
+    await saveGeneratedFile(new Blob([new Uint8Array(safety.bytes)]), safety.filename);
+    setImportInfo(t("settings.backups.importSuccess"));
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    window.location.reload();
+  };
+
   const handleImportBackup = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -637,21 +660,63 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
     }
     setImportError(null);
     setImportInfo(null);
+    setPendingEncrypted(null);
     setImporting(true);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const { previousBytes } = await restoreBackupFromFile(bytes, user?.permissions ?? {});
-      // Filet de sécurité : l'état d'avant l'import reste téléchargeable
-      // immédiatement si la sauvegarde importée s'avère finalement inadaptée
-      // une fois la page rechargée.
-      await saveGeneratedFile(new Blob([new Uint8Array(previousBytes)]), `avant-import-${timestampForFilename()}.sqlite3`);
-      setImportInfo(t("settings.backups.importSuccess"));
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      window.location.reload();
+      if (isEncryptedBackup(bytes)) {
+        // Le mot de passe de cet appareil d'abord ; sinon on le demande.
+        const saved = getBackupPassphrase();
+        if (saved) {
+          let plain: Uint8Array | null = null;
+          try {
+            plain = await decryptBackup(bytes, saved);
+          } catch (err) {
+            if (!(err instanceof BackupDecryptionError)) throw err;
+          }
+          if (plain) {
+            await restoreFromBytes(plain);
+            return;
+          }
+        }
+        setPendingEncrypted(bytes);
+        setImporting(false);
+        return;
+      }
+      await restoreFromBytes(bytes);
     } catch (err) {
       setImportError(describeError(err, t("settings.errors.import")));
       setImporting(false);
     }
+  };
+
+  const handleImportEncrypted = async () => {
+    if (!pendingEncrypted) return;
+    setImportError(null);
+    setImporting(true);
+    try {
+      await restoreFromBytes(await decryptBackup(pendingEncrypted, importPassphrase));
+    } catch (err) {
+      setImportError(err instanceof BackupDecryptionError ? t("settings.backups.encryption.wrongPassphrase") : describeError(err, t("settings.errors.import")));
+      setImporting(false);
+    }
+  };
+
+  const handleSaveBackupPassphrase = () => {
+    if (passphraseDraft.length < 8) {
+      setBackupError(t("settings.backups.encryption.tooShort"));
+      return;
+    }
+    setBackupError(null);
+    setBackupPassphrase(passphraseDraft);
+    setBackupPassphraseSet(true);
+    setPassphraseDraft("");
+  };
+
+  const handleDisableBackupEncryption = () => {
+    if (!window.confirm(t("settings.backups.encryption.disableConfirm"))) return;
+    setBackupPassphrase(null);
+    setBackupPassphraseSet(false);
   };
 
   const handleSaveMaintenanceCode = async () => {
@@ -1742,6 +1807,35 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
         </div>
 
         <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
+          <strong style={{ fontSize: 14 }}>{t("settings.backups.encryption.heading")}</strong>
+          <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("settings.backups.encryption.hint")}</p>
+          {backupPassphraseSet ? (
+            <>
+              <p style={{ color: "var(--color-success)", fontSize: 13 }}>{t("settings.backups.encryption.active")}</p>
+              <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("settings.backups.encryption.warning")}</p>
+              <button
+                type="button"
+                style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)" }}
+                onClick={handleDisableBackupEncryption}
+              >
+                {t("settings.backups.encryption.disable")}
+              </button>
+            </>
+          ) : (
+            <>
+              <label>
+                {t("settings.backups.encryption.passphrase")}
+                <input style={inputStyle} type="password" autoComplete="new-password" value={passphraseDraft} onChange={(e) => setPassphraseDraft(e.target.value)} />
+              </label>
+              <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("settings.backups.encryption.warning")}</p>
+              <button type="button" style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14 }} onClick={handleSaveBackupPassphrase} disabled={!passphraseDraft}>
+                {t("settings.backups.encryption.enable")}
+              </button>
+            </>
+          )}
+        </div>
+
+        <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
           <strong style={{ fontSize: 14 }}>{t("settings.backups.importHeading")}</strong>
           <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("settings.backups.importHint")}</p>
           <label
@@ -1759,12 +1853,23 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
             {importing ? t("settings.backups.importing") : t("settings.backups.import")}
             <input
               type="file"
-              accept=".sqlite3"
+              accept=".sqlite3,.enc"
               onChange={handleImportBackup}
               disabled={importing}
               style={{ display: "none" }}
             />
           </label>
+          {pendingEncrypted && (
+            <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <label style={{ flex: "1 1 220px" }}>
+                {t("settings.backups.encryption.importPassphrase")}
+                <input style={inputStyle} type="password" autoComplete="off" value={importPassphrase} onChange={(e) => setImportPassphrase(e.target.value)} />
+              </label>
+              <button type="button" style={{ ...primaryButtonStyle, padding: "8px 14px", fontSize: 14 }} onClick={handleImportEncrypted} disabled={importing || !importPassphrase}>
+                {t("settings.backups.encryption.decryptAndRestore")}
+              </button>
+            </div>
+          )}
           {importError && <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{importError}</p>}
           {importInfo && <p style={{ color: "var(--color-success)", fontSize: 13 }}>{importInfo}</p>}
         </div>

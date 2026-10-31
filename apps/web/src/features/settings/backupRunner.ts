@@ -10,6 +10,7 @@ import {
   writeBackupFile,
   writeToAndroidDownloads,
 } from "@gestion-boutique/sync";
+import { protectBackup } from "./backupPassphrase";
 
 export async function runLocalBackup(db: Database): Promise<void> {
   // Sur Android, showDirectoryPicker n'est pas implémenté nativement (voir
@@ -33,7 +34,7 @@ export async function runLocalBackup(db: Database): Promise<void> {
   }
 
   try {
-    const { bytes, filename } = await exportDatabaseFile();
+    const { bytes, filename } = await protectBackup(await exportDatabaseFile());
     if (useNative) {
       await writeToAndroidDownloads(filename, bytes);
     } else if (handle) {
@@ -53,7 +54,7 @@ export async function runLocalBackup(db: Database): Promise<void> {
 export async function runGoogleDriveBackup(db: Database, clientId: string): Promise<void> {
   try {
     const accessToken = await requestGoogleDriveAccessToken(clientId);
-    const { bytes, filename } = await exportDatabaseFile();
+    const { bytes, filename } = await protectBackup(await exportDatabaseFile());
     await uploadToGoogleDrive(accessToken, filename, bytes);
     await recordBackup(db, { destination: "google_drive", fileRef: filename, status: "success" });
   } catch (err) {
