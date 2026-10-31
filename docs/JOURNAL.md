@@ -1,0 +1,4261 @@
+# Journal des décisions et travaux de WariBox
+
+Historique daté, du plus ancien au plus récent (l'état actuel et les conventions sont dans
+[CLAUDE.md](../CLAUDE.md)). Chaque entrée dit ce qui a été fait, ce qui a été vérifié et comment,
+et ce qui a été volontairement laissé de côté. À compléter à chaque changement structurant.
+
+### 2026-08-12 — Diagnostic environnement + sécurisation transactions + tests
+
+**Contexte** : reprise du projet après un renommage de dossier qui avait cassé
+l'environnement local (voir section Environnement ci-dessus). Après
+réinstallation, le build passait déjà sans erreur TypeScript — bon signal sur
+la qualité générale du code.
+
+**Risque identifié en relisant `SalesService.createSale` /
+`RefundsService.createRefund`** : `drizzle-orm/sqlite-proxy` n'a pas de
+transactions natives, et aucun service n'en utilisait — les opérations
+multi-étapes (vente : ligne de vente → mouvement de stock → paiement → crédit
+→ points fidélité) n'étaient pas atomiques. Risque réel bien que l'app soit
+single-user local : une exception en cours de séquence pouvait laisser un état
+partiel (stock décrémenté sans paiement enregistré, etc.), et deux appels
+concurrents pouvaient valider la même unité de stock avant qu'aucun n'écrive.
+
+**Fait** :
+- Ajouté `withTransaction()` dans
+  [client.ts](packages/database/src/client.ts) — `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK`
+  bruts envoyés au worker + verrou de sérialisation (connexion SQLite unique,
+  donc pas de vraie concurrence à gérer, juste éviter les transactions
+  imbriquées).
+- Enveloppé toute la séquence lecture-validation-écriture de `createSale` et
+  `createRefund` dedans (pas seulement les écritures — voir la convention
+  ci-dessus).
+- Installé `vitest` dans `packages/core` (rien n'existait avant) + 17 tests
+  unitaires sur les fonctions de calcul pures : `computeTaxAmount`,
+  `computeSaleItemTotal` (renommé depuis `computeItemTotal`, qui entrait en
+  conflit avec l'export du même nom dans `ServiceOrdersService.ts` — les deux
+  fonctions sont des duplications volontaires, voir leurs commentaires),
+  `pointsToDiscount`, `computeTier`, `allocateAcrossMagnitudes` (y compris un
+  test qui reproduit le scénario réel de remboursements partiels répétés).
+- Vérifié en conditions réelles dans le navigateur (pas juste le typecheck) :
+  création de compte → produit → entrée de stock → vente au comptoir → stock
+  décrémenté correctement → remboursement avec remise en stock → stock revenu
+  à sa valeur d'origine. Aucune erreur console/serveur à aucune étape.
+- Corrigé au passage : chemins absolus obsolètes dans `.claude/launch.json`,
+  `dev-web.cmd`, `preview-web.cmd` (voir section Environnement).
+
+**Pas fait / laissé de côté délibérément** (hors périmètre de cette session,
+à reprendre si besoin) :
+- Pas de transaction ajoutée sur `PurchasesService` (achats) — même risque
+  théorique, non traité faute de demande explicite.
+- Pas de tests d'intégration sur le rollback réel (nécessiterait un harnais
+  SQLite en mémoire compatible avec le type `Database` du proxy — pas fait
+  pour rester dans le périmètre demandé).
+- ESLint toujours non installé.
+
+### 2026-08-12 — Bug : le sélecteur de boutique ne suivait pas la désactivation du multi-boutique
+
+**Symptôme rapporté** : après avoir désactivé "Activer plusieurs boutiques"
+dans Paramètres, le sélecteur de boutique dans la barre du haut restait
+affiché un moment avant de disparaître.
+
+**Cause racine** : [StoreSwitcher.tsx](apps/web/src/features/stores/StoreSwitcher.tsx)
+chargeait `multiStoreEnabled` et la liste des boutiques **une seule fois, à
+son montage** (`useEffect` sans dépendance réactive). Comme il vit dans
+`TopBar`, monté une seule fois par session (jamais démonté au changement
+d'onglet), il ne se remettait à jour qu'au prochain démontage de tout l'arbre
+authentifié — concrètement, un verrouillage/déverrouillage de session (manuel
+ou automatique via `useIdleLock`), pas un simple délai. Les 5 autres endroits
+qui lisent `multiStoreEnabled` (Dashboard, Rapports, Journaux, Utilisateurs,
+`Nav` via `enabledModules`) n'ont pas ce problème : ils rechargent les
+paramètres à chaque montage, qui a lieu à chaque visite de leur onglet.
+
+**Fait** : aligné `StoreSwitcher` sur le pattern déjà en place pour `Nav` —
+`multiStoreEnabled` et la liste des boutiques sont maintenant chargés dans
+l'effet déjà existant de `MainContent` ([App.tsx](apps/web/src/app/App.tsx))
+qui tourne à chaque changement d'onglet, et passés en props à `TopBar` puis
+`StoreSwitcher` (qui ne fait plus sa propre lecture). Vérifié dans le
+navigateur : activation → sélecteur apparaît après changement d'onglet ;
+désactivation + sauvegarde → sélecteur disparaît dès le changement d'onglet
+suivant, sans verrouillage/déverrouillage.
+
+**Limite connue du correctif** : si l'utilisateur reste sur l'onglet
+Paramètres après avoir sauvegardé, le sélecteur ne se met pas à jour tant
+qu'il ne change pas d'onglet (l'effet ne tourne que sur `[db, tab]`). Pas
+gênant en pratique (le sélecteur n'est de toute façon pas visible depuis
+Paramètres dans le flux normal), mais à garder en tête si ce composant est
+retouché.
+
+### 2026-08-13 — Transactions achats, coût par lot pour la marge, runner de migrations, réappro, reçu WhatsApp
+
+**Contexte** : suite des 3 correctifs suggérés en fin de session précédente,
+plus deux nouvelles fonctionnalités (suggestion de réappro, envoi du reçu par
+WhatsApp). Un opérateur mobile money spécifique par transaction (4e piste
+proposée) a été explicitement écarté par le porteur du projet — pas fait.
+
+**Correctif 1 — Transaction sur les achats** : `PurchasesService.createPurchase`
+enveloppé dans `withTransaction()`, même modèle que `createSale`/`createRefund`.
+
+**Correctif 2 — Runner de migrations suivies** : nouvelle table `__migrations`
++ tableau `MIGRATIONS` dans [client.ts](packages/database/src/client.ts),
+chaque migration numérotée exécutée une seule fois, dans sa propre
+transaction, sans avaler les erreurs — voir la section *Base de données /
+migrations* ci-dessus pour la coexistence avec `MIGRATION_SQL` (legacy, gelé,
+inchangé pour ne rien casser sur les bases existantes).
+
+**Correctif 3 — Coût d'achat historisé par lot** :
+- `stock_batches.unitCost` (migration `id: 1`), renseigné par
+  `PurchasesService.createPurchase`, qui crée maintenant un lot par ligne
+  achetée (avant : le stock d'achat ne passait par aucun lot).
+- `ReportsService.getCostOfGoodsSoldBySaleAndVariant` calcule le coût réel à
+  partir des mouvements de vente et du lot d'où ils proviennent, avec repli
+  sur `products.purchasePrice` si lot inconnu — utilisé par
+  `getMarginsSummary` et `getProductMarginsBreakdown` (remplace l'ancien
+  calcul uniforme sur le prix d'achat courant). `allocateCostByQuantityShare`
+  (testée) répartit le coût au prorata si une même variante apparaît sur
+  plusieurs lignes d'une même vente.
+- **Bug trouvé et corrigé pendant la vérification navigateur** :
+  `StockService.transferStock` (Réserve ↔ Surface de vente) ne conservait pas
+  l'association au lot — un transfert perdait le lot d'origine, donc le
+  correctif ci-dessus ne s'appliquait jamais dans le flux normal
+  Achat → Réserve → Transfert → Surface de vente → Vente (la quasi-totalité
+  des ventes réelles). Corrigé en faisant suivre le même ordre FEFO que
+  `consumeStockFefo` côté source, avec création d'un lot "miroir" (même
+  coût/péremption) à l'emplacement de destination. Vérifié bout en bout dans
+  le navigateur : achat à 650/unité (prix catalogue 500) → transfert → vente
+  de 2 unités → rapport Marges affiche bien coût 1300 (2×650) et marge 700
+  (35%), pas 1000/50% (2×500) comme avant le correctif.
+
+**Fonctionnalité — Suggestions de réappro** : dans
+[PurchasesPage.tsx](apps/web/src/features/purchases/PurchasesPage.tsx),
+panneau listant les produits en stock bas (`getLowStockProducts`) avec une
+quantité suggérée (ramène au double du seuil d'alerte), un clic pré-remplit
+le panier d'achat existant — aucune nouvelle persistance, réutilise
+entièrement le flux `createPurchase` déjà en place.
+
+**Fonctionnalité — Reçu de vente par WhatsApp** :
+`buildReceiptWhatsAppMessage` dans [whatsapp.ts](apps/web/src/lib/whatsapp.ts)
+formate un message texte (l'app étant 100% locale sans serveur, pas de page
+de reçu à héberger — un message pré-rempli est la seule forme de "reçu
+numérique" possible ici). Bouton dans le bloc post-vente de
+[SalesPage.tsx](apps/web/src/features/sales/SalesPage.tsx), téléphone
+pré-rempli si un client enregistré avec un numéro est sélectionné, sinon
+saisie libre (couvre le client de passage, très fréquent en POS). Lien
+`wa.me` généré et contenu vérifiés dans le navigateur (URL et message
+interceptés via `window.open`).
+
+**Vérifié dans le navigateur**, pas juste le typecheck : le scénario complet
+achat/transfert/vente/marge ci-dessus, la suggestion de réappro (calcul de
+quantité + pré-remplissage du panier), et le lien WhatsApp généré. Aucune
+nouvelle erreur console à aucune étape (des erreurs résiduelles d'une
+expérimentation de debug ratée en cours de session — un second worker
+`db-worker.js` créé manuellement, qui est entré en conflit de verrou avec
+celui de l'app et a corrompu l'état OPFS de cet onglet — ont nécessité de
+recréer le compte de test une fois ; sans lien avec le code livré).
+
+**Pas fait / laissé de côté délibérément** :
+- Opérateur mobile money spécifique (Orange Money/MTN/Wave/Moov) par
+  transaction — écarté explicitement, non nécessaire selon le porteur du
+  projet.
+- ESLint toujours non installé.
+- Pas de test d'intégration automatisé sur `transferStock`/le flux
+  achat→marge (vérifié manuellement dans le navigateur, voir ci-dessus) —
+  nécessiterait le même harnais SQLite en mémoire déjà noté comme hors
+  périmètre à la session précédente.
+
+### 2026-08-13 — Alertes péremption WhatsApp, indicateur sauvegarde, étiquettes après achat, rapport de clôture de caisse
+
+**Contexte** : suite de la session précédente — 4 fonctionnalités proposées et
+validées par le porteur du projet, avec une exigence précise sur la 4e
+(visible Gérant/Propriétaire/Admin, traces d'ouverture/fermeture de caisse
+dans le journal).
+
+**Alerte WhatsApp péremptions proches** ([StockPage.tsx](apps/web/src/features/stock/StockPage.tsx)) :
+même pattern que l'alerte stock bas déjà en place (`handleNotifyLowStock`),
+réutilise le même numéro configuré (`business_settings.lowStockAlertPhone`) —
+pas de champ dédié supplémentaire. Vérifié : lien `wa.me` et message
+interceptés, contenu correct.
+
+**Indicateur "sauvegarde en retard"** ([DashboardPage.tsx](apps/web/src/features/dashboard/DashboardPage.tsx)) :
+nouvelle carte KPI utilisant `isBackupDue`/`listBackups` (déjà présents dans
+`BackupService.ts`, non exploités jusqu'ici pour ça) + `settings.backupFrequency`.
+Visible seulement pour `manage_settings` (Admin/Propriétaire) — aligné sur qui
+peut effectivement agir depuis Paramètres → Sauvegardes. Vérifié : affiche
+correctement "Jamais / En retard" sur une base sans sauvegarde.
+
+**Étiquettes après un achat** ([PurchasesPage.tsx](apps/web/src/features/purchases/PurchasesPage.tsx)) :
+le panier est capturé avant d'être vidé (`lastPurchaseLines`), un bouton dans
+le bloc post-achat régénère un PDF d'étiquettes (`buildLabelSheetPdf` +
+`ensureVariantBarcode`, même pattern que ProductsPage) avec une copie par
+unité reçue. Vérifié : PDF de 89 Ko généré sans erreur.
+
+**Rapport de clôture de caisse** (Rapports → onglet "Caisse", nouveau) :
+- `CashSessionService.listCashSessions` (nouveau) — historique des sessions,
+  ouvertes ou fermées, filtrable par période/boutique.
+- `buildCashSessionsReportPdf`/`Excel` dans `packages/reports`, même
+  convention que les autres rapports (`buildReportPdf`/`buildWorkbookBlob`).
+- Onglet gated au niveau de la page (comme Ventes/Trésorerie) — `view_reports`
+  suffit déjà à obtenir exactement Gérant/Propriétaire/Admin (Vendeur/Caissier
+  ne l'ont pas), donc aucun nouveau système de permission n'a été nécessaire
+  pour satisfaire l'exigence "visible par Gérant, Propriétaire, Admin".
+- **Traces d'ouverture/fermeture dans Journaux → Actions** : déjà
+  implémentées avant cette session (`CashSessionService.openSession`/`closeSession`
+  appellent déjà `logAction` avec `openingAmount`/`closingAmount`+`expectedAmount`+`difference`,
+  et `open_cash_session`/`close_cash_session` sont déjà dans `ACTION_LABELS`
+  de JournalsPage.tsx) — rien à coder, seulement vérifié dans le navigateur
+  que le format correspond à la demande ("tel jour, telle personne a ouvert
+  la caisse avec tel montant à telle heure et l'a fermé avec tel montant à
+  telle heure") : confirmé, ligne par ligne, avec écart calculé correctement
+  sur un test réel (ouverture 0 → vente 2000 en espèces → fermeture comptée à
+  1900 → écart -100 affiché aussi bien dans le rapport que dans le journal).
+
+**Pas fait / laissé de côté** :
+- Pas de mise en forme du timestamp de fermeture de session (`closedAt` est
+  stocké en ISO avec millisecondes par `closeSession`, `openedAt` en format
+  SQL `CURRENT_TIMESTAMP` — les deux s'affichent tels quels dans le rapport
+  Caisse, incohérents visuellement mais corrects). Pré-existant, hors
+  périmètre de cette session.
+- Repéré en passant : `update_product` n'a pas d'entrée dans `ACTION_LABELS`
+  (JournalsPage.tsx) et s'affiche donc en anglais brut dans Journaux → Actions,
+  contrairement à `create_product`. Pré-existant, pas corrigé (hors périmètre).
+
+### 2026-08-13 — Audit de sécurité : permissions manquantes côté service (défense en profondeur)
+
+**Contexte** : audit de sécurité demandé explicitement, portée large (auth,
+autorisation, injection, secrets, config Tauri...). Constat principal :
+`requirePermission` (défense en profondeur, garde contre un appel direct qui
+contournerait la restriction purement visuelle de l'UI — voir son commentaire
+dans [permissions.ts](packages/core/src/domain/permissions.ts)) n'était câblé
+que sur une poignée de services (Remboursements, Promotions, Boutiques,
+Paramètres, Sauvegardes, Maintenance) depuis l'origine du projet. **Tout le
+reste — ventes, achats, stock, produits, clients, fournisseurs, dépenses,
+devis, tickets de service, créances, dettes, sessions de caisse — n'avait
+aucune vérification de permission côté service**, uniquement des boutons
+cachés côté UI. Un commentaire du code lui-même
+([ServiceOrdersService.ts:257-259](packages/core/src/services/ServiceOrdersService.ts:257))
+documentait d'ailleurs le schéma de permissions *prévu* sans jamais l'avoir
+câblé — signe que ce n'était pas un choix délibéré mais un oubli systémique.
+
+**Fait** : `requirePermission`/`requireAnyPermission` ajoutés à toutes les
+fonctions de service qui écrivent des données, avec la permission qui
+correspond exactement à ce que l'UI vérifie déjà (pour ne rien changer au
+comportement observable) :
+
+| Service | Fonctions | Permission |
+|---|---|---|
+| SalesService | createSale | manage_sales |
+| PurchasesService | createPurchase | manage_suppliers (comme Nav) |
+| StockService | transferStock | manage_stock |
+| CashSessionService | openSession, closeSession | manage_sales |
+| ProductsService | createCategory/createProduct/createVariant/updateProduct/updateVariantBarcode | manage_products |
+| CustomersService | createCustomer | manage_customers |
+| CustomersService | updateCustomer | edit_customers |
+| SuppliersService | createSupplier | manage_suppliers |
+| SuppliersService | updateSupplier | edit_suppliers |
+| ExpensesService | createExpense | manage_expenses |
+| ExpensesService | updateExpense, deleteExpense | edit_expenses |
+| QuotesService | createQuote, convertQuoteToSale | manage_quotes |
+| QuotesService | updateQuoteStatus | edit_quotes |
+| ServiceOrdersService | createServiceOrder, updateServiceOrderItemStatus | manage_service_orders |
+| ServiceOrdersService | updateServiceOrder, updateServiceOrderItem | edit_service_orders |
+| DebtsService | recordDebtPayment | manage_debts |
+| CreditsService | recordCreditRepayment | manage_credits **ou** manage_service_orders |
+
+**Deux subtilités traitées explicitement** (pour ne pas casser des usages
+internes légitimes en gardant une fonction partagée) :
+- **Primitives partagées non gardées** : `StockService.recordMovement`/
+  `createBatch` et `CustomersService.insertCustomer` (nouvelle primitive
+  interne, extraite de `createCustomer`) restent volontairement sans
+  vérification — elles sont réutilisées par plusieurs flux de haut niveau
+  qui ont chacun leur propre permission déjà vérifiée (une vente crée un
+  client via `findOrCreateCustomerByName` sans que le caissier n'ait besoin
+  de `manage_customers`). Deux nouvelles fonctions dédiées,
+  `addManualStockEntry`/`recordStockLoss`, gardent spécifiquement les deux
+  actions manuelles de StockPage (qui appelaient ces primitives directement,
+  sans aucune garde).
+- **`requireAnyPermission`** (nouveau, dans permissions.ts) : pour
+  `recordCreditRepayment`, invoquée à la fois depuis Créances
+  (`manage_credits`) et depuis le suivi des tickets de service
+  (`manage_service_orders`, pour régler une créance née d'un ticket
+  partiellement payé) — une seule des deux permissions suffit.
+
+**Correctif additionnel** : `verifyMaintenanceCode` n'avait aucun
+anti-brute-force, contrairement au mot de passe/PIN (`MAX_FAILED_ATTEMPTS`/
+`LOCKOUT_MS` déjà dans AuthService). Ajouté le même mécanisme, avec deux
+nouvelles colonnes sur `business_settings` (migration `id: 2`, voir le
+runner de migrations mis en place à la session précédente).
+
+**Vérifié dans le navigateur**, pas juste le typecheck : créé un compte
+Admin + un compte Caissier, impersonation vers Caissier, ouverture de caisse
+et vente complète (VTE-2026-000001) réussies sans erreur — confirme que les
+nouvelles vérifications de permission ne cassent pas le travail quotidien
+d'un rôle restreint. Nav confirmée cohérente (Caissier ne voit que
+Accueil/Ventes/Devis). `pnpm run build` (rebuild forcé) et les 20 tests
+unitaires passent.
+
+**Autres constats de l'audit (pas de correctif nécessaire)** :
+- Hachage des mots de passe/PIN/code de maintenance : Argon2id, paramètres
+  conformes à la recommandation OWASP, sel aléatoire — voir
+  [hash.ts](packages/core/src/auth/hash.ts). Aucun changement nécessaire.
+- Aucune injection SQL trouvée — Drizzle ORM utilisé partout, aucune
+  concaténation de chaîne SQL avec une entrée utilisateur.
+- Aucun XSS trouvé — pas de `dangerouslySetInnerHTML`/`innerHTML`/`eval`
+  dans `apps/web/src`. Le logo (upload libre, y compris SVG) est rendu via
+  `<img src>`, pas `<object>`/inline DOM — un SVG malveillant n'y exécute
+  jamais de script.
+- Session non persistée (`stores/session.ts` est un store Zustand en
+  mémoire, rien en `localStorage`/`sessionStorage`) — un rechargement de
+  page exige une reconnexion, pas de jeton à voler.
+- CSP Tauri déjà correcte ([tauri.conf.json](apps/desktop/src-tauri/tauri.conf.json)) :
+  pas de `script-src 'unsafe-inline'`, scope `connect-src`/`frame-src`
+  limité à `self` + Google (nécessaire pour la sauvegarde Drive).
+- OAuth Google Drive : scope `drive.file` (l'app ne voit que les fichiers
+  qu'elle a elle-même créés, jamais tout le Drive), jeton en mémoire
+  uniquement.
+- `impersonateUser` (Admin/Propriétaire peuvent se connecter comme n'importe
+  qui sans mot de passe) est une fonctionnalité voulue et documentée
+  (dépannage), pas une faille — les deux rôles qui y ont accès ont de toute
+  façon déjà toutes les permissions.
+
+**Pas fait / laissé de côté** :
+- Permissions en lecture seule (ex. `view_accounting`, `view_reports` sur
+  les fonctions `get*`) non ajoutées côté service — seules les écritures ont
+  été gardées, cohérent avec le périmètre déjà établi par le code existant
+  (RefundsService etc. ne gardent que les mutations).
+- Pas de test automatisé sur le rejet effectif d'un appel sans permission
+  (vérifié par lecture de code + le même mécanisme déjà utilisé avec succès
+  ailleurs dans le projet), faute d'un harnais d'intégration — même limite
+  que le reste du projet (voir pistes ci-dessous).
+
+### 2026-08-13 — Analyse concurrentielle + veille réglementaire FNE (Côte d'Ivoire)
+
+**Contexte** : demande explicite d'analyser le marché concurrentiel et la
+logique interne de l'app pour proposer des améliorations. Recherche web
+réelle effectuée (pas de mémoire figée) sur 3 familles de concurrents :
+généralistes cloud (Loyverse/Square/Odoo POS), POS "Afrique offline"
+génériques (digabloPos, InkeepX, CliqPOS, TselevPOS), ERP/compta SYSCOHADA
+francophones (KiboERP, Nimba ERP, Madata, CassKai, DIAM POS, OdaSoft).
+
+**Constat le plus important — obligation légale, pas juste une feature** :
+la **Facture Normalisée Électronique (FNE)** est obligatoire en Côte d'Ivoire
+depuis le **1er décembre 2025**, pour toute entreprise sans exception de
+régime fiscal (pas seulement les assujetties à la TVA) — décret n°0337 du
+9 mai 2025, DGI. Sanctions : amendes jusqu'à 10M FCFA, attestation de
+régularité fiscale bloquée (donc accès aux marchés publics bloqué) sans
+inscription. WariBox a un export SYSCOHADA comptable périodique mais
+**aucune émission de facture certifiée FNE à la vente** — plusieurs
+concurrents directs (Madata, CassKai) en ont déjà fait un argument
+commercial. Non traité cette session : le porteur du projet n'a pas encore
+de compte DGI/clé API FNE, donc pas de vraie spec à coder contre (voir
+ci-dessous). **À reprendre dès qu'un compte DGI est disponible.**
+
+**Recherche technique sur l'API FNE** (pour préparer une future intégration) :
+pas de doc officielle exploitable à distance (PDF DGI illisible via fetch),
+mais le SDK PHP tiers non-officiel [PRODESTIC/fne-sdk-php](https://github.com/PRODESTIC/fne-sdk-php)
+donne la forme réelle de l'API :
+- Auth par clé API, obtenue dans l'espace entreprise **après validation par
+  la DGI** (pas un simple sign-up développeur) — environnements test/prod
+  distincts, URL de prod communiquée par la DGI à la validation.
+- Opérations : certification facture de vente, certification document
+  d'achat, note d'avoir (référence la facture d'origine).
+- Facture : template **B2C/B2B/B2F/B2G** (B2B exige le NCC du client),
+  lignes avec taux de taxe (`TAX_TVA` 18%, `TAX_TVAB` 9%, `TAX_TVAC`/`TAX_TVAD` 0%).
+- Réponse : numéro de facture normé + NCC + token QR code + **quota de
+  "stickers" restants** (pas illimité, à surveiller).
+- **Aucun mécanisme de file d'attente offline documenté** côté DGI (juste un
+  "retry automatique en cas d'erreur réseau") — à construire entièrement côté
+  WariBox si implémenté un jour : facture émise localement tout de suite
+  (comme aujourd'hui), statut "en attente de certification FNE", tentative en
+  tâche de fond au retour réseau.
+
+**Autres écarts identifiés vs le marché** (moins urgents, proposés mais pas
+retenus pour implémentation cette session — le porteur du projet a choisi de
+ne rien faire coder cette session, juste garder l'analyse) :
+- Réappro prédictif basé sur la vitesse de vente réelle (30 derniers jours)
+  plutôt que le seuil fixe actuel (`getLowStockProducts` — voir la feature
+  "Suggestions de réappro" de la session du 2026-08-13 précédente).
+- Sync multi-appareils temps réel (CRDT/local-first) — écart architectural
+  majeur, pas une simple feature : WariBox reste "un appareil = une base"
+  même en multi-boutique (le multi-boutique existe en données, pas en
+  synchronisation temps réel entre postes). Noté pour référence future
+  uniquement, aucune action engagée.
+
+**Pas fait / laissé de côté délibérément** :
+- Intégration FNE : bloquée faute de compte DGI réel pour tester contre la
+  vraie API — coder contre les specs déduites d'un SDK tiers non-officiel
+  serait risqué (probable réécriture au premier vrai test). Reprendre dès
+  qu'un accès DGI existe, idéalement avec le PDF officiel
+  `FNE-procedureapi.pdf` fourni en texte lisible plutôt qu'en PDF binaire.
+- Réappro prédictif et correctif `ACTION_LABELS` (`update_product`) :
+  proposés, non retenus pour cette session (porteur du projet : "rien pour
+  l'instant") — restent en piste ci-dessous.
+- Sync multi-appareils : hors périmètre, gros chantier d'architecture.
+
+### 2026-08-14 — Build Windows/Android/PWA + bug "mise à jour depuis Paramètres" ne fonctionne pas
+
+**Contexte** : demande de builder les trois cibles (Windows, Android, PWA),
+puis signalement d'un bug sur l'installation de mise à jour depuis
+Paramètres.
+
+**Build des trois cibles** — PWA (`pnpm build`), Windows (`pnpm
+build:desktop`) et Android (`pnpm --filter @gestion-boutique/desktop tauri
+android build`) tous fonctionnels, livrables rassemblés par `pnpm
+collect:releases` dans `releases/`. Deux obstacles rencontrés et corrigés,
+tous deux documentés dans la section *Environnement de dev* ci-dessus :
+chemins absolus obsolètes dans le cache Rust (`target/release` + les 4
+cibles Android), et absence de keystore de signature Android (un keystore de
+test a été généré, voir section Environnement).
+
+**Bug rapporté — "la mise à jour depuis les paramètres ne fonctionne pas"** :
+important de comprendre d'abord ce que cette fonctionnalité *n'est pas* : il
+n'existe **aucune mise à jour automatique** dans WariBox (pas de
+`tauri-plugin-updater`, pas de manifeste de releases, pas de vérification
+"nouvelle version disponible"). Ce que Paramètres propose
+([SettingsPage.tsx:1053](apps/web/src/features/settings/SettingsPage.tsx:1053))
+est un flux **manuel** : l'utilisateur choisit lui-même un `.exe`/`.msi` déjà
+présent sur le disque, saisit le code de maintenance, puis l'app lance ce
+fichier via `openPath` (`@tauri-apps/plugin-opener`) avant de se fermer.
+C'est comme ça depuis le tout premier commit, pas une régression.
+
+**Deux bugs distincts trouvés et corrigés** :
+1. **Message d'erreur inutile** : le pattern `err instanceof Error ?
+   err.message : "texte générique"`, répété à plusieurs endroits de
+   `SettingsPage.tsx`, avale le vrai message quand une commande Tauri rejette
+   avec une simple chaîne côté Rust (fréquent avec l'IPC Tauri) plutôt qu'un
+   objet `Error` JS — exactement ce qui se produisait ici. Ajouté un helper
+   `describeError()` (juste après `downloadBlob` dans SettingsPage.tsx) qui
+   récupère le message réel dans ces cas aussi ; appliqué aux deux points de
+   la chaîne mise à jour (`handlePickUpdateFile`, `handleInstallUpdate`).
+   **Seuls ces deux points ont été corrigés** — le même pattern existe à 8
+   autres endroits du fichier (sauvegarde, import, logo...), non touchés
+   (hors périmètre du bug signalé, voir piste ci-dessous).
+2. **Cause racine réelle, révélée par le correctif ci-dessus** : `"Not
+   allowed to open path"` — Tauri v2 distingue *permission* (le droit
+   d'appeler `open_path`) et *scope* (quels chemins elle peut ouvrir).
+   `opener:allow-open-path` était accordée dans
+   [capabilities/default.json](apps/desktop/src-tauri/capabilities/default.json)
+   **sans scope** — le schéma généré confirme explicitement que cette
+   permission seule active la commande "without any pre-configured scope",
+   donc scope vide = aucun chemin autorisé. Corrigé en ajoutant `"allow":
+   [{"path": "**"}]` à cette permission — un scope large est justifié ici
+   puisque la fonctionnalité laisse délibérément l'utilisateur choisir un
+   fichier n'importe où sur le disque (clé USB, Téléchargements, dossier
+   WhatsApp Desktop...).
+
+**Correctif additionnel — bloc "Installer une mise à jour" visible sur
+Android** : une fois Windows confirmé fonctionnel, question posée sur l'état
+des autres cibles. Réponse : la PWA a son propre vrai mécanisme de mise à
+jour (service worker + [UpdateBanner.tsx](apps/web/src/components/UpdateBanner.tsx),
+monté inconditionnellement dans `App.tsx`, sans rapport avec Paramètres —
+rien à corriger dessus). Mais sur Android, `isTauriRuntime()` (qui ne teste
+que `isTauri()`, vrai pour desktop **et** mobile) laissait le bloc "Installer
+une mise à jour" s'afficher alors qu'il est entièrement pensé pour Windows
+(sélecteur filtré sur `.exe`/`.msi`, `openPath` qui ne sait pas installer un
+`.apk` de cette façon) — pas cassé comme le bug Windows, juste incohérent/
+inutile sur ce runtime. Ajouté `isDesktopTauriRuntime()` dans
+[tauriRuntime.ts](apps/web/src/features/settings/tauriRuntime.ts) (détection
+`navigator.userAgent` contenant `"Android"`, faute de
+`@tauri-apps/plugin-os`), utilisé uniquement pour gater ce bloc dans
+`SettingsPage.tsx` — `isTauriRuntime()` reste inchangée et utilisée telle
+quelle ailleurs ([openExternalUrl.ts](apps/web/src/lib/openExternalUrl.ts)),
+où desktop et Android doivent au contraire être traités pareil. Voir la
+convention ajoutée plus haut (*Conventions métier importantes*) pour ne pas
+retomber dans ce piège sur un futur bloc desktop-only.
+
+**Pas fait / laissé de côté** :
+- Les 8 autres occurrences du pattern `instanceof Error ? ... : "texte
+  générique"` dans SettingsPage.tsx (sauvegarde locale/Drive, import,
+  logo...) ont le même défaut potentiel (message réel avalé en cas de rejet
+  non-`Error`) mais n'ont pas été touchées — aucun bug rapporté dessus,
+  hors périmètre de cette session.
+- Toujours pas de vraie mise à jour automatique (vérification de version,
+  téléchargement) — le flux reste manuel par design actuel, non remis en
+  cause cette session.
+
+### 2026-08-15 — Nouvelle page "Historique des ventes" (Propriétaire/Gérant/Admin)
+
+**Contexte** : demande explicite d'un menu dédié pour Propriétaire/Gérant/
+Admin listant tout l'historique des ventes, avec un bouton "Rapport" par
+vente générant un PDF détaillé, filtrable par date/vendeur/boutique/mode de
+paiement/client. Proposition faite avant codage (format du PDF : ticket
+existant vs A4 ; filtres à ajouter) — porteur du projet a choisi le format
+ticket existant et les trois filtres supplémentaires.
+
+**Fait** :
+- [SalesService.ts](packages/core/src/services/SalesService.ts) :
+  `SaleFilters` étendu avec `storeId`/`customerId`/`paymentMethod` (ce
+  dernier résolu via une requête sur `payments` — le mode de paiement n'est
+  pas sur `sales`). Deux nouvelles fonctions : `getSalePayment` (paiement
+  d'une vente précise) et `listSalePayments` (tous les paiements de vente en
+  une fois, pour afficher le mode de paiement dans une liste sans requête
+  par ligne).
+- [SalesHistoryPage.tsx](apps/web/src/features/sales/SalesHistoryPage.tsx)
+  (nouveau) : liste filtrable (date, vendeur, boutique si multi-boutique,
+  mode de paiement, client via `SearchableSelect`, recherche par numéro),
+  reprend le pattern déjà établi par l'onglet Ventes de Journaux (`FilterBar`
+  + tableau) mais gated sur `view_reports` au lieu de `view_audit_logs` —
+  Journaux lui-même n'a pas été touché (reste Admin-only, c'est voulu).
+  Bouton "Rapport" par ligne : reconstruit un `ReceiptData` complet depuis la
+  vente stockée (`listSaleItems` + `getSalePayment`/map de paiements déjà
+  chargée + listes users/customers/variants/products déjà en mémoire) et
+  réutilise **`buildReceiptPdf`** (déjà existant dans `packages/printer`,
+  jusqu'ici seulement appelé juste après une vente en cours) — aucun nouveau
+  gabarit PDF créé, conformément au choix du porteur du projet.
+- [Nav.tsx](apps/web/src/app/Nav.tsx) : nouvel onglet `sales_history`
+  ("Historique des ventes"), permission `view_reports` (déjà exactement
+  Propriétaire/Gérant/Admin, rien à changer côté permissions.ts),
+  `moduleKey: "sales"` (suit l'activation/désactivation du module Ventes,
+  comme Devis).
+
+**Vérifié dans le navigateur**, pas juste le typecheck : compte Admin créé,
+produit + stock + vente réels (VTE-2026-000001), page Historique des ventes
+confirmée avec les bonnes colonnes (numéro/date/client/vendeur/mode de
+paiement/total/statut), filtre "Vendeur" et filtre "Mode de paiement"
+vérifiés (ce dernier avec un cas négatif : sélectionner "Mobile Money" sur
+une vente en espèces vide bien la liste, "Réinitialiser" la fait
+réapparaître), génération du PDF "Rapport" interceptée et confirmée (blob
+PDF valide, nom de fichier correct). Aucune erreur console à aucune étape.
+`pnpm run build` et les 20 tests unitaires passent.
+
+**Pas fait / laissé de côté** :
+- Pas de test manuel du filtre "Boutique" (nécessiterait d'activer le
+  multi-boutique et de créer une deuxième boutique) ni du filtre "Client"
+  (nécessiterait un client enregistré) — code identique en structure aux
+  filtres déjà testés (`storeId`/`customerId` sur `sales`, même mécanique
+  que `userId`), risque jugé faible, mais à garder en tête si un bug y est
+  signalé.
+- Pas de vérification UI qu'un rôle Vendeur/Caissier ne voit pas l'onglet
+  (confiance placée dans `view_reports`, déjà utilisé et vérifié par
+  ailleurs pour Rapports).
+
+### 2026-08-15 — Bug texte coupé sur les PDF ticket + rapport Tickets de service dans Rapports
+
+**Contexte** : retour utilisateur sur un vrai ticket de service produit en
+PDF (capture d'écran) — deux problèmes distincts repérés dessus.
+
+**Bug 1 — texte coupé sur les PDF ticket** :
+[receiptPdf.ts](packages/printer/src/receiptPdf.ts) utilisait une taille de
+police fixe (9pt Courier) quelle que soit la largeur du ticket (58mm/32 col
+ou 80mm/48 col), sans jamais faire de retour à la ligne. Or 9pt Courier fait
+environ 1.9mm/caractère — largement plus que ce que suppose `columns`
+(1.56mm/car. pour tenir 32 caractères dans 50mm utiles) : toute ligne pleine
+(séparateurs, articles) débordait déjà de 20 à 30% de la page, et les
+phrases fixes (adresse, "Merci de votre visite !", "Conservez ce ticket...")
+n'étaient jamais retournées à la ligne — d'où le texte visiblement tronqué
+en fin de ticket. **Corrigé** :
+- `renderLines` calcule maintenant la taille de police pour que `columns`
+  caractères Courier tiennent exactement dans la largeur utile du PDF
+  (`usableWidthMm / columns / COURIER_MM_PER_PT`, plafonné à 9pt) — vérifié
+  mathématiquement avec la vraie librairie jsPDF (`doc.getTextWidth`) : la
+  ligne séparatrice de `columns` caractères mesure maintenant pile la
+  largeur utile, sur les deux préréglages.
+- Nouveau helper `wrapText`/`pushWrapped` : toute ligne de texte libre
+  (nom/adresse/téléphone/email du commerce, nom client, phrases de pied de
+  ticket, libellé d'article trop long pour `padLine`) est maintenant
+  retournée à la ligne sur `columns` caractères, comme le ferait une
+  imprimante ESC/POS physique — plutôt que de continuer hors-page. Appliqué
+  identiquement dans `buildReceiptPdf` (reçu de vente) et
+  `buildServiceOrderTicketPdf` (bon de dépôt), les deux partageant `renderLines`.
+- Vérifié avec un ticket de service réel (description d'article
+  volontairement longue) : PDF généré sans erreur, aucun texte visuellement
+  coupé.
+
+**Fonctionnalité — Nouvel onglet "Tickets de service" dans Rapports** :
+demande explicite car aucun moyen n'existait de régénérer un rapport PDF
+pour un ticket de service **déjà passé** (seul le ticket tout juste créé
+pouvait être exporté, exactement le même trou que pour les ventes avant la
+session du 2026-08-15 précédente). Proposition faite avant codage (onglet
+Rapports vs bouton dans l'Historique existant de Tickets de service vs page
+dédiée) — porteur du projet a choisi l'onglet dans Rapports, cohérent avec
+Ventes/Marges/Trésorerie/Caisse déjà là.
+- [ServiceOrdersService.ts](packages/core/src/services/ServiceOrdersService.ts) :
+  `listServiceOrders(db, storeId?)` → `listServiceOrders(db, filters:
+  ServiceOrderFilters)` (`storeId`/`from`/`to`, même pattern que
+  `SaleFilters`) — **signature changée**, les 3 autres points d'appel
+  existants (`ServiceOrdersPage.tsx`, `DashboardPage.tsx`, `CreditsPage.tsx`)
+  mis à jour en conséquence. Nouvelle fonction `getServiceOrderPayment`
+  (même rôle que `SalesService.getSalePayment`).
+- [ReportsPage.tsx](apps/web/src/features/reports/ReportsPage.tsx) : nouvel
+  onglet "Tickets de service", visible seulement si le module Tickets de
+  service est activé (`enableServiceOrders`, même convention que l'onglet
+  "TVA" gated par `taxEnabled`) — gated par `view_reports` comme le reste de
+  la page (Propriétaire/Gérant/Admin). Bouton "Rapport" par ligne :
+  reconstruit un `ServiceOrderTicketData` depuis le ticket stocké
+  (`listServiceOrderItems` + `getServiceOrderPayment` + `businessSettings`
+  déjà chargés dans `refresh()`) et réutilise **`buildServiceOrderTicketPdf`**
+  (déjà existant, jusqu'ici seulement appelé juste après la création d'un
+  ticket) — même principe que le bouton "Rapport" de Historique des ventes.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : module Tickets de
+service activé (repéré désactivé par défaut sur ce compte de test — piège à
+retenir : le module n'est pas coché par défaut à l'installation), ticket
+TCK-2026-000001 créé avec une description d'article volontairement longue,
+onglet "Tickets de service" confirmé dans Rapports avec les bonnes colonnes,
+génération du rapport PDF interceptée et confirmée (blob valide, nom de
+fichier correct). Aucune erreur console. `pnpm run build` et les 20 tests
+unitaires passent.
+
+**Pas fait / laissé de côté** :
+- Pas de filtre dédié (vendeur, statut paiement) sur l'onglet Tickets de
+  service — réutilise seulement les filtres date/boutique déjà globaux à la
+  page Rapports, non demandé explicitement pour cette fonctionnalité.
+- Le mode de paiement n'apparaît pas sur le PDF du bon de dépôt — le
+  template `ServiceOrderTicketData` n'a jamais eu ce champ (contrairement à
+  `ReceiptData` des ventes), pas ajouté ici (hors périmètre du bug/demande
+  signalés).
+
+### 2026-08-15 — 4 petits correctifs + réappro prédictif
+
+**Contexte** : suite de la proposition de la session précédente (5 pistes),
+porteur du projet a validé les 4 premières pour implémentation immédiate ;
+la 5e (FNE) reste notée en piste ci-dessous, bloquée faute de compte DGI.
+
+1. **Pattern `instanceof Error` généralisé** : les 8 occurrences restantes de
+   `err instanceof Error ? err.message : "texte générique"` dans
+   `SettingsPage.tsx` (sauvegarde locale/Drive, téléchargement, logo, import,
+   code de maintenance) remplacées par `describeError()` — même correctif
+   que celui déjà appliqué au flux de mise à jour le 2026-08-14, généralisé
+   au reste du fichier.
+2. **`update_product` ajouté à `ACTION_LABELS`** (JournalsPage.tsx) →
+   "Produit modifié". Vérifié dans le navigateur : modification d'un produit
+   affiche maintenant le libellé français dans Journaux → Actions (avant :
+   `update_product` brut).
+3. **Format de date `closedAt` aligné sur `openedAt`** dans
+   [CashSessionService.ts](packages/core/src/services/CashSessionService.ts) :
+   `closeSession` utilisait `new Date().toISOString()` (format `...T...Z` +
+   millisecondes) alors qu'`openedAt` vient du défaut SQL `CURRENT_TIMESTAMP`
+   (`YYYY-MM-DD HH:MM:SS`, UTC, sans ms) — même repli que
+   `AuthService`/`MaintenanceService` pour `lockedUntil`
+   (`.toISOString().replace("T", " ").slice(0, 19)`). Vérifié dans le
+   navigateur : les colonnes Ouverture/Fermeture du rapport Caisse affichent
+   maintenant un format identique.
+4. **Réappro prédictif** : nouvelle fonction
+   [StockService.getSalesVelocity](packages/core/src/services/StockService.ts)
+   (vitesse de vente réelle par variante sur `days` derniers jours, lue
+   depuis le grand livre `stock_movements` où `movementType='sale'`).
+   `PurchasesPage.tsx` : la quantité suggérée couvre maintenant les 30
+   prochains jours au rythme de vente réel des 30 derniers jours
+   (`dailyVelocity × 30 − stockActuel`), avec repli sur l'ancien calcul
+   (ramener au double du seuil d'alerte) si le produit n'a aucune vente sur
+   la période — nouvelle colonne "Basé sur" dans le tableau pour indiquer
+   quel mode s'est appliqué. Vérifié dans le navigateur avec un scénario
+   réel : 6 unités vendues sur la période, stock ramené à 4 (sous le seuil
+   de 5) → suggestion de 2 (6 − 4), étiquetée "Ventes réelles (30j)".
+
+**Vérifié dans le navigateur**, pas juste le typecheck, pour les 4 points
+(voir détails ci-dessus). Aucune erreur console. `pnpm run build` et les 20
+tests unitaires passent.
+
+### 2026-08-15 — Bilinguisme FR/EN : infrastructure + premier lot de pages
+
+**Contexte** : demande explicite de rendre l'app bilingue. Périmètre
+(interface + documents) et approche (infra + pages principales d'abord,
+reste en sessions suivantes) validés avant codage — voir la nouvelle section
+*Internationalisation (i18n)* ci-dessus pour l'architecture, ce journal ne
+couvre que ce qui a été fait concrètement cette session.
+
+**Fait** :
+- Nouveau package [`@gestion-boutique/i18n`](packages/i18n) : instance
+  `i18next` partagée + dictionnaires `fr.json`/`en.json`.
+- `apps/web` : `react-i18next` installé, `I18nextProvider` monté à la racine
+  de `App.tsx`, store `useLanguageStore` (localStorage, même convention que
+  le thème), sélecteur FR/EN ajouté dans `TopBar.tsx`.
+- Cinq surfaces converties aux clés de traduction : `Nav.tsx` (les 19
+  entrées de menu), `TopBar.tsx` (bannière d'impersonation, boutons),
+  `DashboardPage.tsx` (Accueil, toutes les cartes KPI), `SalesPage.tsx`
+  (mode Caisse/Formulaire, panier, promotions, fidélité, paiement,
+  `OpenCashSessionScreen.tsx`/`CloseCashSessionPanel.tsx` inclus), et
+  `SalesHistoryPage.tsx` (filtres, tableau, bouton Rapport).
+- [FilterBar.tsx](apps/web/src/components/FilterBar.tsx) (composant partagé
+  Journaux/Stock/Dépenses/Historique des ventes) converti au passage —
+  repéré pendant la vérification de Historique des ventes (labels "Du/Au/
+  Recherche/Réinitialiser" codés en dur dans le composant partagé, pas
+  seulement dans la page). **Effet de bord accepté** : les pages qui
+  utilisent `FilterBar` mais ne sont pas encore converties (Journaux, Stock,
+  Dépenses) afficheront désormais ce composant en anglais si la langue est
+  EN, alors que le reste de leur page reste en français — mélange
+  temporaire inévitable tant que ces pages ne sont pas converties à leur
+  tour, pas un bug.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : bascule FR→EN en
+direct confirmée sans rechargement sur toutes les surfaces ci-dessus,
+persistance confirmée après rechargement complet de la page (`localStorage`
+relu au montage), scénario complet en anglais (ouverture de caisse → vente
+→ historique des ventes → génération PDF "Report") vérifié sans erreur,
+retour EN→FR confirmé. Aucune erreur console. `pnpm run build` et les 20
+tests unitaires passent.
+
+**Pas fait / laissé de côté délibérément** (périmètre restant, voir
+Prochaines pistes) :
+- Le reste des ~18 pages de `apps/web/src/features/` (Paramètres, Produits,
+  Stock, Journaux, Dépenses, etc.) reste en français en dur — converties une
+  à une dans les sessions suivantes, pas en un seul passage (risque
+  d'erreurs trop élevé vu le volume, décision prise avant de commencer).
+- L'écran de connexion (`AuthGate`/login) n'a pas été converti — visible
+  volontairement en test : après un rechargement de page en anglais, l'écran
+  de connexion s'affiche quand même en français (pas un bug, juste hors du
+  périmètre de ce premier lot).
+- Les messages d'erreur métier levés par `packages/core` (ex. "Stock
+  insuffisant...") restent en français en dur — nécessiteront de remplacer
+  chaque `throw new Error("...")` par une clé de traduction résolue via
+  `t()` depuis `@gestion-boutique/i18n`, page par page en même temps que
+  l'UI qui les affiche. Confirmé pendant la vérification : ce message
+  s'affiche bien tel quel (en français) même avec l'UI en anglais, car
+  c'est le vrai message d'erreur du service qui prime sur le texte de
+  repli traduit du `catch`.
+- Documents (tickets ESC/POS, PDF, rapports Excel) : aucun converti — même
+  mécanique (`t()` importable directement dans `packages/printer`/
+  `packages/reports`), à faire quand les pages correspondantes (Ventes,
+  Rapports) seront converties. Le PDF "Rapport" généré depuis Historique des
+  ventes reste donc en français quelle que soit la langue de l'interface.
+
+### 2026-08-16 — Bilinguisme FR/EN : Paramètres converti
+
+**Contexte** : suite du rollout i18n, plus gros morceau restant —
+[SettingsPage.tsx](apps/web/src/features/settings/SettingsPage.tsx) (~1100
+lignes, le plus gros fichier de pages de l'app).
+
+**Fait** :
+- Toutes les sections converties : Entreprise (nom/adresse/téléphone/email/
+  indicatif WhatsApp/téléphone alerte stock/TVA/logo/format ticket), Modules
+  actifs, Multi-boutique, Export SYSCOHADA (le texte de la carte, pas le
+  contenu de `SyscohadaAccountsSection` — voir "Pas fait"), Points de
+  fidélité (ratio + paliers Bronze/Argent/Or), Sécurité (verrouillage auto),
+  Sauvegardes (locale/import/Google Drive + tableau d'historique), et
+  Maintenance (code + flux "Installer une mise à jour" en entier, y compris
+  tous les messages d'étape et d'erreur).
+- Les listes `FREQUENCY_PRESETS`/`DESTINATION_LABELS`/`RECEIPT_PRESETS`
+  (const module-level à l'origine) déplacées à l'intérieur du composant pour
+  rester réactives au changement de langue — même correctif que
+  `PAYMENT_METHOD_LABELS` sur `SalesHistoryPage.tsx` la session précédente,
+  le même piège se reproduit à chaque fois qu'un tableau d'options utilise
+  `t()`.
+- **Perte cosmétique mineure acceptée** : le paragraphe d'avertissement
+  SmartScreen mentionnait `.exe`/`.msi` en gras (`<strong>`) au milieu du
+  texte français — la version traduite (`settings.maintenance.updateWarning`)
+  est un seul bloc de texte sans ce gras, pour éviter la complexité d'un
+  composant `Trans` dès ce premier passage. Le sens reste intact, seule la
+  mise en emphase est perdue.
+
+**Bug trouvé et corrigé pendant la vérification navigateur** : le bouton
+"Choisir un dossier" (section Sauvegarde locale) avait été oublié lors de la
+conversion — repéré parce qu'il restait affiché en français au milieu d'une
+page entièrement en anglais lors du test. Corrigé et revérifié.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : page Paramètres
+entière parcourue en anglais (toutes les sections listées ci-dessus),
+bouton "Save" cliqué avec confirmation "Saved." affichée correctement,
+retour en français confirmé. Aucune erreur console. `pnpm run build` et les
+20 tests unitaires passent.
+
+**Pas fait / laissé de côté délibérément** :
+- [StoresSection.tsx](apps/web/src/features/stores/StoresSection.tsx) (135
+  lignes, gestion des boutiques) et
+  [SyscohadaAccountsSection.tsx](apps/web/src/features/settings/SyscohadaAccountsSection.tsx)
+  (275 lignes, mapping des comptes SYSCOHADA) — tous deux rendus à
+  l'intérieur de Paramètres quand leur module respectif est activé, mais pas
+  convertis cette session (410 lignes à eux deux, sous-fonctionnalités plus
+  spécialisées que le cœur de Paramètres). **Même effet de bord que
+  `FilterBar`** : si multi-boutique ou SYSCOHADA est activé et que la langue
+  est EN, ces deux blocs s'afficheront en français au milieu d'une page
+  Paramètres autrement en anglais — pas un bug, juste pas encore converti.
+  **Convertis dans la foulée, voir entrée suivante.**
+
+### 2026-08-16 — Bilinguisme FR/EN : StoresSection + SyscohadaAccountsSection convertis
+
+**Contexte** : suite immédiate de l'entrée précédente — les deux blocs
+explicitement laissés de côté (rendus conditionnellement dans Paramètres
+selon les modules Multi-boutique/SYSCOHADA activés).
+
+**Fait** :
+- [StoresSection.tsx](apps/web/src/features/stores/StoresSection.tsx)
+  entièrement converti (`storesSection.*` : en-tête, description, tableau
+  boutiques, formulaire d'ajout, erreurs).
+- [SyscohadaAccountsSection.tsx](apps/web/src/features/settings/SyscohadaAccountsSection.tsx)
+  entièrement converti (`syscohadaSection.*`, y compris le sous-namespace
+  `roles.*` pour les 11 libellés de rôle de compte — Clients, Fournisseurs,
+  TVA ventes/services/achats, Banques, Caisse, Mobile Money, Achats, Ventes,
+  Services). `ROLE_FIELDS` (tableau `{key, label}` utilisant `t()`) déplacé à
+  l'intérieur du composant — même piège récurrent que
+  `FREQUENCY_PRESETS`/`PAYMENT_METHOD_LABELS` des sessions précédentes.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : multi-boutique et
+export SYSCOHADA activés temporairement depuis Paramètres pour faire
+apparaître les deux blocs, page entière parcourue en anglais (boutique
+"Boutique principale" avec bouton "Disable", formulaire "Add a store", les
+11 libellés de rôle de compte SYSCOHADA, "Save accounts", tableau des
+mappings de charge par catégorie avec les catégories existantes — données
+utilisateur, restent en français, comportement attendu), retour en français
+confirmé. Les deux modules désactivés à nouveau après vérification pour
+laisser l'état de test comme trouvé. Aucune erreur console (hors WebSocket
+HMR habituel). `pnpm run build` et les 20 tests unitaires passent.
+
+**Pas fait / laissé de côté** : aucun — ces deux blocs étaient le seul
+reliquat non converti de la page Paramètres, celle-ci est maintenant
+intégralement bilingue.
+
+### 2026-08-16 — Bilinguisme FR/EN : Journaux, Stock, Dépenses convertis
+
+**Contexte** : suite du rollout, ciblant en priorité Journaux/Stock/Dépenses
+puisque les trois utilisent déjà le composant partagé `FilterBar` (traduit
+le 2026-08-15) — les convertir élimine le mélange de langue transitoire que
+`FilterBar` traduit créait sur ces pages tant qu'elles restaient en français.
+
+**Fait** :
+- [JournalsPage.tsx](apps/web/src/features/journals/JournalsPage.tsx)
+  entièrement converti : les 3 onglets (Ventes/Stock/Actions), leurs
+  filtres, colonnes de tableau, et les listes `PAYMENT_STATUS_LABELS`/
+  `MOVEMENT_TYPE_LABELS`/`LOSS_REASON_LABELS`/`ACTION_LABELS` (déplacées à
+  l'intérieur du composant — même piège récurrent que les sessions
+  précédentes). `ACTION_LABELS` couvre les 29 types d'action du journal
+  d'audit (`journals.actionLabels.*`).
+- [RefundModal.tsx](apps/web/src/features/journals/RefundModal.tsx) et
+  [RefundHistoryModal.tsx](apps/web/src/features/journals/RefundHistoryModal.tsx)
+  convertis dans la foulée (`journals.refundModal.*`/
+  `journals.refundHistoryModal.*`/`journals.refundMethods.*`) — ouverts
+  depuis l'onglet Ventes de Journaux, auraient sinon laissé une modale
+  entièrement en français au milieu d'une page traduite.
+- [StockPage.tsx](apps/web/src/features/stock/StockPage.tsx) entièrement
+  converti (`stock.*`) : alertes stock bas/péremptions proches (texte UI —
+  les messages WhatsApp générés par `handleNotifyLowStock`/
+  `handleNotifyExpiring` restent volontairement en français, même
+  traitement que les autres documents/communications sortantes non encore
+  converties, voir *Pas fait*), tableau de stock, formulaires Entrée/
+  Transfert/Retrait. `LOSS_REASONS` réutilise les clés
+  `journals.lossReasons.*` déjà créées pour Journaux plutôt que de dupliquer
+  les 4 libellés.
+- [ExpensesPage.tsx](apps/web/src/features/expenses/ExpensesPage.tsx)
+  entièrement converti (`expenses.*`) : formulaire, filtres, tableau.
+  `EXPENSE_CATEGORIES` (Loyer, Eau, Électricité...) **non traduites** — ce
+  sont des valeurs de données réellement stockées en base (catégorie de la
+  dépense), pas du texte d'interface, même raisonnement que les catégories
+  de mapping SYSCOHADA de la session précédente.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : bascule FR→EN sur
+les 3 onglets de Journaux (Ventes/Stock/Actions, y compris les 29 libellés
+d'action et la liste déroulante des types de mouvement), ouverture de la
+modale Rembourser depuis Journaux → Ventes confirmée traduite, page Stock
+parcourue en anglais (formulaires Entrée/Transfert/Retrait, motifs de
+retrait), page Dépenses parcourue en anglais (formulaire + tableau + liste
+déroulante méthode de paiement), retour en français confirmé sur Dépenses.
+Aucune erreur console (hors WebSocket HMR habituel). `pnpm run build` et les
+20 tests unitaires passent.
+
+**Difficulté rencontrée pendant la vérification** : le pane navigateur ne
+compositait pas de frames dans cette session (`screenshot` a échoué avec
+"the Browser pane is not displayed"), rendant les clics par coordonnée
+(`computer` avec `coordinate`) peu fiables — plusieurs tentatives de
+connexion ont tapé le texte dans le mauvais champ. Contourné en utilisant
+`form_input` (par `ref`, fiable) pour remplir les champs et
+`javascript_tool` pour déclencher les clics de navigation/soumission
+lorsque `computer` par `ref` ne suffisait pas — usage exceptionnel pour de
+la vérification, pas pour modifier le code de l'app.
+
+**Pas fait / laissé de côté délibérément** :
+- Messages WhatsApp générés par `StockPage.tsx` (alertes stock bas et
+  péremptions proches envoyées au gérant) — restent en français en dur,
+  même statut que les autres documents/communications sortantes
+  (tickets, rapports) non encore convertis.
+- `RefundModal`/`RefundHistoryModal` couverts, mais aucun autre modal de
+  l'app vérifié pour un french-only résiduel similaire — à surveiller page
+  par page au fur et à mesure de la conversion du reste de l'app.
+
+### 2026-08-16 — Bilinguisme FR/EN : Produits, Clients, Fournisseurs convertis
+
+**Contexte** : suite du rollout — trois pages CRUD de taille comparable
+converties dans la foulée.
+
+**Fait** :
+- [SuppliersPage.tsx](apps/web/src/features/suppliers/SuppliersPage.tsx),
+  [CustomersPage.tsx](apps/web/src/features/customers/CustomersPage.tsx) et
+  [ProductsPage.tsx](apps/web/src/features/products/ProductsPage.tsx)
+  entièrement convertis (`suppliers.*`/`customers.*`/`products.*`) :
+  formulaires de création/édition, tableaux, ajustement de points fidélité
+  (Clients), impression d'étiquettes et champ de taux de TVA conditionnel
+  (Produits, `products.taxRate` interpolé avec le taux par défaut).
+- **Non traduit délibérément** : `TIER_LABELS` (Bronze/Argent/Or, affiché
+  sur `CustomersPage.tsx`) est exporté par `packages/core` — relève du
+  chantier "messages métier de `packages/core`" encore à traiter, pas de
+  cette page.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : bascule FR→EN sur
+les 3 pages (tableaux + formulaires de création ouverts), retour FR
+confirmé sur Fournisseurs. Aucune erreur console (hors WebSocket HMR
+habituel). `pnpm run build` et les 20 tests unitaires passent.
+
+**Note technique** : dans cette session, les clics par coordonnée
+(`computer` action `left_click` avec `coordinate` brut) échouaient de façon
+intermittente sans pane visible ; les clics par `ref` (résolus en interne
+par le nom d'élément plutôt que la coordonnée figée) se sont montrés
+fiables et ont suffi pour toute la vérification de cette passe — pas
+besoin de repasser par `javascript_tool` cette fois.
+
+**Pas fait / laissé de côté** : aucun pour ces 3 pages — seul le libellé de
+palier fidélité partagé (`TIER_LABELS`, côté `packages/core`) reste en
+français, comme documenté ci-dessus.
+
+### 2026-08-16 — Bilinguisme FR/EN : Achats, Créances, Dettes convertis
+
+**Contexte** : suite du rollout — les 3 pages financières restantes liées
+aux fournisseurs/clients.
+
+**Fait** :
+- Nouveau namespace partagé `common.debtCreditStatus` (Ouverte/Partielle/
+  Soldée) réutilisé par [DebtsPage.tsx](apps/web/src/features/debts/DebtsPage.tsx)
+  et [CreditsPage.tsx](apps/web/src/features/credits/CreditsPage.tsx) — les
+  deux avaient un `STATUS_LABELS` identique dupliqué, fusionné en une seule
+  clé plutôt que dupliqué une 3e fois.
+- `DebtsPage.tsx`/`CreditsPage.tsx` entièrement convertis (`debts.*`/
+  `credits.*`) : tableau, formulaire de paiement inline, bouton "Notifier
+  sur WhatsApp" (Créances) — **le message WhatsApp généré par
+  `handleNotifyOverdue` reste en français**, même statut que les autres
+  communications sortantes non encore converties (voir Stock).
+- [PurchasesPage.tsx](apps/web/src/features/purchases/PurchasesPage.tsx)
+  entièrement converti (`purchases.*`) : panier d'achat, suggestions de
+  réappro (avec interpolation `{{days}}` pour la fenêtre de 30 jours),
+  formulaire fournisseur/paiement, historique des achats. `PAYMENT_METHODS`
+  déplacé à l'intérieur du composant (même piège récurrent que les sessions
+  précédentes).
+
+**Vérifié dans le navigateur**, pas juste le typecheck : bascule FR→EN sur
+les 3 pages, retour FR confirmé sur Dettes. Aucune erreur console (hors
+WebSocket HMR habituel). `pnpm run build` et les 20 tests unitaires passent.
+
+**Pas fait / laissé de côté** : le message WhatsApp de relance de créance
+en retard (`CreditsPage.handleNotifyOverdue`) reste en français en dur,
+même raisonnement que les messages WhatsApp de `StockPage.tsx` (journal
+précédent) — à traiter avec le lot "documents/communications sortantes".
+
+### 2026-08-16 — Bilinguisme FR/EN : Promotions et Utilisateurs convertis
+
+**Contexte** : suite du rollout — les deux pages restantes de taille
+raisonnable avant les 5 plus grosses (Rapports, Comptabilité, Devis,
+Tickets de service).
+
+**Fait** :
+- [PromotionsPage.tsx](apps/web/src/features/promotions/PromotionsPage.tsx)
+  entièrement converti (`promotions.*`) : formulaire de création (portée
+  produit/facture, sélection multi-produits avec compteur interpolé
+  `{{count}}`), tableau avec badges de statut (Désactivée/En cours/
+  Programmée-expirée).
+- [UsersPage.tsx](apps/web/src/features/users/UsersPage.tsx) entièrement
+  converti (`users.*`) : formulaire de création/édition, tableau,
+  impersonation. **Noms de rôle non traduits** (Admin/Propriétaire/Gérant/
+  Vendeur/Caissier) — données seedées côté `packages/core`, même statut que
+  `TIER_LABELS`.
+- **Bug trouvé et corrigé pendant la vérification navigateur** : la colonne
+  "Email" du tableau utilisateurs réutilisait par erreur la clé du label de
+  formulaire (`users.email` = "Email (optionnel)"), affichant donc
+  "EMAIL (OPTIONAL)" en en-tête de colonne. Nouvelle clé dédiée
+  `users.emailColumn` = "Email" ajoutée, `UsersPage.tsx` corrigé pour
+  l'utiliser sur la colonne du tableau (le label du formulaire garde
+  `users.email`).
+
+**Vérifié dans le navigateur**, pas juste le typecheck : compte de test
+recréé (OPFS remis à zéro entre deux sessions de preview, voir limitation
+connue), module Promotions activé temporairement pour faire apparaître
+l'onglet, bascule FR→EN confirmée sur les deux pages (y compris le bug
+ci-dessus repéré puis corrigé), retour FR confirmé. Aucune erreur console.
+`pnpm run build` (rebuild après le correctif) et les 20 tests unitaires
+passent.
+
+**Pas fait / laissé de côté** : aucun pour ces 2 pages, hors les noms de
+rôle déjà documentés ci-dessus.
+
+### 2026-08-16 — Bilinguisme FR/EN : Devis converti
+
+**Contexte** : suite du rollout — dernière page de taille raisonnable
+avant les 3 plus grosses restantes (Rapports, Comptabilité, Tickets de
+service).
+
+**Fait** :
+- [QuotesPage.tsx](apps/web/src/features/quotes/QuotesPage.tsx) entièrement
+  converti (`quotes.*`) : panier d'articles, bloc client/validité avec
+  totaux, tableau des devis enregistrés avec badges de statut (En attente/
+  Accepté/Expiré/Converti), panneau de conversion en vente inline.
+  `PAYMENT_METHODS` du panneau de conversion réutilise
+  `t("sales.paymentMethods.*")` (mêmes 4 valeurs cash/card/mobile_money/
+  credit déjà traduites pour Ventes) plutôt que de dupliquer une 3e fois —
+  contrairement aux sessions précédentes qui avaient dupliqué ces libellés
+  par page.
+- Contenu du PDF de devis (`buildQuotePdf`, libellé "Article" par défaut
+  pour une ligne sans nom de produit) volontairement non touché — relève du
+  chantier "documents" (`packages/printer`), pas de cette page.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : bascule FR→EN
+confirmée (panier vide, bloc client/validité, tableau devis vide), retour
+FR confirmé. Aucune erreur console (hors WebSocket HMR habituel).
+`pnpm run build` et les 20 tests unitaires passent.
+
+**Pas fait / laissé de côté** : pas de vérification d'un devis réel avec
+articles/statuts/conversion (aurait nécessité de recréer un produit sur le
+compte de test fraîchement réinitialisé) — code structurellement identique
+aux pages déjà vérifiées avec données réelles (Achats, Ventes), risque jugé
+faible.
+
+### 2026-08-16 — Bilinguisme FR/EN : Comptabilité convertie
+
+**Contexte** : suite du rollout — avant-dernière page de taille
+raisonnable, les 2 restantes (Rapports, Tickets de service) sont les plus
+grosses de l'app.
+
+**Fait** :
+- [AccountingPage.tsx](apps/web/src/features/accounting/AccountingPage.tsx)
+  entièrement converti (`accounting.*`) : les 3 onglets (Compte de
+  résultat/Bilan/Export SYSCOHADA), l'avertissement SYSCOHADA (perte
+  cosmétique mineure acceptée — le `<strong>` en début de paragraphe
+  fusionné dans une seule clé de texte, même tradeoff que
+  `settings.maintenance.updateWarning` en session précédente), les 4
+  sous-vues SYSCOHADA (Journal des ventes/achats/trésorerie, Balance
+  générale) et leurs tableaux.
+- **Titres de document traduits, contrairement à la convention habituelle** :
+  `SYSCOHADA_TITLES` (passé tel quel à `buildSyscohadaJournalPdf`/`Excel`
+  comme titre du document exporté) a été traduit via `accounting.titles.*`
+  — décision délibérée différente du traitement des autres documents
+  (reçus, tickets) laissés en français : ce titre est construit dans le
+  code de la page elle-même (pas un gabarit figé dans `packages/printer`/
+  `packages/reports`), donc le traduire coûtait la même chose que traduire
+  le reste de la page.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : module SYSCOHADA
+activé temporairement, bascule FR→EN confirmée sur les 3 onglets (y compris
+la sous-vue "Balance générale" du SYSCOHADA), retour FR confirmé. Aucune
+erreur console (hors WebSocket HMR habituel). `pnpm run build` et les 20
+tests unitaires passent.
+
+**Pas fait / laissé de côté** : aucun pour cette page.
+
+### 2026-08-16 — Bilinguisme FR/EN : Rapports converti
+
+**Contexte** : suite du rollout — avant-dernière page, ne reste ensuite que
+Tickets de service (la plus grosse page de l'app).
+
+**Fait** :
+- [ReportsPage.tsx](apps/web/src/features/reports/ReportsPage.tsx)
+  entièrement converti (`reports.*`) : les 6 onglets (Ventes/Marges/
+  Trésorerie/Caisse/Tickets de service/TVA, les 2 derniers gated par
+  module comme avant), filtres date/boutique, cartes KPI, graphiques
+  (labels via `t()`, y compris les libellés d'années `"An {{year}}"` du
+  graphique de projection de trésorerie), tableaux et boutons d'export
+  PDF/Excel de chacun. `PAYMENT_STATUS_LABELS` (utilisé sur l'onglet
+  Tickets de service) réutilise `common.paymentStatus.*` déjà existant
+  plutôt que dupliquer une nouvelle fois.
+- **Composant partagé non traduit, repéré pendant la conversion** :
+  [SimpleChart.tsx](apps/web/src/components/SimpleChart.tsx) (utilisé par
+  tous les graphiques de Rapports via `BarChart`/`LineChart`) a son propre
+  texte "Aucune donnée pour cette période." codé en dur, non touché cette
+  session — même situation que `FilterBar` avant sa conversion (voir
+  journal 2026-08-15), mais Rapports est pour l'instant le seul
+  consommateur du composant donc l'effet de bord reste local à cette page.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : bascule FR→EN
+confirmée sur les 4 onglets accessibles sans module supplémentaire (Ventes/
+Marges/Trésorerie/Caisse, y compris la table de projection de trésorerie
+avec ses libellés d'année interpolés), retour FR confirmé. Aucune erreur
+console (hors WebSocket HMR habituel). `pnpm run build` et les 20 tests
+unitaires passent.
+
+**Pas fait / laissé de côté** : les onglets TVA et Tickets de service
+(gated par les modules `taxEnabled`/`enableServiceOrders`) n'ont pas pu être
+vérifiés en direct dans le navigateur cette session — l'activation de ces
+deux modules depuis Paramètres pendant la vérification ne persistait pas.
+**Correctif** : fausse alerte, cause identifiée et corrigée dans la session
+suivante — voir piste 6 ci-dessous (c'était un piège du script de
+vérification, pas un bug de l'app).
+
+### 2026-08-16 — Bilinguisme FR/EN : Tickets de service converti (dernière page)
+
+**Contexte** : dernière page de l'app à convertir — `ServiceOrdersPage.tsx`
+(~1000 lignes, la plus grosse page), ce qui clôt le rollout "pages" du
+bilinguisme FR/EN.
+
+**Fait** :
+- [ServiceOrdersPage.tsx](apps/web/src/features/serviceOrders/ServiceOrdersPage.tsx)
+  entièrement converti (`serviceOrders.*`) : les 3 vues (Nouveau ticket/
+  Suivi/Historique), le panier d'articles en saisie libre, le bloc client/
+  paiement, le suivi de statut par article avec notification WhatsApp
+  (message généré non traduit, même statut que les autres communications
+  sortantes), le remboursement de solde à crédit, et la vue Historique
+  (correction d'un ticket déjà créé). Trois `Record` de libellés de statut
+  distincts (`itemStatus`, `aggregateStatus`, `paymentStatus`) — non
+  fusionnés malgré des valeurs qui se recoupent partiellement, car indexés
+  par des unions de types différentes (`ServiceOrderItemStatus` vs
+  `ServiceOrderAggregateStatus`) et `paymentStatus` a un accord grammatical
+  différent de `common.paymentStatus` ("Payé"/"Partiel", masculin car
+  accordé avec "ticket", contre "Payée"/"Partielle" dans `common.*`,
+  accordé avec "vente") — vérifié explicitement dans le navigateur (voir
+  ci-dessous) pour confirmer que la réutilisation aurait été fausse.
+  `PAYMENT_METHODS` réutilise `sales.paymentMethods.*` (mêmes 4 valeurs).
+- **Bug de clé repéré et corrigé pendant l'écriture** : le champ client
+  "Client" de la vue Historique réutilisait par erreur
+  `t("quotes.noCustomerOption")` ("— Aucun / nouveau —", pensé pour Devis)
+  au lieu du texte correct pour ce contexte d'édition ("— Aucun —", sans
+  option "nouveau" puisqu'on modifie un ticket existant) — nouvelle clé
+  dédiée `serviceOrders.noCustomerEditOption` ajoutée avant même la
+  vérification navigateur (repéré en relisant le diff).
+
+**Vérifié dans le navigateur**, pas juste le typecheck, avec des données
+réelles cette fois (pas seulement des vues vides) : module Tickets de
+service activé (voir piste 6 pour le vrai correctif de méthode de
+vérification qui a débloqué ça), ticket TCK-2026-000001 créé avec un
+article réel, bascule FR→EN confirmée sur les 3 vues y compris le message
+de confirmation post-création, le suivi de statut par article ("Received/
+In progress/Ready/Picked up"), et le panneau de correction de la vue
+Historique avec ses données réelles. Retour FR confirmé, y compris l'accord
+grammatical correct "Payé" (masculin). Aucune erreur console (hors
+WebSocket HMR habituel). `pnpm run build` et les 20 tests unitaires
+passent.
+
+**Pas fait / laissé de côté** : le message WhatsApp de notification "ticket
+prêt" (`handleStatusChange`-adjacent, dans la vue Suivi) reste en français
+en dur, même statut que les autres communications sortantes non converties
+(Stock, Créances) — à traiter avec le lot "documents/communications
+sortantes".
+
+**Avec cette page, toutes les pages de l'app sont désormais bilingues FR/EN.**
+Reste : les messages d'erreur métier de `packages/core`, les documents
+(tickets/rapports), l'écran de connexion, et le composant `SimpleChart` —
+voir Prochaines pistes.
+
+### 2026-08-16 — Bilinguisme FR/EN : écran de connexion (AuthGate) converti
+
+**Contexte** : dernier morceau du périmètre "Interface" du chantier
+bilinguisme — l'écran de connexion, explicitement laissé de côté depuis le
+tout premier lot (2026-08-15) car non atteignable depuis le sélecteur de
+langue du `TopBar` (qui ne s'affiche qu'une fois connecté). Repris
+maintenant que toutes les pages post-connexion sont converties.
+
+**Fait** — les 6 écrans de
+[apps/web/src/features/auth/](apps/web/src/features/auth/) convertis
+(`auth.*`) :
+- `LoginScreen.tsx` (`auth.login.*`).
+- `SetupAdminScreen.tsx` (`auth.setupAdmin.*`) — écran de création du tout
+  premier compte administrateur.
+- `ModuleSetupScreen.tsx` (`auth.moduleSetup.*`) — écran affiché une seule
+  fois juste après. Les 6 libellés de module réutilisent
+  `settings.modules.*` déjà traduits (même liste que Paramètres → Modules
+  actifs) plutôt que d'être dupliqués — au passage, le libellé Tickets de
+  service légèrement raccourci de cet écran ("...pressing, cordonnerie...")
+  s'aligne maintenant sur la version complète de Paramètres ("...pressing,
+  cordonnerie, couture, réparation..."), un léger changement de texte
+  assumé pour éviter la duplication.
+- `PinLockScreen.tsx` (`auth.pinLock.*`) — titre et bouton de déconnexion ;
+  le clavier numérique lui-même (chiffres, ⌫) n'a pas de texte à traduire.
+- `ChangePasswordModal.tsx` (`auth.changePassword.*`).
+- `AuthGate.tsx` lui-même : les deux écrans "Chargement..." intermédiaires
+  (`auth.loading`).
+
+**Vérifié dans le navigateur**, pas juste le typecheck : connexion → bascule
+FR→EN via TopBar → déconnexion → écran de connexion confirmé en anglais
+("Login/Username/Password/Sign in", résout directement la limitation notée
+au 2026-08-15 où l'écran restait en français après un rechargement malgré
+la langue EN active) → reconnexion → verrouillage de session → écran PIN
+confirmé en anglais ("Session locked"/"Log out") → code PIN volontairement
+faux saisi pour vérifier qu'une erreur venant de `packages/core`
+("Code PIN incorrect") s'affiche bien encore en français au milieu d'un
+écran en anglais — comportement attendu et documenté (messages d'erreur
+métier non encore convertis, voir Prochaines pistes) plutôt qu'un bug de
+cette conversion. Modale "Change my password" ouverte et confirmée
+traduite. Retour FR confirmé. Aucune erreur console (hors WebSocket HMR
+habituel). `pnpm run build` et les 20 tests unitaires passent.
+
+**Pas fait / laissé de côté** : aucun pour ces 6 écrans.
+
+**Avec cet écran, le périmètre "Interface" du chantier bilinguisme est
+intégralement couvert** (toutes les pages + tout l'écran de connexion).
+Reste le périmètre "documents" (tickets ESC/POS/PDF, rapports Excel/PDF) et
+les messages d'erreur métier de `packages/core` pour compléter le périmètre
+initial ("Interface + documents") validé au lancement du chantier — voir
+Prochaines pistes.
+
+### 2026-08-17 — Bilinguisme FR/EN : messages d'erreur métier de `packages/core`
+
+**Contexte** : premier morceau du périmètre "documents"/logique métier du
+chantier bilinguisme (le périmètre "Interface" étant intégralement couvert
+depuis la session précédente) — les messages levés par `throw new
+Error("...")` dans `packages/core` restaient en français en dur quelle que
+soit la langue de l'UI, comme observé et documenté pendant la vérification
+de l'écran PIN le 2026-08-16 ("Code PIN incorrect" affiché en français au
+milieu d'un `PinLockScreen` en anglais).
+
+**Fait** :
+- `packages/core` n'avait jusqu'ici jamais consommé `@gestion-boutique/i18n`
+  (seulement documenté/prévu) — ajouté à ses `dependencies`
+  (`"@gestion-boutique/i18n": "workspace:*"`) puis `pnpm install` pour créer
+  le lien du workspace. Chaque fichier concerné importe directement
+  `import { t } from "@gestion-boutique/i18n";` et l'appelle au point
+  d'usage (`throw new Error(t("coreErrors...."))`), sans faire transiter de
+  langue ni de fonction `t` à travers les signatures de service — même
+  principe déjà documenté dans la section *Internationalisation* ci-dessus,
+  exercé ici pour la première fois côté non-React.
+- **62 messages convertis** au namespace `coreErrors.<service>.*` (+
+  `coreErrors.common.*` pour 3 messages réutilisés tels quels par plusieurs
+  services : `tooManyAttempts`, `amountExceedsBalance`,
+  `insufficientLoyaltyPoints`), répartis sur 14 fichiers :
+  `auth/AuthService.ts`, `domain/permissions.ts` (message par défaut de
+  `PermissionError`, sûr car un paramètre par défaut s'évalue à l'appel, pas
+  au chargement du module), et les services `Backup`, `Credits`, `Debts`,
+  `Loyalty`, `Maintenance`, `Products`, `Promotions`, `Purchases`, `Quotes`,
+  `Refunds`, `Sales`, `ServiceOrders`, `Stores`.
+- **`TIER_LABELS`** (`Record<LoyaltyTier, string>` statique exporté par
+  `LoyaltyService.ts`) remplacé par une fonction `getTierLabel(tier)` qui
+  appelle `t()` à chaque invocation — un objet figé au chargement du module
+  ne suivrait jamais un changement de langue en cours de session (même piège
+  que les listes d'options traduites côté UI — `FREQUENCY_PRESETS`,
+  `PAYMENT_METHODS`, etc. — déplacées à l'intérieur du composant à chaque
+  fois qu'il s'est reproduit cette session). `CustomersPage.tsx` mis à jour
+  pour appeler `getTierLabel(tier)` au lieu d'indexer l'ancien objet.
+- **Volontairement pas touché : `DEFAULT_ROLES`** (`permissions.ts`, noms de
+  rôle seedés Admin/Propriétaire/Gérant/Vendeur/Caissier) — ces noms sont
+  persistés dans la table `roles` par `RolesService.ensureDefaultRoles()` et
+  servent à des comparaisons d'égalité ailleurs (`roles.find(r => r.name ===
+  ...)` dans `UsersPage.tsx`) : les traduire changerait la donnée stockée
+  elle-même, pas juste son affichage, et casserait ces comparaisons.
+  Confirmé en anglais dans le navigateur : la liste déroulante de rôle du
+  formulaire "New user" affiche bien encore "Admin, Propriétaire, Gérant,
+  Vendeur, Caissier" (français) même avec l'UI en anglais — attendu, pas un
+  bug de cette session. Nécessitera une vraie stratégie d'affichage (mapping
+  nom-stocké → clé de traduction), différente du simple remplacement par
+  `t()` utilisé partout ailleurs cette session — laissé pour une session
+  dédiée.
+- Confirmé par `Grep` (`throw new Error\("[À-ÿ]` sur `packages/core/src/**/*.ts`)
+  qu'aucun message français en dur ne subsiste.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : bascule EN, page
+Utilisateurs → tentative de création d'un compte avec le pseudo `admin`
+(déjà pris) → message "This username is already in use." confirmé en
+anglais (`coreErrors.auth.usernameTaken`) ; page Clients → création d'un
+client de test → colonne Palier affiche "Bronze" via `getTierLabel` (mot
+identique en FR/EN, mais confirme que la fonction s'exécute et résout bien
+la clé `loyaltyTiers.bronze`) ; retour FR confirmé. Aucune erreur console
+(hors WebSocket HMR habituel). `pnpm run build` et les 20 tests unitaires
+passent (aucun test n'asserte sur le texte des messages d'erreur — confirmé
+par `Grep` sur `toThrow|\.message` dans `packages/core/src/**/*.test.ts`
+avant la conversion, zéro résultat).
+
+**Pas fait / laissé de côté** :
+- `DEFAULT_ROLES` (voir ci-dessus) — nécessite une stratégie dédiée.
+- Pas re-testé spécifiquement le PIN incorrect (`AuthService` ne lève pas
+  d'erreur pour un PIN invalide — à vérifier lequel des messages
+  `coreErrors.auth.*` correspondait réellement au "Code PIN incorrect" vu au
+  2026-08-16 ; les scénarios testés cette session (pseudo déjà pris, palier
+  fidélité) suffisent à valider le mécanisme `t()` dans `packages/core`,
+  mais un balayage exhaustif des 62 messages un par un n'a pas été fait).
+- `SimpleChart.tsx`, messages WhatsApp, documents `packages/printer`/
+  `packages/reports` : toujours pas convertis, voir Prochaines pistes.
+
+### 2026-08-17 — Bilinguisme FR/EN : `SimpleChart` et messages WhatsApp convertis
+
+**Contexte** : suite immédiate de la session précédente — les deux derniers
+morceaux du périmètre "documents"/logique-métier-côté-client avant le plus
+gros chantier restant (`packages/printer`/`packages/reports`) : le composant
+partagé `SimpleChart` (repéré non traduit pendant la conversion de Rapports,
+2026-08-16) et les 5 messages WhatsApp générés côté client (Stock, Créances,
+Ventes, Tickets de service).
+
+**Fait** :
+- [SimpleChart.tsx](apps/web/src/components/SimpleChart.tsx) (`BarChart`/
+  `LineChart`) : le texte "Aucune donnée pour cette période." affiché quand
+  `data.length === 0` remplacé par `t("common.noChartData")` via
+  `useTranslation()` — nouvelle clé dans le namespace `common` déjà existant
+  (partagé avec `paymentStatus`/`filterBar`/`debtCreditStatus`) plutôt qu'un
+  nouveau namespace pour une seule clé.
+- Nouveau namespace `whatsapp.*` dans les dictionnaires, couvrant les 5
+  messages :
+  - [lib/whatsapp.ts](apps/web/src/lib/whatsapp.ts) : `buildReceiptWhatsAppMessage`
+    (reçu de vente) est une fonction pure, pas un composant — appelle `t()`
+    importé directement depuis `@gestion-boutique/i18n` (même principe que
+    `packages/core`, voir journal 2026-08-17 précédent), plutôt que de faire
+    remonter `t` en paramètre depuis `SalesPage.tsx`. `WHATSAPP_PAYMENT_LABELS`
+    (dupliquait `sales.paymentMethods.*`) supprimé, remplacé par
+    `t(\`sales.paymentMethods.${method}\`, { defaultValue: method })` —
+    réutilise la clé déjà traduite plutôt que d'en dupliquer une 4e fois.
+  - `StockPage.handleNotifyLowStock`/`handleNotifyExpiring`, `CreditsPage.handleNotifyOverdue`,
+    et le message d'avis "ticket prêt" inline de `ServiceOrdersPage.tsx` :
+    tous les 4 sont dans des composants qui avaient déjà `t` via
+    `useTranslation()` — conversion directe, aucun nouvel import.
+  - Le mot de repli "nous" (ex. "chez nous" quand `businessSettings.businessName`
+    est vide) devient sa propre clé `whatsapp.defaultBusinessName` plutôt
+    qu'un fragment figé dans le template, car "chez {{business}}"/
+    "at {{business}}" diffère par sa préposition entre les deux langues — le
+    template entier (pas juste le mot de repli) est donc traduit par langue.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : compte de test
+recréé (OPFS remis à zéro entre deux sessions de preview, voir limitation
+connue), bascule EN, produit de test créé avec un seuil d'alerte stock bas
+(5) et 0 en stock pour faire apparaître le bouton "Notify via WhatsApp" sur
+Stock — lien `wa.me` intercepté (`window.open` remplacé), texte confirmé :
+*"Low stock alert — 1 product(s) to restock at WariBox Test Shop:\n-
+Test Widget: 0/5"*. Onglet Rapports → Ventes vérifié en anglais : "No data
+for this period." (`common.noChartData`) s'affiche bien sous "Revenue by
+day" (aucune vente sur la période, donc graphique vide). Retour FR confirmé
+sur le même bouton Stock ("Notifier sur WhatsApp") : texte reproduit à
+l'identique du message d'origine (*"Alerte stock bas — 1 produit(s) à
+réapprovisionner chez WariBox Test Shop :\n- Test Widget : 0/5"*), confirmant
+qu'aucune régression n'a été introduite côté français. Aucune erreur
+console. `pnpm run build` et les 20 tests unitaires passent.
+
+**Pas fait / laissé de côté** :
+- Pas de vérification directe des messages Créances (`handleNotifyOverdue`)
+  et Tickets de service (avis "prêt à récupérer") avec des données réelles
+  (aurait nécessité de créer un client avec téléphone + une créance en
+  retard, ou un ticket de service au statut "Prêt") — code structurellement
+  identique au message Stock déjà vérifié bout en bout (même fonction
+  `buildWhatsAppLink`, mêmes clés `t()` interpolées), risque jugé faible.
+  Idem pour le reçu de vente WhatsApp (`buildReceiptWhatsAppMessage`) — sa
+  conversion en `t()` a été vérifiée par le build/typecheck mais pas
+  déclenchée dans le navigateur cette session.
+- Reste, pour clore le périmètre "documents" du chantier bilinguisme :
+  `DEFAULT_ROLES` (stratégie d'affichage dédiée nécessaire) et le contenu
+  des documents `packages/printer`/`packages/reports` (le plus gros
+  morceau restant).
+
+### 2026-08-17 — Bilinguisme FR/EN : documents `packages/printer`/`packages/reports` convertis (dernier morceau du chantier)
+
+**Contexte** : dernier morceau du périmètre initial "Interface + documents"
+du chantier bilinguisme — le contenu des documents générés par
+`packages/printer` (tickets ESC/POS + PDF, devis) et `packages/reports`
+(rapports PDF/Excel), jusqu'ici toujours en français en dur quelle que soit
+la langue de l'UI (confirmé pendant la vérification de Historique des ventes
+au 2026-08-15 : le PDF "Rapport" restait en français avec l'UI en anglais).
+
+**Fait** :
+- `@gestion-boutique/i18n` ajouté aux `dependencies` de `packages/printer`
+  et `packages/reports` (aucun des deux ne l'utilisait avant), `pnpm install`
+  pour créer les liens de workspace — même mécanique que `packages/core`
+  (2026-08-17 précédent), `t()` importé et appelé directement au point
+  d'usage, sans faire transiter de langue/fonction à travers les signatures.
+- Nouveau namespace `documents.*` dans les dictionnaires :
+  - `documents.common.*` : les tokens réellement partagés entre reçu/bon de
+    dépôt/devis (téléphone, client, sous-total, remise, TVA incluse, total,
+    "Ticket {{number}}").
+  - `documents.receipt.*` (caissier, ligne de paiement, remerciement),
+    `documents.serviceTicket.*` (titre "BON DE DEPOT", téléphone client,
+    date de retrait prévue, payé, solde dû, phrase de conservation du
+    ticket), `documents.quote.*` (titre, date, validité, 4 en-têtes de
+    colonnes).
+  - `documents.reports.*`, un sous-objet par rapport (`sales`, `margins`,
+    `cashFlow`, `incomeStatement`, `tax`, `balanceSheet`, `syscohadaJournal`,
+    `syscohadaBalance`, `cashSessions`) — chacun avec son titre, son
+    sous-titre (chaîne unique interpolée avec des paramètres nommés, même
+    principe que les messages WhatsApp composés de la session précédente,
+    plutôt que concaténer des fragments qui casseraient l'ordre des mots
+    d'une langue à l'autre), ses en-têtes de colonnes PDF, et un sous-objet
+    `excel.*` pour les noms d'onglet et les clés d'objet JS qui deviennent
+    littéralement les en-têtes de colonnes Excel (`{ [t("...")]: valeur }`).
+  - [receipt.ts](packages/printer/src/receipt.ts)/[receiptPdf.ts](packages/printer/src/receiptPdf.ts) :
+    `PAYMENT_LABELS` (dupliquait `sales.paymentMethods.*` une 5e fois, après
+    la duplication déjà supprimée de `whatsapp.ts` la session précédente)
+    supprimé, remplacé par `t(\`sales.paymentMethods.${method}\`, {
+    defaultValue: method })`.
+  - [pdf.ts](packages/reports/src/pdf.ts)/[excel.ts](packages/reports/src/excel.ts) :
+    `buildSyscohadaJournalPdf`/`Excel` gardent `data.title` tel quel (déjà
+    traduit côté appelant via `accounting.titles.*`, voir session
+    2026-08-16) — seul le sous-titre et les en-têtes de colonnes sont
+    convertis ici, pas le titre.
+  - [labelsPdf.ts](packages/printer/src/labelsPdf.ts) : vérifié, aucun texte
+    d'interface en dur (juste nom/prix/code-barres du produit, données) —
+    rien à convertir.
+- Confirmé par `Grep` (recherche de chaînes contenant des caractères
+  accentués dans les deux packages) qu'aucun texte français en dur ne
+  subsiste dans `packages/printer/src`/`packages/reports/src`.
+
+**Vérifié dans le navigateur**, pas juste le typecheck — et pas seulement le
+texte visible de l'UI cette fois, mais le **contenu réel des PDF générés** :
+en interceptant `URL.createObjectURL` (utilisé par le helper `downloadBlob`
+partagé de chaque page d'export) pour capturer le `Blob` avant son
+téléchargement, puis en décodant ses octets bruts en `latin1` — jsPDF
+n'active pas la compression de flux par défaut ici (aucun appel ne passe
+`{ compress: true }`), donc le texte apparaît en clair dans le PDF et est
+directement cherchable par sous-chaîne, sans bibliothèque d'extraction PDF :
+- Rapport Ventes (Rapports → Ventes → Export PDF) en anglais : présence
+  confirmée de "Sales report" (titre), et du sous-titre interpolé complet
+  *"From 2026-07-18 to 2026-08-17 — Total revenue: 0 — Sales: 0 — Average
+  basket: 0"* (aucune valeur manquante/`undefined`), plus les 3 en-têtes de
+  colonnes.
+- Reçu de vente réel (vente test VTE-2026-000001, 1 unité à 1000) en
+  anglais via "Save as PDF" : *"Receipt VTE-2026-000001"*, *"Cashier: Admin
+  Test"*, *"Payment (Cash): 1000"* (parenthèses échappées `\(`/`\)` par
+  jsPDF, correctement décodées), *"Thank you for your visit"* tous présents.
+  **Même reçu régénéré en français** après retour FR : *"Ticket
+  VTE-2026-000001"*, *"Caissier : Admin Test"*, *"Paiement (Espèces)"*,
+  *"Merci de votre visite"* — texte français identique à l'original,
+  confirmant l'absence de régression.
+- Export Excel (Rapports → Ventes → Export Excel) : blob `.xlsx` valide
+  généré sans erreur (type MIME et taille cohérents) — contenu des colonnes
+  non extrait (pas de bibliothèque de lecture xlsx disponible côté
+  navigateur pour cette vérification), mais mécanisme `t()` déjà validé à
+  l'identique par les PDF ci-dessus (mêmes clés, même `t()`).
+
+Aucune erreur console à aucune étape (hors WebSocket HMR habituel).
+`pnpm run build` (build complet du monorepo, ~4 min) et les 20 tests
+unitaires passent.
+
+**Pas fait / laissé de côté** :
+- Contenu réel non extrait pour les fichiers `.xlsx` (voir ci-dessus) ni
+  pour les tickets ESC/POS bruts (`buildReceipt`/`buildServiceOrderTicket`,
+  format binaire imprimante — jamais généré ni vérifié dans le navigateur
+  faute d'imprimante physique connectée à cette machine ; code
+  structurellement identique aux versions PDF déjà vérifiées, mêmes clés
+  `t()`, risque jugé faible).
+- Pas de vérification du devis PDF (`quotePdf.ts`) ni du bon de dépôt de
+  ticket de service (`buildServiceOrderTicketPdf`) avec des données réelles
+  cette session — même raisonnement de risque faible (code structurellement
+  identique au reçu de vente déjà vérifié bout en bout).
+- `DEFAULT_ROLES` (`permissions.ts`) reste le seul point non converti de
+  tout le chantier bilinguisme — nécessite une stratégie d'affichage dédiée
+  (mapping nom-stocké → clé de traduction), pas un simple remplacement par
+  `t()`, voir journal 2026-08-17 précédent.
+
+**Avec cette conversion, le périmètre initial "Interface + documents" du
+chantier bilinguisme FR/EN, lancé le 2026-08-15, est intégralement
+couvert.** Seul `DEFAULT_ROLES` reste non traduit (affichage uniquement,
+sans impact sur les données stockées elles-mêmes).
+
+### 2026-08-17 — Bilinguisme FR/EN : `DEFAULT_ROLES` (dernier point du chantier, désormais clos)
+
+**Contexte** : dernier point resté explicitement en suspens depuis
+l'audit du chantier bilinguisme (journal 2026-08-17 précédent, "messages
+d'erreur métier de `packages/core`") — les 5 noms de rôle seedés
+(Admin/Propriétaire/Gérant/Vendeur/Caissier) sont **persistés en base**
+(table `roles`, écrits par `RolesService.ensureDefaultRoles`) et servent à
+des comparaisons d'égalité (`UsersPage.tsx` : `roles.find(r => r.name ===
+target.roleName)`) — donc, contrairement à tout le reste du chantier, un
+simple remplacement du texte source par `t()` aurait changé la donnée
+stockée elle-même et cassé ces comparaisons.
+
+**Fait** — stratégie d'affichage dédiée plutôt qu'un remplacement de texte :
+- [permissions.ts](packages/core/src/domain/permissions.ts) : nouvelle
+  fonction `getRoleDisplayName(storedName: string): string` — construit une
+  table de correspondance inverse (`ROLE_NAME_TO_KEY`, nom stocké → clé
+  `DefaultRoleKey`, dérivée de `DEFAULT_ROLES` lui-même pour ne jamais
+  désynchroniser les deux) puis résout `t(\`roles.${key}\`)`. **Le nom
+  stocké en base n'est jamais modifié** — seul l'affichage passe par cette
+  fonction, appelée à chaque rendu (même principe que `getTierLabel`, voir
+  journal 2026-08-17 précédent : une table figée au chargement du module ne
+  suivrait pas un changement de langue en cours de session, mais ici c'est
+  la *fonction de résolution* elle-même qui est appelée à chaque rendu, pas
+  une valeur mise en cache). Un nom non reconnu (rôle personnalisé
+  hypothétique, aucune UI ne permet aujourd'hui d'en créer un) est retourné
+  tel quel — c'est une donnée saisie par l'utilisateur, pas du texte
+  d'interface, donc pas traduisible.
+- Nouveau namespace `roles.*` dans les dictionnaires : `admin`, `proprietaire`,
+  `gerant`, `vendeur`, `caissier`. Traductions anglaises choisies pour rester
+  des intitulés de poste naturels plutôt que des calques littéraux :
+  Propriétaire→Owner, Gérant→Manager, Vendeur→Salesperson, Caissier→Cashier
+  (Admin reste Admin dans les deux langues).
+- 3 points d'affichage convertis, les seuls trouvés par `Grep` sur
+  `roleName`/`role.name` dans `apps/web/src` :
+  [TopBar.tsx](apps/web/src/features/auth/TopBar.tsx) (badge de rôle à côté
+  du nom de l'utilisateur connecté, visible sur toutes les pages),
+  [UsersPage.tsx](apps/web/src/features/users/UsersPage.tsx) (colonne Rôle
+  du tableau, et le texte des `<option>` de la liste déroulante de rôle du
+  formulaire de création/édition). **Le seul autre point qui lit
+  `roleName`** — la résolution du rôle sélectionné en édition
+  (`roles.find((r) => r.name === target.roleName)`, ligne 103 de
+  `UsersPage.tsx`) — **volontairement pas touché**, comparaison d'égalité
+  sur la valeur réelle stockée.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : bascule EN, page
+Utilisateurs → formulaire "+ New user" → liste déroulante de rôle confirmée
+*"Admin, Owner, Manager, Salesperson, Cashier"* (au lieu des noms français
+bruts affichés avant ce correctif) ; retour FR confirmé → même liste
+déroulante revérifiée *"Admin, Propriétaire, Gérant, Vendeur, Caissier"*,
+identique au texte d'origine (pas de régression). Aucune erreur console
+(hors WebSocket HMR habituel). `pnpm run build` et les 20 tests unitaires
+passent.
+
+**Pas fait / laissé de côté** : aucun — c'était le tout dernier point
+identifié du chantier bilinguisme.
+
+**Avec ce correctif, le chantier bilinguisme FR/EN démarré le 2026-08-15
+est intégralement terminé** sur son périmètre initial
+("Interface + documents") : plus aucun texte français en dur ne subsiste
+dans l'interface, les messages d'erreur métier, les messages WhatsApp, les
+documents imprimés/exportés, ni l'affichage des rôles.
+
+### 2026-08-17 — Bilinguisme FR/EN : re-vérification complète, 6 trous supplémentaires trouvés et corrigés
+
+**Contexte** : demande explicite de re-vérifier que tout le chantier
+bilinguisme est solide et que rien n'est cassé, plutôt que de faire
+confiance aux déclarations "terminé" des sessions précédentes. Plutôt qu'un
+simple re-test des scénarios déjà vérifiés, écrit un script Node ponctuel
+(scratchpad, pas commité) qui : (1) valide le JSON des deux dictionnaires,
+(2) compare l'ensemble des clés FR/EN pour détecter toute clé manquante
+d'un côté, (3) extrait tous les appels `t("...")` littéraux du code et
+vérifie que chaque clé existe bien dans `fr.json`, (4) balaie tout le code
+(`apps/web/src`, tous les `packages/*/src`) à la recherche de texte
+contenant des caractères accentués français en dehors des commentaires.
+
+**Bug méthodologique découvert en cours de route** : le tout premier balayage
+(motif regex `[À-ÿ]{3,}`, utilisé début de session pour vérifier
+`packages/printer`) ne trouvait "aucune correspondance" sur des fichiers qui
+contenaient pourtant des chaînes accentuées bien réelles — confirmé en
+re-testant le même motif sur le même fichier après coup : toujours aucune
+correspondance, alors qu'une recherche littérale sur le texte exact trouvait
+les lignes sans problème. Cause non élucidée précisément (probablement une
+particularité du moteur regex de l'outil de recherche sur les classes de
+caractères Unicode combinées à un quantificateur `{3,}}`), mais **le
+résultat "aucune correspondance" de ce motif s'est révélé non fiable** —
+d'où le script Node de cette session, qui fait une recherche caractère-par-
+caractère explicite plutôt que de compter sur un seul motif regex.
+
+**7 trous réels trouvés et corrigés** (tous vérifiés dans le navigateur,
+pas seulement le typecheck) :
+
+1. **`packages/printer/src/PrinterService.ts` + `transport.ts`** — 5 messages
+   d'erreur matériel imprimante (Bluetooth/USB) jamais convertis
+   (`printerErrors.*`).
+2. **`apps/web/src/features/printer/usePrinter.ts` +
+   `PrinterPanel.tsx`** — **composant entier jamais traduit** (titre, statut,
+   boutons Connecter/Déconnecter/Ouvrir le tiroir, messages d'indisponibilité
+   Bluetooth/USB). Repéré parce qu'il est caché derrière le bouton
+   "Imprimante"/"Printer" de la page Ventes — jamais ouvert pendant les
+   vérifications précédentes malgré des dizaines de passages sur cette page
+   (namespace `printer.*`).
+3. **`apps/web/src/app/DatabaseProvider.tsx`** — écran d'erreur/chargement de
+   la base locale (`database.*`) — traduit sauf le `console.error` et
+   l'erreur de mésusage de `useDatabase()` hors provider, qui restent
+   volontairement en français (jamais vus par un utilisateur, uniquement des
+   diagnostics développeur/erreurs de programmation, même traitement que
+   `logo.ts` ci-dessous).
+4. **`apps/web/src/components/SearchableSelect.tsx`** — "Aucun résultat"
+   (`common.noResults`), composant partagé utilisé par la quasi-totalité des
+   sélecteurs produit/client/fournisseur de l'app.
+5. **`apps/web/src/components/UpdateBanner.tsx`** — bannière de mise à jour
+   PWA, jamais traduite malgré le composant lui-même bien identifié dans le
+   journal du 2026-08-14 comme "a son propre vrai mécanisme de mise à jour,
+   sans rapport avec Paramètres" — cette remarque portait sur le mécanisme,
+   pas sur son texte, qui était resté non converti (`updateBanner.*`).
+6. **`apps/web/src/features/sales/BarcodeCameraScanner.tsx`** — permission
+   caméra refusée, échec d'accès caméra, instructions, bouton Fermer
+   (`sales.scanner.*`).
+7. **`apps/web/src/features/settings/backupRunner.ts`** — 2 erreurs de
+   sauvegarde locale ("Aucun dossier choisi", "Permission refusée",
+   `settings.backups.errors.*`).
+8. **`apps/web/src/features/auth/useAuth.ts`** — **la cause racine réelle du
+   "Code PIN incorrect" observé en français depuis le 2026-08-16**, alors que
+   la session du 2026-08-17 précédente avait converti les 62 messages
+   d'erreur de `packages/core` en pensant (à tort) que le message venait de
+   là. En réalité `useAuth.ts` (`apps/web`, pas `packages/core`) lève
+   lui-même 3 messages en dur ("Identifiants incorrects", "Aucune session
+   active", "Code PIN incorrect") — jamais repérés par le balayage du
+   2026-08-17 précédent car limité à `packages/core/src`. Cette fois
+   converti (`auth.errors.*`) et **vérifié en conditions réelles** :
+   verrouillage de session → PIN volontairement faux → "Incorrect PIN" en
+   anglais confirmé, puis re-testé en français → "Code PIN incorrect"
+   identique au texte d'origine.
+9. **`packages/sync/src/googleDrive.ts`** — 6 messages d'erreur de connexion/
+   upload Google Drive (`sync.errors.*`), package jamais touché par le
+   chantier bilinguisme jusqu'ici (pas de dépendance à `@gestion-boutique/i18n`
+   avant cette session).
+
+**Second trou structurel, de la même famille que `DEFAULT_ROLES`** :
+**`DEFAULT_LOCATIONS`** ([domain/stock.ts](packages/core/src/domain/stock.ts))
+— les noms d'emplacement seedés "Réserve"/"Surface de vente" étaient
+affichés bruts (non traduits) dans **6 endroits de `StockPage.tsx`**
+(filtre, en-têtes de tableau, 3 formulaires Entrée/Transfert/Retrait) et
+dans `JournalsPage.tsx` (colonne emplacement des mouvements de stock) —
+visibles dans *toutes* les captures anglaises de ce chantier depuis le
+début sans jamais avoir été repérés. Confirmé par lecture de
+`StockService.ensureLocationsForStore` que seul `type`
+("reserve"/"surface_vente", potentiellement suffixé par boutique) sert aux
+comparaisons internes, jamais `name` — donc, comme pour les rôles, aucun
+risque à ajouter une fonction d'affichage. Nouvelle fonction
+`getLocationDisplayName(storedName)` dans `domain/stock.ts`, même principe
+exact que `getRoleDisplayName` (table de correspondance inverse dérivée de
+`DEFAULT_LOCATIONS`, résolution à l'appel, nom stocké inchangé). Anglais :
+"Réserve" → "Reserve", "Surface de vente" → "Sales floor" (repris du texte
+déjà traduit du panneau de transfert, "Reserve ↔ Sales floor transfer",
+pour rester cohérent). **Vérifié dans le navigateur** : bascule EN sur
+Stock → filtre, en-têtes de tableau et les 3 formulaires affichent bien
+"Reserve"/"Sales floor" partout (au lieu du français brut vu jusqu'ici).
+
+**Trou plus profond dans `SyscohadaService.ts`, découvert en creusant
+`ROLE_LABELS`** : les libellés de compte SYSCOHADA (`ROLE_LABELS`, ex.
+"État, TVA facturée sur ventes de marchandises") **alimentent directement
+le champ `intitule` des lignes de journal exportées** (PDF/Excel) — un
+objet statique figé au chargement du module (même piège que
+`TIER_LABELS`/`DEFAULT_ROLES`), remplacé par une fonction (`t()` appelé à
+la génération du compte, pas au chargement). En creusant plus loin,
+**4 autres points de `SyscohadaService.ts`** construisaient aussi des
+libellés de transaction ("Vente {{numéro}} — {{client}}", "Achat
+{{numéro}} — {{fournisseur}}", "Règlement créance/dette — {{label}}",
+"Remboursement vente {{numéro}}") et des noms de repli ("Client comptant",
+"Client", "Fournisseur") entièrement en français en dur — convertis
+(namespaces `syscohadaRoleLabels.*` et `syscohadaLabels.*`).
+**Distinction volontaire faite avec `syscohadaExpenseAccounts.accountLabel`**
+(seed SQL dans [client.ts](packages/database/src/client.ts), ex.
+"Rémunérations directes versées au personnel") : **pas converti**, car
+contrairement à `ROLE_LABELS` (fixe, aucune UI pour le modifier), ce champ
+est une donnée de configuration comptable modifiable par l'utilisateur via
+`upsertExpenseAccountMapping` (section Paramètres → Export SYSCOHADA →
+tableau de correspondance charges) — même statut que `EXPENSE_CATEGORIES`
+("Loyer", "Salaires"...), traité comme donnée métier, pas texte
+d'interface, cohérent avec la convention déjà établie pour ce genre de
+champ tout au long du chantier.
+
+**Vérifié dans le navigateur, avec des données réelles** (pas juste le
+typecheck) : export SYSCOHADA activé temporairement, Journal des ventes
+généré sur la vente test VTE-2026-000001 — confirmé en anglais dans le
+tableau ET dans le PDF exporté (intercepté via `URL.createObjectURL`) :
+compte 571 libellé "Cash", compte 701 libellé "Merchandise sales", ligne
+"Sale VTE-2026-000001 — Walk-in customer". Reproduit ensuite en français
+(après re-génération du journal, la donnée déjà affichée ne se retraduit
+pas rétroactivement à la simple bascule de langue — comportement attendu,
+propre à toute donnée déjà résolue par un appel de service, pas un bug) :
+"Caisse", "Ventes de marchandises", "Vente VTE-2026-000001 — Client
+comptant" — identique au texte d'origine. Export SYSCOHADA redésactivé
+après vérification pour laisser l'état de test comme trouvé.
+
+**Vérifications supplémentaires effectuées** : rebuild forcé
+(`turbo run build test --force`, cache ignoré) deux fois au cours de la
+session pour écarter tout faux négatif de cache ; script de comparaison de
+clés FR/EN (1291 clés de chaque côté, aucune différence) ; script de
+validation que chaque `t("...")` littéral du code correspond à une clé
+existante (0 manquante) ; re-balayage complet du dépôt après chaque lot de
+correctifs pour confirmer la baisse du nombre de correspondances
+restantes ; test du composant Imprimante (bouton "Printer" → panneau
+traduit) ; test du sélecteur "Aucun résultat"/"No results" sur une
+recherche produit sans correspondance.
+
+**Restes identifiés, volontairement non touchés** (catégorisés, pas
+oubliés) :
+- `apps/web/src/app/DatabaseProvider.tsx` : `console.error` et l'erreur de
+  mésusage de `useDatabase()` — jamais vus par un utilisateur.
+- `packages/printer/src/logo.ts` : 2 messages d'erreur de rasterisation du
+  logo — systématiquement avalés par un `try/catch` silencieux côté
+  appelant (`receipt.ts`/`serviceTicket.ts`), jamais affichés ni journalisés.
+- `packages/database/src/client.ts` (seed SQL `syscohada_expense_accounts`)
+  et `syscohadaDefaultExpenseAccountLabel` : données de configuration
+  comptable modifiables par l'utilisateur, traitées comme `EXPENSE_CATEGORIES`
+  (donnée métier, pas texte d'interface).
+- `packages/maintenance-cli` : outil CLI de maintenance/support technique,
+  hors du périmètre "Interface + documents" du chantier (jamais vu par
+  l'utilisateur final du commerce) — sortie console entièrement en français,
+  décision assumée de ne pas le convertir.
+
+**Résultat de cette re-vérification** : `pnpm run build` et les 20 tests
+passent (rebuild forcé, cache ignoré) ; aucune erreur console à aucune
+étape de la vérification navigateur ; le chantier bilinguisme est
+maintenant réellement complet sur son périmètre déclaré, avec une
+méthodologie de vérification (script de balayage + comparaison de clés)
+plus fiable que la relecture manuelle qui avait laissé passer ces 9 trous.
+
+### 2026-08-17 — Correctif : chevauchement de texte dans les tableaux PDF de `packages/reports`
+
+**Contexte** : en relisant lui-même les PDF/Excel réellement générés
+pendant la vérification du chantier bilinguisme (pas seulement le texte
+brut extrait), le porteur du projet a repéré un vrai chevauchement visuel
+dans le Journal des ventes SYSCOHADA exporté — "VTE-2026-000001" et "571"
+(colonnes Pièce/Compte) fusionnés en un seul bloc de texte illisible, et la
+description de transaction débordant sur les colonnes Débit/Crédit. Pas un
+bug de traduction (le texte lui-même était correct dans les deux langues,
+confirmé par les captures fournies) — un défaut de mise en page préexistant
+dans `drawTable()` ([pdf.ts](packages/reports/src/pdf.ts)), révélé par ce
+tableau à 7 colonnes de largeurs très inégales (codes courts vs libellés/
+descriptions longs). Demande explicite d'étendre le correctif à
+**"tous les fichiers générés"**, pas seulement ce tableau.
+
+**Cause racine** : `drawTable()` divisait la page en colonnes de largeur
+strictement égale et appelait `doc.text()` sans jamais retourner à la
+ligne — contrairement à un navigateur, jsPDF ne retourne jamais
+spontanément à la ligne un texte plus long que l'espace disponible, il
+continue simplement hors de la zone prévue, d'où le chevauchement dès
+qu'une colonne voisine commence avant que le texte précédent ne soit fini.
+Risque présent dans **tout texte, indépendamment de la langue** — un
+numéro de vente ("VTE-2026-000001") ou un intitulé de compte long
+("État, TVA facturée sur ventes de marchandises") posent le même problème
+en français qu'en anglais.
+
+**Fait** :
+- [pdf.ts](packages/reports/src/pdf.ts) : `drawTable()`/`drawTableRow()`
+  réécrits pour retourner chaque cellule à la ligne dans la largeur de sa
+  colonne (`doc.splitTextToSize()`), avec une hauteur de ligne dynamique
+  par rangée (le nombre de lignes le plus élevé parmi les cellules de la
+  rangée) — remplace l'ancienne hauteur fixe de 6mm qui supposait
+  implicitement que rien ne débordait jamais. Nouveau paramètre optionnel
+  `columnWeights` (répartition proportionnelle plutôt qu'égale) appliqué
+  aux 3 tableaux qui ont vraiment besoin de colonnes de tailles très
+  différentes : Journal SYSCOHADA (7 colonnes), Balance SYSCOHADA
+  (5 colonnes), et la répartition produits (ABC) du rapport Marges
+  (6 colonnes) — les autres tableaux (2 à 5 colonnes homogènes) gardent la
+  répartition égale d'origine, désormais protégée par le même retour à la
+  ligne en filet de sécurité si jamais un contenu inhabituel dépasse.
+  Nouvelle fonction `drawWrappedSubtitle()` : les sous-titres interpolés
+  (dates + plusieurs montants/compteurs) sont eux aussi retournés à la
+  ligne si trop longs pour la largeur de page, avec le début du tableau
+  décalé en conséquence pour ne jamais chevaucher une deuxième ligne de
+  sous-titre — appliqué à `buildReportPdf` (utilisé par 7 des 9 rapports)
+  et directement dans `buildMarginsReportPdf`/`buildCashFlowReportPdf` (les
+  2 qui construisent leur sous-titre à la main, hors du chemin commun).
+- [quotePdf.ts](packages/printer/src/quotePdf.ts) : même risque identifié
+  par analogie (colonne "Article" en texte libre, sans retour à la ligne)
+  — corrigé avec le même principe (`splitTextToSize` + hauteur de ligne
+  dynamique par article).
+- **Pas touché, déjà robuste** : [receiptPdf.ts](packages/printer/src/receiptPdf.ts)/
+  [receipt.ts](packages/printer/src/receipt.ts)/[serviceTicket.ts](packages/printer/src/serviceTicket.ts)
+  (reçu de vente, bon de dépôt) ont déjà leur propre mécanisme de retour à
+  la ligne (`wrapText`/`pushWrapped`/`padLine`) depuis le correctif du
+  2026-08-15 sur le texte coupé des tickets — confirmé sur les 2 vrais
+  reçus fournis (FR et EN) qu'aucun chevauchement n'y existe.
+  [labelsPdf.ts](packages/printer/src/labelsPdf.ts) utilise déjà l'option
+  native `maxWidth` de jsPDF (retour à la ligne automatique). Les exports
+  Excel ([excel.ts](packages/reports/src/excel.ts)) ne sont pas concernés
+  par ce type de chevauchement (les cellules d'un tableur ne se
+  superposent jamais visuellement — au pire une colonne trop étroite
+  tronque l'affichage jusqu'à ce que l'utilisateur l'élargisse, un
+  comportement standard de tableur, pas un bug applicatif).
+
+**Vérifié dans le navigateur, avec les données réelles fournies par le
+porteur du projet** (vente VTE-2026-000001) : export SYSCOHADA réactivé
+temporairement, Journal des ventes régénéré en PDF, blob intercepté et
+décodé en fichier local pour relecture visuelle directe (pas seulement le
+texte brut) — confirmé : plus aucun chevauchement, "VTE-2026-000001" et
+"571" bien séparés sur des colonnes distinctes, description de transaction
+proprement retournée à la ligne dans sa propre colonne sans déborder sur
+Débit/Crédit. Un premier passage avait encore un léger défaut cosmétique
+(l'en-tête "Compte" coupé en "Compt"/"e" sur deux lignes, faute d'une
+colonne large de quelques mm) — poids de colonnes réajustés
+(`[1.3, 1.6, 1.0, 2.3, 2.6, 1.0, 1.0]`) et revérifié : "Compte" tient
+maintenant sur une seule ligne, tout le reste du tableau reste correct.
+Rapport des ventes (2-3 colonnes homogènes, déjà correct avant ce
+correctif) revérifié aussi pour confirmer l'absence de régression après le
+changement de `buildReportPdf`. `pnpm run build` (rebuild forcé, cache
+ignoré) et les 20 tests unitaires passent. Aucune erreur console.
+
+**Pas fait / laissé de côté** :
+- Alignement à droite des colonnes numériques (Débit/Crédit/Montant) — pas
+  demandé, purement cosmétique, risque de régression visuelle non justifié
+  pour ce correctif ciblé sur le chevauchement/troncature.
+- Vérification visuelle exhaustive de chaque combinaison rapport × langue
+  (18 rapports PDF possibles) — le mécanisme de retour à la ligne est
+  générique et déjà vérifié sur le cas le plus complexe (7 colonnes,
+  contenu le plus long) ; risque jugé faible sur les tableaux plus simples
+  déjà couverts par le même filet de sécurité.
+
+### 2026-08-17 — Audit et correctifs responsive (mobile/tablette)
+
+**Contexte** : retour explicite du porteur du projet — "l'application n'est
+pas assez responsive, sur les petits écrans surtout mobile, la manipulation
+n'est pas assez facile". Aucune media query n'existait nulle part dans
+l'app avant cette session (confirmé par recherche sur tout `apps/web/src`)
+— l'app n'avait jamais été vérifiée à une largeur inférieure au bureau.
+Vérification faite en conditions réelles (navigateur redimensionné à
+375px, 768px, 1280px), pas seulement en lisant le code : un script
+JS (`window.__checkOverflow()`, injecté dans la page) mesure
+`document.documentElement.scrollWidth` vs `window.innerWidth` après
+chaque navigation pour détecter tout débordement horizontal forçant la
+page entière à défiler sur le côté — bien plus fiable qu'une inspection
+visuelle, en particulier dans cet environnement où `computer`/`screenshot`
+échouent régulièrement (pane non composité, déjà documenté dans ce
+fichier).
+
+**3 causes racines systémiques trouvées**, chacune répétée dans un grand
+nombre de fichiers (pas des bugs isolés — un même défaut de layout copié-
+collé partout dans l'app depuis le début) :
+
+1. **Aucune ligne à largeur fixe ne repassait à la ligne** (`flexWrap`
+   manquant). Motif `display: "flex", justifyContent: "space-between"`
+   (titre de page + bouton(s) d'action) trouvé sans `flexWrap` dans **26
+   occurrences sur ~20 fichiers** — confirmé en direct que ça casse la page
+   dès que le titre + les boutons ne tiennent pas sur une seule ligne à
+   375px (ex: la barre du haut, `TopBar.tsx`, poussait toute la page à
+   502px de large sur un écran de 375px). Un second motif, moins visible au
+   premier passage — le groupe de boutons *à l'intérieur* de cette même
+   ligne (`display: "flex", gap: 8`, sans son propre `flexWrap`) — repéré
+   après coup en testant réellement la page Ventes en mobile (le groupe
+   "Mode Caisse/Mode Formulaire/Imprimante/Fermer la caisse" débordait tout
+   seul une fois le premier niveau corrigé) : **16 occurrences
+   supplémentaires**, plus quelques variantes avec un `gap` différent
+   (6 occurrences). Corrigé partout par l'ajout de `flexWrap: "wrap"`
+   (+ `gap` si absent) — un no-op sur grand écran (le contenu tient déjà
+   sur une ligne), donc aucun risque de régression visuelle desktop.
+2. **Aucun tableau ne pouvait défiler dans sa propre largeur** — tous les
+   `<table style={tableStyle}>` (19 fichiers, 30 tableaux au total, y
+   compris un cas de tableau imbriqué dans `ServiceOrdersPage.tsx`) étaient
+   rendus à leur largeur de contenu réelle, sans conteneur
+   `overflow-x: auto` — un tableau à 6-7 colonnes force alors toute la page
+   (en-tête sticky compris) à défiler horizontalement sur mobile. Chaque
+   `<table>` est maintenant enveloppé dans `<div style={{ overflowX:
+   "auto" }}>` — le tableau défile dans sa propre boîte, le reste de la
+   page (nav, en-tête) reste fixe. Approche par enveloppe DOM plutôt que le
+   classique `table { display: block; overflow-x: auto }` en CSS global :
+   ce dernier casse l'alignement des colonnes entre `<thead>` et `<tbody>`
+   (deux contextes de mise en page de tableau séparés, chacun dimensionne
+   ses colonnes indépendamment) — pas acceptable pour des tableaux de
+   données.
+3. **Grilles à colonne fixe qui ne s'empilent jamais** —
+   `gridTemplateColumns: "1fr 380px"` (liste de produits/articles + panier)
+   codé en dur dans **4 pages structurellement identiques** (Ventes, Achats,
+   Devis, Tickets de service) : sur un écran de 375px, la seule colonne
+   fixe de 380px dépasse déjà la largeur de l'écran à elle seule — la page
+   la plus utilisée d'un POS (Ventes) était donc essentiellement inutilisable
+   en mobile. Une media query ne peut pas s'exprimer dans un objet
+   `CSSProperties` (contrainte du style inline utilisé partout dans cette
+   app) — nouvelle classe partagée `.cart-layout-grid`
+   ([index.css](apps/web/src/app/index.css)) : `1fr 380px` au-dessus de
+   720px (identique à l'ancien rendu desktop, vérifié pixel pour pixel :
+   508px/380px sur 1280px de large), colonne unique en dessous. Les 4 pages
+   utilisent maintenant `className="cart-layout-grid"` au lieu de leur
+   style inline dupliqué.
+
+**Autres correctifs, plus ciblés** :
+- [Nav.tsx](apps/web/src/app/Nav.tsx) : les 19 onglets passent de
+  `flexWrap: "wrap"` (jusqu'à 5-6 lignes de boutons empilées, énorme perte
+  d'espace vertical sur mobile) à une **bande défilante horizontalement en
+  une seule ligne** (`overflowX: "auto"`, motif d'onglets mobile standard)
+  — vérifié que la nav défile dans sa propre boîte (1740px de contenu dans
+  375px) sans jamais faire déborder la page.
+- [sharedStyles.ts](apps/web/src/components/sharedStyles.ts) :
+  `pageStyle.padding` passe de `24` fixe à `clamp(12px, 4vw, 24px)` — moins
+  de marge perdue sur petit écran, identique à 24px au-delà d'environ
+  600px de large, sans avoir besoin de media query (fonction CSS pure).
+- 3 modales ([ChangePasswordModal.tsx](apps/web/src/features/auth/ChangePasswordModal.tsx),
+  [RefundModal.tsx](apps/web/src/features/journals/RefundModal.tsx),
+  [RefundHistoryModal.tsx](apps/web/src/features/journals/RefundHistoryModal.tsx)) :
+  largeur fixe (380px/560px) remplacée par `width: "min(380px, 100%)"` (ou
+  560px) + `padding: 16` sur l'overlay — la modale se réduit pour tenir
+  dans un écran plus étroit que sa largeur "normale" au lieu de déborder ;
+  `maxHeight: "85vh", overflowY: "auto"` ajouté à `ChangePasswordModal`
+  (déjà présent sur les deux autres) pour qu'un clavier virtuel mobile ne
+  pousse jamais le bas du formulaire hors d'atteinte.
+
+**Vérifié dans le navigateur, à 3 largeurs** (375px mobile, 768px tablette,
+1280px desktop), avec des comptes/données réels (pas des pages vides) :
+**les 20 onglets de navigation un par un** (Accueil, Ventes, Historique des
+ventes, Devis, Produits, Stock, Clients, Fournisseurs, Achats, Créances,
+Dettes, Rapports — les 4 sous-onglets, Dépenses, Comptabilité — Bilan
+compris, Paramètres, Utilisateurs, Journaux, Tickets de service — les 3
+vues, Promotions), plus l'écran de connexion, l'écran de verrouillage PIN,
+une modale (Rembourser, ouverte depuis Journaux), et un formulaire
+("Nouveau produit") — **zéro débordement horizontal de page restant** sur
+toute cette liste. Confirmé qu'à 1280px la grille Ventes/panier rend
+exactement comme avant (508px/380px, aucun changement visuel desktop).
+`pnpm run build` (rebuild forcé, cache ignoré) et les 20 tests unitaires
+passent. Aucune erreur console (hors WebSocket HMR habituel).
+
+**Pas fait / laissé de côté** :
+- Pas de refonte de la nav en menu hamburger/tiroir — la bande défilante
+  horizontale est un correctif net et à faible risque (une seule classe
+  CSS, pas de nouvel état React, pas de changement de comportement au
+  clic) ; un vrai menu tiroir serait une refonte plus lourde, pas demandée
+  explicitement et hors du périmètre "s'assurer que l'app s'adapte à tous
+  les écrans" de cette session.
+- Pas de revue de la taille des cibles tactiles (zones de clic bouton/lien
+  trop petites au doigt) au-delà de ce qui découle déjà des correctifs
+  ci-dessus — un audit distinct, non demandé cette fois.
+- Le clavier numérique de `PinLockScreen` (chiffres 1-9/0/⌫) n'a pas été
+  spécifiquement testé au tactile (grille de boutons déjà en `display:
+  grid`, taille de bouton déjà généreuse) — risque jugé faible.
+- `BarcodeCameraScanner` (plein écran, déjà à `maxWidth: 480, width:
+  "100%"`) non retouché — déjà responsive avant cette session.
+
+### 2026-08-17 — Responsive : re-vérification avec captures réelles, 3 bugs supplémentaires trouvés et corrigés
+
+**Contexte** : le porteur du projet a testé lui-même sur un vrai téléphone
+après le correctif responsive précédent et fourni 3 captures d'écran réelles
+(Accueil, Produits, Clients) — retour : "j'ai l'impression que tu n'as pas
+analysé toutes les fenêtres [...] je n'ai même pas testé toute l'appli".
+Deux défauts visibles sur les captures : les colonnes de droite des tableaux
+(ÉTIQUETTES, boutons Modifier/Ajuster points) restaient coupées sans aucun
+indice qu'il fallait défiler horizontalement, et un grand espace vide sous
+le tableau sur Produits/Clients.
+
+**Diagnostic de l'espace vide** : **pas un bug** — vérifié par inspection
+directe (`main` mesurait 427px de haut sur un viewport de 812px) : avec un
+seul produit/client en base de test, le tableau est simplement court sur un
+écran de téléphone haut. Avec un vrai catalogue de 20-50 produits, cet
+espace se remplit naturellement. Rien à corriger ici.
+
+**Correctif réel — indice de scroll horizontal invisible** : le
+`overflow-x: auto` posé sur chaque tableau (session précédente) fonctionnait
+mais n'était signalé que par la scrollbar `::-webkit-scrollbar` globale
+(10px, couleur `var(--color-border)`) — visible mais discrète, facilement
+manquée sur un vrai écran tactile où rien n'indique qu'il reste du contenu
+caché tant qu'on n'a pas déjà commencé à toucher l'écran. Nouvelle classe
+`.table-scroll` dans [index.css](apps/web/src/app/index.css) : technique CSS
+pure "scroll shadows" (dégradés `background-attachment: local`/`scroll`
+superposés, sans JS) — une ombre de bord apparaît uniquement du côté où il
+reste du contenu caché, disparaît automatiquement une fois arrivé au bout.
+Les **30 wrappers `<div style={{ overflowX: "auto" }}>`** posés la session
+précédente (19 fichiers) remplacés par `className="table-scroll"`.
+
+**3 vrais bugs de débordement trouvés pendant le balayage** — la méthode de
+vérification précédente (`scrollWidth > window.innerWidth`) s'est révélée
+elle-même défaillante : l'émulation mobile élargit le viewport layout pour
+englober le contenu qui déborde, donc `scrollWidth` ET `innerWidth`
+grandissent ensemble après coup, rendant la comparaison aveugle. Corrigé en
+comparant contre une référence fixe (375px, la largeur réellement demandée)
+plutôt que contre `window.innerWidth`. Avec cette méthode plus fiable,
+balayage de **tous les onglets + sous-onglets + modales** (pas seulement
+quelques pages comme la session précédente) :
+1. **Rapports → onglet "Tickets de service"** : son tableau n'avait jamais
+   eu de wrapper `overflow-x` du tout (contrairement aux tables voisines du
+   même fichier) — raté par le "sweep" de la session précédente car ce
+   n'était pas un simple oubli de wrapper mais une table jamais wrappée dès
+   l'origine. Corrigé.
+2. **Rapports → 3 rangées de cartes KPI** (onglets Ventes/Marges/TVA) :
+   `display: "flex", gap: 16` sans `flexWrap` — TVA a 4 cartes, déborde le
+   premier à 375px (les rangées à 3 cartes de Ventes/Marges passaient de
+   justesse, mais couraient le même risque). Les 3 corrigées avec
+   `flexWrap: "wrap"`, même motif que le reste de l'app.
+3. **Comptabilité → onglet SYSCOHADA (Journal ventes/achats/trésorerie ET
+   Balance générale)** : les 2 tableaux n'avaient eux non plus jamais eu de
+   wrapper — chacun un tableau à 5-7 colonnes, le pire cas possible sur
+   mobile. Corrigés (`className="table-scroll"`).
+4. Repéré en passant, même motif manquant : le tableau de mapping de charges
+   SYSCOHADA dans
+   [SyscohadaAccountsSection.tsx](apps/web/src/features/settings/SyscohadaAccountsSection.tsx)
+   (jamais wrappé), et les rangées de boutons de 3 modales
+   (`ChangePasswordModal`, `RefundModal`, `RefundHistoryModal`) sans
+   `flexWrap` — corrigés par précaution (risque faible vu la largeur des
+   modales déjà contrainte, mais coût nul).
+
+**Vérifié dans le navigateur, à 375px, avec des données réelles créées pour
+l'occasion** (pas des pages vides) : compte Admin, produit "Samsung Galaxy
+A14 128Go Noir" (nom volontairement long, pour reproduire le cas de la
+capture fournie), client réel — balayage systématique des 18 onglets
+principaux + tous les sous-onglets accessibles (Journaux ×3, Rapports ×6 y
+compris TVA et Tickets de service, Comptabilité ×3 y compris les 4 vues
+SYSCOHADA, Tickets de service ×3) + module Promotions + panier Ventes avec
+un article ajouté + PrinterPanel + ouverture de caisse + tentative
+d'encaissement, chaque fois avec le script `scrollWidth vs 375px fixe` :
+**zéro débordement restant** après les 3 correctifs ci-dessus (contre 3
+trouvés avant correction). `pnpm run build` et les 20 tests unitaires
+passent. Modules de test (TVA/Promotions/multi-boutique/SYSCOHADA) réactivés
+temporairement pour atteindre ces pages, puis désactivés à nouveau après
+vérification pour laisser l'état de test comme trouvé.
+
+**Leçon retenue pour toute future vérification responsive** : ne jamais
+comparer `scrollWidth` à `window.innerWidth` sur mobile (les deux peuvent
+dériver ensemble) — comparer à la largeur de viewport réellement demandée en
+constante fixe. Et un "sweep" par simple recherche de motif texte
+(`style={{ overflowX: "auto" }}`, `flexWrap`) ne trouve que ce qui a déjà été
+*commencé* à corriger — une table qui n'a jamais eu de wrapper à l'origine
+(comme les 2 cas SYSCOHADA et le cas Tickets de service ci-dessus) est
+invisible à ce genre de recherche ; seul un parcours réel de chaque page/
+sous-page dans le navigateur les révèle.
+
+### 2026-08-17 — Responsive : fermeture des derniers trous (surfaces non rouvertes + tablette)
+
+**Contexte** : à la question explicite "est-ce que le responsive est vraiment
+effectif partout ?", plutôt que de réaffirmer une confiance non regagnée
+après le correctif précédent, liste honnête de ce qui restait non revérifié
+(3 modales éditées sans être rouvertes, StoresSection, Devis/Créances/Dettes
+avec données réelles, formulaires Stock/Produits/Utilisateurs/Dépenses/
+Promotions, écran PIN, et le point de rupture tablette 768px jamais testé du
+tout) — puis fermeture effective de chacun.
+
+**4 vrais bugs supplémentaires trouvés**, tous variantes du même motif déjà
+documenté (ligne `display:"flex"` avec plusieurs enfants interactifs, sans
+`flexWrap`) mais qui avaient échappé aux recherches précédentes car soit
+imbriqués dans un conteneur qui, lui, avait bien `flexWrap` (le `flexWrap`
+du parent ne protège pas ses propres enfants directs), soit sur un objet de
+style étalé sur plusieurs lignes (invisible à une recherche mono-ligne) :
+1. [DebtsPage.tsx](apps/web/src/features/debts/DebtsPage.tsx) — ligne
+   montant + boutons Confirmer/Annuler du paiement de dette (avait
+   `flexWrap` côté Créances mais pas côté Dettes, incohérence entre les deux
+   pages jumelles).
+2. [CreditsPage.tsx](apps/web/src/features/credits/CreditsPage.tsx) — même
+   ligne montant + boutons, mais imbriquée dans un conteneur externe qui
+   avait déjà `flexWrap` alors que la ligne elle-même (le vrai contenu à
+   largeur variable) ne l'avait pas.
+3. [ServiceOrdersPage.tsx](apps/web/src/features/serviceOrders/ServiceOrdersPage.tsx) —
+   ligne "Solde restant : X" + champ + bouton du remboursement de créance
+   liée à un ticket de service (style étalé sur plusieurs lignes).
+4. [CustomersPage.tsx](apps/web/src/features/customers/CustomersPage.tsx) —
+   ligne d'ajustement de points fidélité (2 champs + 2 boutons).
+
+Trouvés par une recherche `Grep` élargie (avec `multiline: true` pour
+couvrir les styles étalés sur plusieurs lignes) plutôt que par balayage
+navigateur cette fois — plus rapide et plus exhaustif pour ce motif précis
+une fois qu'on sait exactement quoi chercher.
+
+**Vérifié dans le navigateur**, à 375px ET 768px cette fois (le point de
+rupture tablette n'avait jamais été testé avant cette session) : les 19
+onglets principaux + tous les sous-onglets (Journaux, Rapports y compris
+TVA/Tickets de service, Comptabilité y compris les 4 vues SYSCOHADA, Tickets
+de service) balayés aux deux largeurs, écran de connexion, écran PIN
+verrouillé, StoresSection + mapping SYSCOHADA (modules réactivés
+temporairement), formulaires d'édition Produits/Utilisateurs, formulaire
+Dépenses, formulaire Promotions, Devis avec un article réellement ajouté au
+panier, page Stock avec les 3 formulaires (Entrée/Transfert/Retrait) et une
+vraie tentative de saisie, ligne "Ajuster points" de Clients réellement
+ouverte (confirmée sans débordement après le correctif #4 ci-dessus). Grille
+Ventes/panier confirmée en mode 2 colonnes correct à 768px
+(`306.4px 380px`, juste au-dessus du seuil de 720px). `pnpm run build` et
+les 20 tests unitaires passent (deux fois, après chaque lot de correctifs).
+Modules de test désactivés à nouveau après vérification.
+
+**Pas vérifié** : le flux complet de remboursement de créance/dette avec de
+vraies données (bloqué par un souci de stock à 0 sur le produit de test,
+sans rapport avec le responsive) — le correctif de code est identique à un
+motif déjà vérifié des dizaines de fois ailleurs dans l'app
+(`flexWrap: "wrap"` sur une ligne input+boutons), risque jugé nul.
+
+### 2026-08-17 — Nav mobile : bouton menu au lieu du défilement horizontal
+
+**Contexte** : la barre d'onglets (19 entrées) défile horizontalement
+depuis le tout premier correctif responsive (2026-08-17, choix déjà motivé
+à l'époque par le fait qu'un retour à la ligne prenait 5-6 lignes de haut) —
+une ombre de bord y avait été ajoutée entre-temps pour signaler qu'il reste
+du contenu à droite (voir plus haut, "re-vérification avec captures
+réelles"). Retour explicite du porteur du projet : au comptoir sur mobile,
+il ne veut **aucun défilement de ce menu**, quelle que soit sa visibilité —
+soit un bouton menu, soit un retour à la ligne automatique.
+
+**Décision** : bouton menu plutôt que retour à la ligne, puisque le retour
+à la ligne avait déjà été écarté une fois pour la même raison (hauteur
+perdue) — les deux options réglaient le problème signalé, mais une seule
+n'entrait pas en contradiction avec une décision déjà prise.
+
+**Fait** — [Nav.tsx](apps/web/src/app/Nav.tsx) rend maintenant deux
+présentations du même menu, basculées par media query (`max-width: 720px`,
+même seuil que `.cart-layout-grid`) plutôt que par un état React/écouteur de
+redimensionnement — plus simple et sans re-render au resize :
+- `.nav-full` (bureau/tablette, inchangé) : la ligne défilante existante.
+- `.nav-compact` (mobile) : un bouton pleine largeur (`☰` + libellé de
+  l'onglet actif, pour savoir où on est sans ouvrir le menu) qui déplie une
+  liste verticale de tous les onglets visibles juste en dessous
+  (`position: absolute`, `maxHeight: 70vh` + `overflowY: auto` au cas où —
+  19 entrées tiennent déjà sans avoir besoin de scroller sur un écran de
+  taille normale). Fermeture au clic sur un onglet ou en perdant le focus,
+  même mécanique `onBlur` + délai de 150 ms + `onMouseDown` sur les options
+  que [SearchableSelect.tsx](apps/web/src/components/SearchableSelect.tsx)
+  (le délai laisse le `mousedown` de l'option s'exécuter avant que le
+  `blur` du bouton ne referme le menu).
+- Nouvelles classes `.nav-full`/`.nav-compact` dans
+  [index.css](apps/web/src/app/index.css), même doc-comment étendu que
+  `.table-scroll` (réutilisée telle quelle pour l'ombre de bord de `.nav-full`,
+  son fond `var(--color-bg)` correspond déjà à celui de la nav — pas besoin
+  d'une classe dédiée).
+
+**Bug trouvé et corrigé pendant la vérification navigateur** : premier
+passage, les deux présentations s'affichaient **simultanément** sur mobile
+au lieu que `.nav-full` se cache — cause : `<nav className="nav-full" style={{ display: "flex", ... }}>`
+gardait `display: "flex"` en style inline, qui l'emporte toujours sur une
+règle de classe CSS (même sous media query) à spécificité égale ou
+inférieure. Un style inline ne peut pas être conditionné par une media
+query, donc il faut laisser la classe CSS être seule responsable de
+`display` dès qu'un composant doit basculer entre plusieurs présentations
+selon la largeur d'écran — `display: "flex"` retiré du style inline de
+`<nav>`, laissé uniquement dans la règle `.nav-full` de index.css.
+
+**Vérifié dans le navigateur** : à 375px, `.nav-full` a `display: none` et
+`.nav-compact` a `display: block` (confirmé après le correctif ci-dessus) ;
+menu ouvert, les 18 onglets visibles pour ce compte listés correctement,
+clic sur "Produits" → menu se ferme, page change, libellé du bouton devient
+"☰ Produits", aucun débordement (`scrollWidth` toujours égal à la largeur
+de viewport). À 768px et 730px : `.nav-full` repasse à `display: flex`,
+`.nav-compact` à `display: none` — comportement bureau/tablette inchangé.
+`pnpm run build` et les 20 tests unitaires passent.
+
+**Suivi immédiat — seuil remonté à 1024px** : retour du porteur du projet
+après ce premier correctif — sur tablette aussi, le menu défilait encore
+(720px ne couvrait que les téléphones). Périmètre voulu : bouton menu sur
+téléphone **et** tablette, ligne complète réservée à un vrai écran
+d'ordinateur. Seuil de `.nav-full`/`.nav-compact` remonté de 720px à
+1024px (bascule tablette/ordinateur standard — un iPad classique en
+paysage, 1024px, reste donc en mode tablette/menu compact), sans toucher
+au seuil de `.cart-layout-grid` (720px, problème différent : largeur de la
+colonne panier). Vérifié dans le navigateur à 1024px (`.nav-compact`
+affiché) et 1200px (`.nav-full` affiché, comportement bureau inchangé).
+`pnpm run build` et les 20 tests unitaires passent.
+
+### 2026-08-18 — Bug : sauvegarde locale "Choisir un dossier" cassée sur Android
+
+**Contexte** : signalement d'un échec concret sur Android — clic sur
+"Choisir un dossier" (Paramètres → Sauvegardes → Sauvegarde locale) rejette
+avec `Failed to execute 'showDirectoryPicker' on 'Window': The user aborted
+a request.` alors qu'aucune annulation n'a eu lieu côté utilisateur. Demande
+explicite de vérifier en même temps le flux de restauration.
+
+**Cause racine** : [isFileSystemAccessSupported()](packages/sync/src/folderHandle.ts)
+ne faisait qu'une détection de fonctionnalité (`"showDirectoryPicker" in
+window`) pour choisir entre le flux "dossier" (File System Access API) et
+le flux de repli "téléchargement manuel". Or Chrome pour Android — et donc
+le WebView Android utilisé par le build Tauri, qui partage le même moteur —
+expose bien la propriété JS `showDirectoryPicker` sur `window`, mais n'a
+**jamais livré l'interface native de sélection de dossier** derrière (API
+desktop-only à ce jour). L'appel rejette donc immédiatement avec un
+`AbortError` générique, indiscernable en apparence d'une vraie annulation
+utilisateur — d'où le message trompeur.
+
+**Fait** : `isFileSystemAccessSupported()` exclut maintenant explicitement
+Android par user-agent, même détection et même raison que
+[isDesktopTauriRuntime()](apps/web/src/features/settings/tauriRuntime.ts)
+(pas de `@tauri-apps/plugin-os` installé dans ce projet). Sur Android, la
+page affiche donc maintenant directement le flux de repli déjà existant et
+fonctionnel ("Ce navigateur ne prend pas en charge la sauvegarde
+automatique dans un dossier, télécharge une sauvegarde manuellement") —
+même chemin que Firefox/Safari desktop empruntaient déjà avant ce
+correctif, pas un nouveau flux.
+
+**Vérifié dans le navigateur**, avec un vrai cycle complet plutôt qu'une
+simple lecture de code : user-agent Android simulé →confirmé bascule vers
+le flux de repli (plus de bouton "Choisir un dossier" cassé) → sauvegarde
+téléchargée (blob de 392 Ko intercepté, entrée "Réussie" dans l'historique)
+→ nom d'entreprise modifié après la sauvegarde → **restauration** du
+fichier téléchargé (simulée via `DataTransfer` sur l'input file réel, pas
+un mock) → rechargement automatique de l'app (comportement voulu, voir
+`handleImportBackup`) → reconnexion → nom d'entreprise confirmé revenu à sa
+valeur d'avant-sauvegarde (la modification post-sauvegarde n'a pas
+survécu) → table des sauvegardes revenue à "Aucune sauvegarde" (cohérent :
+l'export capture les octets *avant* l'insertion de la ligne d'historique de
+cette sauvegarde elle-même). **Le flux de restauration fonctionne
+correctement**, aucune régression trouvée. Revérifié aussi que le flux
+desktop ("Choisir un dossier" visible) n'est pas affecté par ce correctif
+(user-agent desktop normal). Aucune erreur console applicative (hors
+WebSocket HMR habituel). `pnpm run build` et les 20 tests unitaires
+passent.
+
+**Pas fait** : le flux "Sauvegarder maintenant" du dossier choisi (partie
+haute du même bloc, utilisée quand `isFileSystemAccessSupported()` est
+vrai) n'a pas été testé en conditions réelles sur desktop cette session —
+inchangé par ce correctif, hors périmètre du bug signalé.
+
+**Suivi — même cause racine, deuxième symptôme repéré par le porteur du
+projet sur l'ancien APK (pas encore mis à jour avec le correctif
+ci-dessus)** : "Sauvegarder maintenant" (le bouton du flux dossier,
+utilisable une fois un dossier "choisi" via l'appel cassé) rapportait
+`status: "success"` dans l'historique alors qu'aucun fichier n'était
+réellement écrit nulle part. Cause exacte dans
+[backupRunner.ts](apps/web/src/features/settings/backupRunner.ts) :
+`writeBackupFile()` (`handle.getFileHandle` → `createWritable` → `write` →
+`close`) résout sa promesse sans lever d'erreur sur Android même sur un
+`handle` non fonctionnel — la primitive elle-même ment sur son succès, pas
+seulement le premier appel (`showDirectoryPicker`) qui, lui, rejette
+franchement. Le correctif ci-dessus (masquer tout le flux dossier sur
+Android) couvre aussi ce deuxième symptôme : `writeBackupFile` ne devient
+plus jamais atteignable sur Android, plus de faux "succès" possible.
+Vérifié qu'aucun mécanisme d'écriture native Android n'existe par ailleurs
+dans le projet (pas de `@tauri-apps/plugin-fs` installé, aucune permission
+`fs:*` dans `capabilities/default.json` — seul `plugin-dialog` est présent,
+utilisé uniquement pour le sélecteur de fichier `.exe`/`.msi` sur desktop) —
+confirmé avec le porteur du projet que le flux de téléchargement manuel
+(dépôt dans le dossier Téléchargements de l'appareil, sans choix de
+dossier) est le comportement attendu et suffisant, pas une régression à
+combler par un mécanisme natif supplémentaire.
+
+### 2026-08-18 — Zones système Android (barre de statut/navigation) qui recouvrent le contenu
+
+**Contexte** : capture d'écran réelle sur Samsung A14 — le texte du nom
+d'utilisateur en haut est partiellement caché sous la barre de statut
+(heure/réseau/batterie), et le bouton "Enregistrer" en bas de Paramètres
+est caché sous la barre de navigation système Android.
+
+**Cause racine** : [MainActivity.kt](apps/desktop/src-tauri/gen/android/app/src/main/java/com/waribox/app/MainActivity.kt)
+(généré par `tauri android init`, non versionné — voir *Environnement de
+dev*) appelle `enableEdgeToEdge()`, qui fait dessiner le contenu web sous
+les barres système plutôt qu'à côté. Rien côté web ne réservait cet
+espace : ni `viewport-fit=cover` dans `index.html`, ni aucun usage de
+`env(safe-area-inset-*)` nulle part dans le CSS. Désactiver
+`enableEdgeToEdge()` n'aurait pas été une solution durable : `targetSdk`
+est à 36 (`gen/android/app/build.gradle.kts`), et Android impose de plus en
+plus ce mode indépendamment de la demande de l'app sur les versions
+récentes — la vraie solution est que l'app gère elle-même ces marges,
+pas qu'elle essaie de désactiver un comportement qui deviendra obligatoire.
+
+**Fait** :
+- [index.html](apps/web/index.html) : `viewport-fit=cover` ajouté au
+  meta viewport — condition nécessaire pour que `env(safe-area-inset-*)`
+  se résolve à autre chose que 0.
+- [index.css](apps/web/src/app/index.css) : `body` reçoit
+  `padding-top`/`padding-bottom: env(safe-area-inset-*)` — vaut 0 sans
+  zone système à éviter (desktop, PWA non edge-to-edge), donc sans effet
+  ailleurs qu'Android edge-to-edge.
+- [App.tsx](apps/web/src/app/App.tsx) : l'en-tête sticky (TopBar +
+  BusinessHeader + Nav) passe de `top: 0` à `top: "env(safe-area-inset-top)"`
+  — un élément `position: sticky` se bloque à sa propre valeur `top`,
+  indépendamment du padding déjà posé sur `body` ; avec `top: 0` il
+  repasserait sous la barre de statut dès le premier défilement, rendant
+  le padding de `body` inutile après le tout premier rendu.
+
+**Pas vérifié** : impossible de reproduire une vraie valeur non-nulle de
+`env(safe-area-inset-*)` dans cet environnement de développement (aucun
+appareil avec encoche/barres système réelles disponible — Chrome desktop
+résout toujours ces variables à 0, donc le test ne peut que confirmer
+l'absence de régression visuelle en `0px`, pas que le correctif fonctionne
+réellement). `pnpm run build` et les 20 tests unitaires passent, aucune
+régression visuelle observée en desktop. **Nécessite un test sur l'appareil
+Android réel du porteur du projet pour confirmation** — si les zones
+restent coupées après ce correctif, cela indiquerait que le WebView
+Android de Tauri (`enableEdgeToEdge()` + WebView) ne transmet pas
+correctement les insets système au moteur CSS de la page (relais natif
+Kotlin manquant plutôt qu'un problème résolvable en CSS seul), auquel cas
+il faudrait ajouter la relève côté Kotlin (`ViewCompat.setOnApplyWindowInsetsListener`).
+
+### 2026-08-18 — Audit complet (sécurité, bugs, écrans, fonctionnalités) : 2 correctifs
+
+**Contexte** : demande explicite d'un audit complet — fonctionnalités,
+adaptation à tous les écrans, bugs, failles de sécurité. Méthode : lecture
+systématique de toutes les fonctions de mutation de `packages/core`
+(recensées via `grep`, 65 fonctions), recherche d'injection SQL/XSS/secrets
+exposés, calcul réel (formule WCAG, pas à l'œil) du contraste des couleurs
+de statut, et re-balayage des largeurs déjà couvertes par les sessions
+précédentes. Rapport complet publié en Artifact ("WariBox Audit").
+
+**Faille de sécurité confirmée et corrigée** :
+[LoyaltyService.adjustPoints](packages/core/src/services/LoyaltyService.ts)
+— seule fonction de mutation du projet sans aucune vérification de
+permission (les 40 autres l'ont toutes déjà, voir audit du 2026-08-13).
+N'importe quel compte connecté pouvait l'appeler directement (ex. console
+du navigateur) pour créditer/débiter les points de fidélité de n'importe
+quel client, sans limite — points convertibles en vraie remise sur une
+vente (`pointsToDiscount`), donc un vecteur de fraude réel, pas cosmétique.
+Le bouton "Ajuster points" (`CustomersPage.tsx`) n'était lui-même gardé que
+par la permission de l'onglet Clients (`manage_customers`), que Vendeur
+possède par défaut. **Corrigé** : `requirePermission(actingPermissions,
+"manage_customers")` ajouté, `actingPermissions: PermissionSet` en 3e
+paramètre (même patron que les 40 autres), appelant (`CustomersPage.tsx`)
+mis à jour pour passer `user.permissions`. Vérifié dans le navigateur :
+fonctionne toujours normalement pour Admin (50 points crédités sur un
+client de test), aucune autre régression (`adjustPoints` n'a qu'un seul
+appelant dans tout le projet).
+
+**Bug de lisibilité confirmé et corrigé — contraste des couleurs de statut** :
+4 couleurs fixes (`#f87171` rouge, `#86efac` vert, `#fdba74` orange,
+`#facc15` jaune), utilisées comme couleur de texte brut directement sur le
+fond de page dans **84 endroits sur 28 fichiers** (erreurs de formulaire,
+confirmations, soldes en retard, bordures d'accent de carte). Ces valeurs
+sont bien choisies pour le thème **sombre** (6.5:1 à 12.7:1 de contraste
+contre `--color-bg` sombre, largement au-dessus du minimum WCAG AA de
+4.5:1) mais s'effondrent en thème **clair** (1.3:1 à 2.6:1 — quasi
+invisibles). *Note méthodologique* : un premier calcul de contraste fait
+plus tôt dans cette session avait un bug de découpage du code hex
+(`slice(1,3)` au lieu de `slice(0,2)`) qui donnait des chiffres faux
+laissant croire à un problème dans les deux thèmes — recalculé et vérifié
+à la main avant de corriger quoi que ce soit, voir historique de la
+conversation.
+
+**Fait** : 4 nouvelles variables CSS dans
+[index.css](apps/web/src/app/index.css) (`--color-danger`,
+`--color-success`, `--color-warning`, `--color-caution`), avec des valeurs
+distinctes pour `:root` (sombre, valeurs existantes conservées telles
+quelles) et `:root[data-theme="light"]` (nouvelles valeurs plus foncées,
+chacune vérifiée ≥4.5:1 contre `--color-bg` clair : rouge `#b91c1c` 6.18:1,
+vert `#0e7a37` 5.20:1, orange `#a3410f` 6.04:1, jaune `#a16207` 4.71:1 — le
+jaune est le plus juste des quatre, intrinsèquement le plus difficile à
+foncer tout en restant reconnaissable comme jaune sur fond blanc plutôt que
+comme brun, pas un raccourci pris ici). Les 84 occurrences remplacées par
+les variables correspondantes via un script Node ponctuel (remplacement
+littéral exact par fichier, pas de regex approximative) — 83 sur 84
+automatiques, 1 corrigée manuellement (espacement différent de celui
+attendu). **Volontairement pas touché** : `SimpleChart.tsx` (couleurs de
+barres de graphique, pas du texte), `sharedStyles.ts` `BADGE_COLORS`
+(paires fond+texte auto-contenues, contraste interne à la pastille,
+indépendant du thème de la page — un système différent, pas concerné par
+ce bug), et le fond du bouton "Fermer maintenant" de Paramètres
+(`background:`, pas `color:` — texte déjà foncé dessus, non concerné).
+
+**Vérifié dans le navigateur** : déclenché une vraie erreur de validation
+et un vrai message "Enregistré." — couleur calculée confirmée
+`rgb(185, 28, 28)` (= `#b91c1c`) en thème clair, `rgb(248, 113, 113)`
+(= `#f87171`, valeur d'origine inchangée) en thème sombre après bascule en
+direct sans rechargement, `rgb(134, 239, 172)` (= `#86efac`) pour un
+message de succès en thème sombre. `pnpm run build` et les 20 tests
+unitaires passent.
+
+**Reste du rapport d'audit** (voir Artifact "WariBox Audit" pour le détail
+complet) : aucune injection SQL, aucun XSS, aucun secret exposé, session
+non persistée, hachage Argon2id partout, CSP Tauri correcte, OAuth Google
+Drive en PKCE sans client secret — tout confirmé sain, rien à corriger. 12
+largeurs d'écran vérifiées sans débordement (320px à 1200px, portrait et
+paysage, y compris un cas non testé avant cette session : téléphone en
+paysage 812×375). Un seul point encore en attente de confirmation
+appareil réel : les zones système Android (voir entrée précédente,
+2026-08-18).
+
+### 2026-08-18 — Aucun fichier généré ne se sauvegardait sur Android (pas que les sauvegardes) — nouveau mécanisme natif
+
+**Contexte** : suite du correctif "Choisir un dossier" cassé sur Android
+(voir entrée du 2026-08-18 précédente sur le sujet) — le porteur du projet
+signale que même le repli "Télécharger une sauvegarde maintenant" ne
+fonctionne pas non plus sur son appareil réel.
+
+**Cause racine, plus large que prévu** : `downloadBlob()` (blob URL +
+`<a download>` + `.click()`, dupliqué dans **9 fichiers** de l'app pour
+tous les documents générés — reçus, tickets, étiquettes, et les exports
+PDF/Excel des rapports/comptabilité/devis) repose sur le mécanisme de
+téléchargement du navigateur. Contrairement à un vrai Chrome, **le
+composant WebView brut d'Android n'a aucun gestionnaire de téléchargement
+intégré** — un clic sur un lien `<a download>` n'y produit simplement
+aucun effet sans câblage natif dédié (`WebView.setDownloadListener` côté
+Kotlin), absent de [MainActivity.kt](apps/desktop/src-tauri/gen/android/app/src/main/java/com/waribox/app/MainActivity.kt)
+(scaffold minimal généré par `tauri android init`, voir entrée précédente).
+**Donc le bug ne touchait pas que les sauvegardes : aucun document généré
+(reçu, ticket, étiquette, rapport) n'était réellement récupérable sur
+Android** avant ce correctif — la vérification précédente (qui concluait
+"le téléchargement fonctionne") avait été faite dans un vrai Chrome
+desktop avec un user-agent Android simulé, pas dans le vrai WebView
+embarqué de Tauri, ce qui ne pouvait pas révéler ce problème spécifique au
+moteur.
+
+**Décision** : le porteur du projet a demandé la "vraie" solution (choix
+de dossier natif) plutôt qu'un simple repli, à condition de ne rien casser
+sur les autres plateformes — et d'étendre ça aux reçus/rapports, pas
+seulement aux sauvegardes.
+
+**Fait** — nouveau mécanisme natif via Tauri, strictement limité à Android
+(desktop garde son flux existant, PWA/navigateur garde son flux existant —
+aucun des deux n'est cassé, donc aucune raison d'y toucher) :
+- Nouveau plugin [tauri-plugin-fs](https://v2.tauri.app) ajouté (`Cargo.toml`,
+  enregistré dans [lib.rs](apps/desktop/src-tauri/src/lib.rs)) — absent du
+  projet jusqu'ici (seul `tauri-plugin-dialog` était présent, utilisé
+  uniquement pour le sélecteur de fichier `.exe`/`.msi` sur desktop).
+  Permissions ajoutées dans
+  [capabilities/default.json](apps/desktop/src-tauri/capabilities/default.json)
+  (`fs:allow-write-file`/`allow-mkdir`/`allow-exists`, scope large `**` —
+  même raisonnement et même précédent que `opener:allow-open-path` déjà
+  présent : l'utilisateur choisit lui-même l'emplacement, pas de chemin
+  prévisible à restreindre à l'avance) + `dialog:allow-save`.
+- [packages/sync/src/nativeFolder.ts](packages/sync/src/nativeFolder.ts)
+  (nouveau fichier) : `isAndroidTauriRuntime()` (même détection user-agent
+  qu'`isDesktopTauriRuntime()` côté web, inversée), `pickNativeFolder(kind)`
+  (sélecteur de dossier natif Android via Storage Access Framework, à
+  travers `plugin-dialog` — une vraie fonctionnalité du système
+  d'exploitation, contrairement à `showDirectoryPicker`), `writeNativeFile`
+  (écrit dans le dossier déjà choisi, via `plugin-fs` + `@tauri-apps/api/path`
+  pour joindre le chemin), `saveNativeDocument` (pour les documents
+  ponctuels : écrit directement si un dossier "documents" est déjà
+  configuré, sinon ouvre la boîte "Enregistrer sous" native de
+  `plugin-dialog` — pas besoin d'avoir tout configuré à l'avance pour un
+  premier export). Chemins mémorisés en `localStorage` (deux clés
+  séparées, `backup` et `documents`) — plus simple que la persistance
+  `IndexedDB` de `FileSystemDirectoryHandle` côté web (ici ce n'est qu'une
+  chaîne de caractères, pas un objet complexe à sérialiser).
+- [backupRunner.ts](apps/web/src/features/settings/backupRunner.ts) :
+  `runLocalBackup` bascule sur ce nouveau chemin natif quand
+  `isAndroidTauriRuntime()`, garde le chemin web existant sinon.
+- [SettingsPage.tsx](apps/web/src/features/settings/SettingsPage.tsx) :
+  le bloc "Sauvegarde locale" devient à 3 branches (web `showDirectoryPicker`
+  sur desktop, natif sur Android, téléchargement de repli sur les autres
+  navigateurs) au lieu de 2 — même apparence/textes que le flux desktop
+  existant, juste un chemin natif au lieu d'un handle web. Nouveau bloc
+  "Documents générés" (choix d'un dossier séparé pour reçus/tickets/
+  étiquettes/rapports), visible uniquement sur Android.
+- [apps/web/src/lib/saveFile.ts](apps/web/src/lib/saveFile.ts) (nouveau) :
+  point d'entrée unique `saveGeneratedFile(blob, filename)` remplaçant les
+  9 copies locales de `downloadBlob()` — bascule sur `saveNativeDocument`
+  sur Android, garde le mécanisme blob-URL existant partout ailleurs.
+  **32 points d'appel mis à jour** dans
+  AccountingPage/ProductsPage/SalesHistoryPage/SalesPage/PurchasesPage/
+  QuotesPage/ServiceOrdersPage/ReportsPage/SettingsPage (y compris le
+  filet de sécurité "avant-import" de la restauration de sauvegarde, qui
+  tournait sur toutes les plateformes sans distinction) — plusieurs
+  fonctions d'export, jusqu'ici synchrones, sont passées `async` pour
+  pouvoir `await` le nouvel appel.
+
+**Vérifié** : `pnpm run build` (typecheck complet du monorepo) et les 20
+tests unitaires passent. Vérifié dans le navigateur (desktop, seule
+plateforme testable ici) : export PDF d'un rapport toujours fonctionnel
+(blob de 3579 octets intercepté, mécanisme de téléchargement inchangé),
+section "Documents générés" bien absente sur desktop (ne s'affiche que sur
+Android), flux "Choisir un dossier" desktop inchangé — **aucune
+régression détectée sur ce qui fonctionnait déjà**.
+
+**Pas vérifiable dans cet environnement** : le chemin natif Android
+lui-même (`plugin-dialog`/`plugin-fs` en conditions réelles — sélection
+d'un dossier via Storage Access Framework, écriture dans un chemin
+`content://`) ne peut être exercé que dans un vrai WebView Android, absent
+de cet environnement de développement. Écrit au meilleur de la
+documentation officielle Tauri v2 disponible, mais **nécessite un test sur
+l'appareil réel du porteur du projet avant de considérer le sujet clos** —
+même limite déjà rencontrée pour le correctif des zones système Android.
+Si l'écriture via un chemin natif issu du sélecteur de dossier s'avère ne
+pas fonctionner telle quelle (le mapping `content://` → écriture
+`plugin-fs` est le point le plus incertain de ce correctif), la boîte
+"Enregistrer sous" ponctuelle (`saveNativeDocument` sans dossier
+préconfiguré) reste un filet de repli qui a de meilleures chances de
+fonctionner nativement, SAF gérant lui-même l'écriture dans ce cas.
+
+### 2026-08-18 — Le sélecteur de dossier natif Android n'existe pas : pivot vers une écriture directe dans Téléchargements
+
+**Contexte** : le point signalé comme "pas vérifiable dans cet
+environnement" de l'entrée précédente vient de trancher tout seul —
+l'appareil réel du porteur du projet ("bluetasks") a rejeté l'appel
+`pickNativeFolder` avec l'erreur exacte **"Folder picker is not
+implemented on mobile"**, capture d'écran à l'appui.
+
+**Cause racine** : contrairement à l'hypothèse de l'entrée précédente (qui
+pariait sur Storage Access Framework via `plugin-dialog`), le sélecteur de
+dossier de `@tauri-apps/plugin-dialog` (`open({ directory: true })`)
+**n'est tout simplement pas implémenté sur mobile** — une limitation du
+plugin Tauri lui-même, documentée nulle part de façon évidente au moment
+d'écrire le correctif précédent, et qu'aucune configuration côté app
+n'aurait pu contourner. Le sélecteur de fichier (`.exe`/`.msi`, desktop
+uniquement, utilisé par "Installer une mise à jour") n'est pas concerné —
+seul le mode `directory: true` est en cause.
+
+**Décision** : abandon complet de l'idée "laisser choisir un dossier" sur
+Android — puisque même le sélecteur natif s'avère indisponible, aucune
+approche interactive ne peut être garantie sur cette plateforme. Écriture
+directe et **sans aucune boîte de dialogue** dans le dossier Téléchargements
+public de l'appareil, via `BaseDirectory.Download` de `@tauri-apps/plugin-fs`
+— une fonctionnalité documentée et non-interactive du plugin (contrairement
+au sélecteur de dossier, qui l'était mais cassé). Rejoint ce que le porteur
+du projet avait déjà dit accepter en repli plus tôt dans ce chantier
+("si il atterrit dans le dossier téléchargement je n'ai rien contre").
+
+**Fait** — [packages/sync/src/nativeFolder.ts](packages/sync/src/nativeFolder.ts)
+réécrit de zéro, **tout le concept de choix/mémorisation de dossier
+supprimé** (`NativeFolderKind`, `loadNativeFolderPath`, `pickNativeFolder`,
+`clearNativeFolderPath`, `writeNativeFile`, `saveNativeDocument` —
+disparus). Ne reste que `isAndroidTauriRuntime()` (inchangée) et une
+nouvelle fonction unique, `writeToAndroidDownloads(filename, bytes)` :
+`writeFile(filename, bytes, { baseDir: BaseDirectory.Download })`, sans
+dialogue, sans chemin à construire à la main.
+- [capabilities/default.json](apps/desktop/src-tauri/capabilities/default.json) :
+  portée `$DOWNLOAD/**` ajoutée aux permissions `fs:allow-write-file`/
+  `allow-mkdir`/`allow-exists` (en plus du `**` déjà large existant), et les
+  deux permissions de portée prédéfinies `fs:scope-download`/
+  `fs:scope-download-recursive` ajoutées par précaution — `BaseDirectory.Download`
+  résout un chemin interne à `plugin-fs`, pas nécessairement couvert par un
+  simple `**` littéral selon comment ce chemin est comparé au scope. Le
+  build Tauri (`tsc -b` + `vite build` du côté web, seule partie vérifiable
+  dans cet environnement) valide déjà que rien côté TypeScript ne casse ;
+  la validation du schéma de permissions Tauri lui-même (ces deux chaînes
+  sont-elles de vrais identifiants v2 ?) ne peut être confirmée qu'au
+  prochain `tauri android build` réel.
+- [backupRunner.ts](apps/web/src/features/settings/backupRunner.ts) :
+  `runLocalBackup` appelle directement `writeToAndroidDownloads` sur
+  Android, plus de vérification "dossier déjà choisi" (il n'y a plus de
+  dossier à choisir).
+- [saveFile.ts](apps/web/src/lib/saveFile.ts) : `saveGeneratedFile` appelle
+  `writeToAndroidDownloads` au lieu de l'ancien `saveNativeDocument` — les
+  32 points d'appel existants (voir entrée précédente) n'ont pas eu besoin
+  d'être retouchés, seul le point d'entrée a changé.
+- [SettingsPage.tsx](apps/web/src/features/settings/SettingsPage.tsx) : le
+  bloc "Sauvegarde locale" sur Android n'a plus qu'un texte d'information
+  (`settings.backups.androidAutoLocation`, nouvelle clé) + le bouton
+  "Sauvegarder maintenant", sans aucun état de dossier ni bouton "Choisir un
+  dossier"/"Ne plus utiliser ce dossier". Le bloc entier "Documents
+  générés" (choix d'un dossier séparé pour reçus/rapports) est supprimé —
+  il n'y a plus rien à choisir, `saveGeneratedFile` écrit toujours au même
+  endroit. Namespace i18n `settings.documents.*` (devenu mort, confirmé par
+  recherche de `settings\.documents\.` dans `apps/web/src` : aucune
+  correspondance) retiré des deux dictionnaires.
+- Les flux desktop (`showDirectoryPicker`) et navigateur/PWA
+  (téléchargement blob) ne sont pas touchés par ce pivot — seule la branche
+  Android change.
+
+**Vérifié** : `pnpm run build` (typecheck complet du monorepo, confirme
+qu'aucune référence aux exports supprimés de `nativeFolder.ts` ne
+subsiste nulle part ailleurs dans le code) et les 20 tests unitaires
+passent. Comparaison de code directe (pas de nouvelle session navigateur)
+confirmant que la branche desktop/PWA de `saveFile.ts`/`backupRunner.ts`
+est restée octet pour octet identique à avant ce pivot.
+
+**Pas vérifiable dans cet environnement** — comme pour le correctif
+précédent, l'écriture réelle via `BaseDirectory.Download` sur un vrai
+WebView Android ne peut être exercée que sur l'appareil du porteur du
+projet. **Cette fois cependant, le mécanisme utilisé est une fonctionnalité
+documentée et non-interactive de `plugin-fs`** (par opposition à un
+sélecteur de dialogue dont le support mobile n'était pas garanti et s'est
+avéré absent) — risque résiduel jugé plus faible, mais toujours à confirmer
+sur l'appareil réel avant de considérer le sujet clos.
+
+### 2026-08-27 — `BaseDirectory.Download` n'écrit PAS dans le dossier Téléchargements public : cause racine trouvée dans le code source de Tauri, vraie correction via MediaStore
+
+**Contexte** : test réel du correctif précédent, cette fois sur BlueStacks
+(émulateur Android sur PC, capture d'écran à l'appui) — la sauvegarde
+locale est enregistrée en base avec le statut "Réussie" (donc
+`writeToAndroidDownloads` ne lève aucune erreur), mais le fichier reste
+introuvable nulle part sur l'appareil. Demande explicite du porteur du
+projet de ne pas se contenter d'un nouveau pari : "inspecte bien ce bug et
+resous une bonne fois pour toute avec la bonne méthodologie."
+
+**Méthodologie cette fois** : au lieu de supposer le comportement de
+`BaseDirectory.Download` par analogie avec desktop, lecture directe du
+code source Rust/Kotlin des crates concernées, trouvées dans le cache
+local de compilation Cargo (`~/.cargo/registry/src/.../tauri-2.11.5/`) —
+donc la version exacte réellement utilisée par ce projet, pas une
+supposition depuis la documentation publique.
+
+**Cause racine, confirmée dans le code source** :
+[`tauri-2.11.5/mobile/android/src/main/java/app/tauri/PathPlugin.kt:78-80`](https://docs.rs/tauri/2.11.5/) —
+la commande native `getDownloadDir` (invoquée par
+`BaseDirectory.Download` de `@tauri-apps/plugin-fs` sur Android) est
+implémentée ainsi :
+```kotlin
+fun getDownloadDir(invoke: Invoke) {
+    resolvePath(invoke, activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.absolutePath)
+}
+```
+`getExternalFilesDir()` renvoie un dossier **privé à l'application**
+(`/storage/emulated/0/Android/data/com.waribox.app/files/Download`), pas
+le dossier Téléchargements public partagé
+(`/storage/emulated/0/Download`) que l'utilisateur voit dans l'app
+Fichiers. Sur Android 11+ (API 30+), `/Android/data/` est même masqué par
+défaut du gestionnaire de fichiers système pour les autres apps ET pour
+l'utilisateur — le fichier n'est donc trouvable par personne, alors que
+l'écriture elle-même réussit sans la moindre erreur (d'où le statut
+"Réussie" trompeur observé). C'est une limitation du résolveur de chemins
+de Tauri lui-même sur Android — `BaseDirectory.Download` n'y a jamais
+signifié "dossier Téléchargements public" comme sur desktop, contrairement
+à l'hypothèse du correctif précédent.
+
+**Vraie solution — MediaStore, le mécanisme officiellement recommandé par
+Google pour ce cas depuis Android 10 (stockage cloisonné/scoped
+storage)** : après recherche du paysage des plugins Tauri tiers pour
+Android (`tauri-plugin-android-fs` par aiueo13, crate + package npm
+`tauri-plugin-android-fs-api`, tous deux en version 29.0.0, compatible
+avec `tauri ^2.8.2` déjà utilisé ici) et lecture de sa documentation Rust
+réelle (docs.rs) et de ses déclarations TypeScript (`.d.ts` téléchargé et
+lu directement, pas résumé par un outil de résumé automatique qui s'est
+montré peu fiable sur cette tâche — plusieurs réponses tronquées/à côté
+de la plaque pendant cette investigation) :
+- Ce plugin écrit via `PublicStorage::create_new_file` (Rust) /
+  `createNewPublicFile` (JS), qui insère réellement dans la collection
+  MediaStore `Downloads` d'Android — visible par l'app Fichiers, les
+  autres apps, et signalé par une notification système, exactement comme
+  un vrai téléchargement de navigateur.
+- **Aucune permission requise sur Android 10 et supérieur** (confirmé par
+  le README : "this plugin does not add permissions to the application"
+  par défaut) — MediaStore n'exige pas `WRITE_EXTERNAL_STORAGE` pour
+  qu'une app insère ses propres fichiers.
+- **Android 9 (API 28) et inférieur** (avant le stockage cloisonné —
+  concerne notamment BlueStacks, dont l'image "P64" testée par le porteur
+  du projet est une image Android 9 "Pie") : nécessite les permissions
+  `WRITE_EXTERNAL_STORAGE`/`READ_EXTERNAL_STORAGE`, demandées
+  automatiquement à l'exécution (`requestPermission`, activé par défaut
+  dans `createNewPublicFile`) — mais leur déclaration dans
+  `AndroidManifest.xml` doit être explicitement activée via le feature
+  Cargo `legacy_storage_permission`, qui la génère automatiquement au
+  build **uniquement** pour ces versions (aucun effet sur Android 10+).
+  Confirmé dans la documentation Rust du crate (`PublicStorage::request_permission`,
+  section "Version behavior").
+
+**Fait** :
+- [Cargo.toml](apps/desktop/src-tauri/Cargo.toml) : nouvelle dépendance
+  `tauri-plugin-android-fs = { version = "29", features =
+  ["legacy_storage_permission"] }`, ajoutée sous
+  `[target.'cfg(target_os = "android")'.dependencies]` — ce crate ne
+  supporte que Android (ses propres métadonnées Cargo l'indiquent
+  explicitement : `windows/linux/macos/ios = none`), donc pas question de
+  la mettre en dépendance normale au risque de casser le build desktop.
+- [lib.rs](apps/desktop/src-tauri/src/lib.rs) : `.plugin(tauri_plugin_android_fs::init())`
+  ajouté, mais seulement sous `#[cfg(target_os = "android")]` — la variable
+  `builder` est construite en deux temps (commun, puis enrichi
+  conditionnellement) plutôt qu'en un seul chaînage, pour permettre cette
+  branche conditionnelle proprement.
+- **Nouveau fichier** [capabilities/android.json](apps/desktop/src-tauri/capabilities/android.json) :
+  capacité séparée avec `"platforms": ["android"]` (champ du schéma ACL
+  Tauri v2 qui restreint une capacité à une liste de plateformes — vérifié
+  dans la doc officielle avant de l'utiliser), portant la permission
+  `android-fs:default` (préfixe déduit du nom `"android-fs"` passé à
+  `tauri::plugin::Builder::new(...)` dans le code source du plugin, pas
+  deviné). Fichier séparé plutôt qu'ajout dans `default.json` : ce dernier
+  s'applique à toutes les plateformes (desktop compris), et une permission
+  inconnue du crate `tauri-plugin-android-fs` (absent du build desktop)
+  y ferait échouer la validation du schéma ACL au build Windows. Tauri
+  charge automatiquement tous les fichiers du dossier `capabilities/` sans
+  liste explicite dans `tauri.conf.json` ici, donc aucun câblage
+  supplémentaire nécessaire.
+- [capabilities/default.json](apps/desktop/src-tauri/capabilities/default.json) :
+  les ajouts `$DOWNLOAD/**`/`fs:scope-download`/`fs:scope-download-recursive`
+  du correctif précédent (pour l'hypothèse `BaseDirectory.Download`,
+  maintenant caduque) retirés — plus aucun code n'utilise
+  `@tauri-apps/plugin-fs` pour cet usage, les garder aurait été un vestige
+  trompeur.
+- [packages/sync/package.json](packages/sync/package.json) : nouvelle
+  dépendance `tauri-plugin-android-fs-api` (même version `29.0.0` que le
+  crate Rust, pour rester synchronisé).
+- [packages/sync/src/nativeFolder.ts](packages/sync/src/nativeFolder.ts) :
+  `writeToAndroidDownloads(filename, bytes)` réécrit pour appeler
+  `createNewPublicFile(PublicGeneralPurposeDir.Download, filename, null)`
+  puis `writeFile(uri, bytes)` (import dynamique, même style que le reste
+  du fichier) — `mimeType: null` laisse le plugin l'inférer de l'extension
+  du nom de fichier plutôt que de faire remonter ce paramètre à travers
+  tous les appelants. Signature de la fonction inchangée, donc **aucun
+  appelant** (`backupRunner.ts`, `saveFile.ts`) n'a eu besoin d'être
+  retouché — seul le corps de la fonction change.
+- Historique complet des deux tentatives précédentes conservé dans le
+  commentaire en tête de `nativeFolder.ts`, pour que la prochaine session
+  qui retouche ce fichier comprenne pourquoi une approche aussi
+  raisonnable que `BaseDirectory.Download` ne fonctionnait pas — sans
+  cette trace, la tentation de revenir dessus (ça semble être la bonne
+  API standard) serait grande.
+
+**Vérifié** : `pnpm run build` (typecheck complet du monorepo, y compris
+la résolution du nouveau package `tauri-plugin-android-fs-api`) et les 20
+tests unitaires passent. **Build Windows complet** (`pnpm run
+build:desktop`) : succès, MSI + NSIS produits — confirme que la nouvelle
+dépendance Android-only n'est ni compilée ni ne casse quoi que ce soit
+sur ce target (le journal de build ne montre aucune étape "Compiling
+tauri-plugin-android-fs" pour le binaire desktop, seulement pour les 4
+cibles Android). **Build Android complet** (`tauri android build`) :
+succès, APK + AAB produits — c'est la vérification la plus importante de
+cette session, car elle valide que `android-fs:default` est un
+identifiant de permission réel reconnu par le schéma ACL Tauri v2 et que
+le champ `"platforms": ["android"]` de `capabilities/android.json` est
+accepté (une erreur sur l'un ou l'autre aurait fait échouer ce build avec
+une erreur de validation de schéma, pas une erreur silencieuse). Le crate
+`tauri-plugin-android-fs` et sa dépendance transitive `sync_async` se
+compilent sans erreur pour les 4 architectures (aarch64, armv7, i686,
+x86_64), la partie Kotlin du plugin compile aussi (un seul avertissement
+de dépréciation Java sur `WEBP`, sans rapport avec ce correctif).
+
+**Pas vérifiable dans cet environnement** : comme pour les deux tentatives
+précédentes, l'écriture réelle dans MediaStore sur un vrai appareil/
+émulateur Android ne peut être exercée que là-bas. **Cette fois la
+confiance repose sur une lecture directe du code source de la solution
+(Tauri lui-même pour comprendre la cause, le plugin tiers pour la
+correction) plutôt que sur une supposition non vérifiée** — mais reste,
+par nature, à confirmer par un test réel avant de considérer le sujet
+clos. Point de vigilance signalé au porteur du projet : demande de
+tester spécifiquement sur BlueStacks (Android 9 probable, "P64") pour
+exercer le chemin `legacy_storage_permission` (demande de permission à
+l'exécution), pas seulement sur le Samsung A14 (Android 13, chemin
+MediaStore direct sans permission) — les deux chemins de code sont
+différents et doivent être validés séparément.
+
+**Suivi immédiat — permission ACL manquante, trouvée dès le premier test
+réel** : test sur BlueStacks, erreur affichée directement dans l'UI (pas
+un échec silencieux cette fois) : `Command plugin:android-fs|write_file
+not allowed by ACL`. Cause : `android-fs:default` résout vers
+`android-fs:all-without-delete`, dont la description exacte dans le
+schéma généré par Tauri est *"This enables all commands except those that
+delete existing entries (**such as remove, truncate, copy or write**)"* —
+`write_file` y est explicitement classé à part de `create_new_file`
+(seule la création d'un nouveau fichier est couverte par le set
+`default`, pas l'écriture de son contenu). Trouvé en lisant directement
+[gen/schemas/mobile-schema.json](apps/desktop/src-tauri/gen/schemas/mobile-schema.json)
+(généré par le build précédent, donc la vérité exacte pour la version
+29.0.0 réellement utilisée) plutôt qu'en re-devinant depuis la doc
+publique. **Corrigé** : [capabilities/android.json](apps/desktop/src-tauri/capabilities/android.json)
+ajoute explicitement `android-fs:allow-create-new-public-file` et
+`android-fs:allow-write-file` en plus de `android-fs:default` (ACL
+additive, aucun risque à lister les deux). Rebuild Android confirmé :
+`gen/schemas/capabilities.json` (l'ACL réellement embarquée dans l'APK)
+contient bien `android-fs:allow-write-file` après ce correctif — nouvel
+APK envoyé au porteur du projet pour un second test réel.
+
+### 2026-08-28 — Bug persistant de texte de pied de ticket coupé : le calibrage par nombre de caractères était une hypothèse fragile, remplacé par une mesure réelle jsPDF
+
+**Contexte** : après confirmation que la sauvegarde Android fonctionne
+(entrée précédente), le porteur du projet signale un texte encore coupé
+sur le bon de dépôt PDF généré ("Conservez ce ticket, il vous sera
+demandé au retrait.") — capture d'écran à l'appui, texte tronqué
+symétriquement des deux côtés (~5 caractères manquants au début, ~5 à la
+fin). Reproduit une seconde fois sur un ticket différent (contenu
+d'articles et montants différents), avec le **même point de coupure
+exact** — écarte l'hypothèse initiale d'un cache de service worker
+obsolète (suggérée en premier lieu, mais un cache aléatoirement périmé
+n'aurait pas dû produire un point de coupure aussi identique deux fois
+de suite sur du contenu différent).
+
+**Investigation** : le correctif du 2026-08-15 (voir plus haut) avait
+déjà ajouté `wrapText`/`pushWrapped` à
+[receiptPdf.ts](packages/printer/src/receiptPdf.ts), avec une décision
+de retour à la ligne basée sur `text.length <= columns` — une hypothèse
+implicite que la taille de police calculée (`usableWidthMm / columns /
+COURIER_MM_PER_PT`) fait *exactement* correspondre `columns` caractères
+à `usableWidthMm`, donc que n'importe quelle chaîne plus courte que
+`columns` caractères tient forcément dans la largeur utile. Vérifié
+mathématiquement avec `doc.getTextWidth()` (la vraie métrique jsPDF, pas
+une estimation) sur les 45 valeurs possibles de `columns` (20 à 64, la
+plage autorisée par la validation de Paramètres) : cette hypothèse est
+correcte à ±quelques dixièmes de mm pour la plupart des valeurs, mais
+tombe pile dans une zone limite risquée pour un réglage personnalisé de
+"Format du ticket" proche de 53 caractères (la longueur exacte de la
+phrase de pied de ticket) — une chaîne de test.length<=columns peut alors
+soit tenir de justesse, soit déborder légèrement selon des écarts
+d'arrondi, **sans aucune marge de sécurité**. Le porteur du projet utilise
+un réglage personnalisé sur son compte de test ("Krat Business") — la
+valeur exacte n'a pas été confirmée, mais le point de coupure identique
+et reproductible pointe vers un réglage fixe dans cette zone à risque
+plutôt qu'un problème aléatoire.
+
+**Fait — remplacement complet de l'heuristique par nombre de caractères
+par une mesure réelle** :
+- Nouvelle fonction `createMeasurer(widthMm, fontSize)` : crée un
+  document jsPDF jetable (jamais rendu, seulement utilisé pour
+  `getTextWidth`) configuré à la police/taille réellement utilisée pour
+  le rendu final.
+- `wrapText`/`pushWrapped` prennent maintenant une fonction `measure:
+  (text) => number` et une largeur maximale en mm (`maxWidthMm`) au lieu
+  de `columns` — la décision de couper une ligne se base désormais sur
+  la **même métrique que celle utilisée par jsPDF pour positionner le
+  texte**, éliminant l'hypothèse de correspondance caractères↔mm.
+- **Marge de sécurité de 10%** (`WRAP_SAFETY_MARGIN = 0.9`) appliquée à
+  la largeur utile pour la décision de retour à la ligne — filet de
+  sécurité supplémentaire, au cas où un écart de rendu existe entre
+  l'environnement de développement (où toutes les mesures ci-dessus ont
+  été vérifiées correctes) et le moteur WebView réel de l'appareil du
+  porteur du projet, qui n'a pas pu être testé directement dans cette
+  session. Coût : au pire une ligne de plus occasionnellement, largement
+  préférable à un texte coupé.
+- Les lignes à largeur fixe déjà garanties exactement `columns`
+  caractères par construction (séparateurs, lignes d'article combinées
+  via `padLine`) **ne sont pas concernées** — elles restent basées sur le
+  nombre de caractères, cette calibration précise étant confirmée exacte
+  par la mesure (`doc.getTextWidth('-'.repeat(columns))` correspond très
+  précisément à `usableWidthMm`, vérifié pour tout `columns` de 20 à 64).
+- Appliqué identiquement à `buildReceiptPdf` (reçu de vente) et
+  `buildServiceOrderTicketPdf` (bon de dépôt), les deux partageant cette
+  infrastructure.
+
+**Vérifié** : rebuild du module en direct dans le navigateur (import
+`/@fs/...` du fichier source, pas de bundle mis en cache) avec le
+contenu exact du ticket signalé par le porteur du projet — confirmé
+qu'avec l'ancienne logique, `columns=53` à `58` ne retournait à la ligne
+à aucun moment (reproductible), et qu'avec la nouvelle logique + la
+marge de 10%, ces mêmes valeurs déclenchent maintenant correctement le
+retour à la ligne. `pnpm run build` et les 20 tests unitaires passent.
+
+**Pas vérifiable dans cet environnement** : le point précis qui a causé
+le débordement réel sur l'appareil du porteur du projet (écart de mesure
+exact entre jsPDF ici et le moteur de rendu WebView réel, ou simplement
+un réglage `columns` proche de 53 combiné à l'absence totale de marge de
+sécurité dans l'ancien code) n'a pas pu être confirmé avec certitude —
+la nouvelle logique corrige le bug **par construction** dans les deux
+cas (mesure réelle au lieu d'une estimation, plus une marge de 10%), donc
+la correction devrait tenir indépendamment de la cause exacte, mais
+nécessite malgré tout une confirmation sur l'appareil réel.
+
+### 2026-09-04 — Mode réseau (Solo/Réseau local/Cloud) : fondation transport Master↔Worker (Phase 1)
+
+**Contexte** : nouveau chantier, inspiré d'une architecture développée en
+parallèle par le porteur du projet sur une autre app (Fougag, Flutter) —
+trois modes (Solo/Réseau local/Cloud), rôle Master (héberge)/Worker (se
+connecte) modifiable à chaud, pairage par QR. Avant de coder quoi que ce
+soit, une série de questions a permis d'acter les règles métier propres à
+WariBox (différentes de Fougag sur plusieurs points) :
+
+1. Le rôle **Master est toujours sur PC** (desktop Tauri), jamais Android/PWA.
+2. Un Worker déconnecté du Master **continue à fonctionner** (ventes,
+   mouvements de stock, dépenses — offline-first préservé) et se
+   resynchronisera au retour du réseau (mécanisme de sync **pas encore
+   construit**, voir Phase 2 ci-dessous) ; en revanche, **les modifications
+   de catalogue/paramètres/utilisateurs ne sont possibles que connecté au
+   Master** — pas d'édition hors-ligne de ces données, donc pas de conflit
+   à arbitrer dessus.
+3. Rôle réseau (Master/Worker) et permission utilisateur (Gérant/Vendeur/...)
+   sont indépendants : le gérant peut se connecter depuis un Worker (son
+   téléphone) avec son compte habituel.
+4. Un appareil qui a déjà des données Solo et rejoint un réseau **archive
+   (export) puis repart à zéro** côté réseau — pas de fusion automatique.
+   Réutilise le mécanisme de sauvegarde déjà existant (`packages/sync`),
+   pas un nouveau système de migration de données.
+5. **Sécurité réseau local différente de Fougag** : Fougag sécurise sa
+   connexion via TLS + certificat auto-signé épinglé par empreinte côté
+   client (possible en Dart, `dart:io` expose un hook de validation de
+   certificat overridable). Un Worker WariBox tourne en JS
+   (navigateur/WebView) — cette plateforme ne permet PAS à du code
+   applicatif de contourner la validation TLS standard, donc un `wss://`
+   avec certificat auto-signé serait simplement refusé par le navigateur.
+   Décision : **`ws://` en clair sur le réseau local, protégé par un jeton
+   de pairage secret** transmis via le QR, vérifié par le Master à la
+   connexion (avant tout autre traitement) — fonctionne identiquement sur
+   PWA/Tauri desktop/Tauri Android, sans code natif côté Worker.
+
+**Périmètre de cette Phase 1** : uniquement la fondation transport (rôle
+d'appareil, pairage QR, connexion Master↔Worker, écrans de statut).
+**Aucune donnée métier ne transite encore par le réseau** — pas de
+réplication ventes/stock, pas de mutation catalogue via RPC au Master.
+Même séquencement que Fougag, qui a lui-même construit son "Étape 3" comme
+pur transport avant d'y faire transiter la moindre donnée.
+
+**Fait** :
+- **[packages/network](packages/network)** (nouveau package, même patron
+  que `packages/sync` — pas de build, consommé comme source TS) :
+  `WsMessage`/`WsMessageTypes` (enveloppe type/payload/correlationId/
+  timestamp, types `hello`/`helloAck`/`ping`/`pong`/`error`/`disconnect` —
+  extensible sans rupture pour la suite) et `MasterPairingPayload`
+  (contenu du QR : masterId/masterName/host/port/token, `tryDecode` renvoie
+  `null` sur contenu invalide plutôt que de lever, un QR scanné peut être
+  n'importe quoi). 18 tests vitest.
+- **[apps/desktop/src-tauri/src/network.rs](apps/desktop/src-tauri/src/network.rs)**
+  (nouveau) : serveur WebSocket du Master sur `tokio`/`tokio-tungstenite`
+  (déjà des dépendances transitives de Tauri). Écoute TCP brute (`ws://`),
+  vérifie le jeton sur le tout premier message (`hello`) de chaque
+  connexion — fermée immédiatement si invalide, avant tout relais au
+  frontend. Chaque connexion/message est ensuite relayé tel quel au
+  frontend JS via un événement Tauri (`network:master-event`) —
+  **aucune logique métier en Rust**, juste de la plomberie réseau (matché
+  ligne à ligne sur ce que fait `MasterWebSocketServer` côté Fougag).
+  Commandes Tauri : `network_start_master`/`network_stop_master`/
+  `network_send_to_worker`/`network_broadcast`/`network_local_ip`.
+  Nouvelles dépendances Cargo : `tokio` (features explicites, déjà résolu
+  par Tauri), `tokio-tungstenite`, `futures-util`, `rand`,
+  `local-ip-address`. Aucune entrée de capacité ACL nécessaire (ce sont des
+  commandes de l'app, pas d'un plugin tiers — seul `android-fs` en avait
+  besoin).
+- **`apps/web/src/stores/deviceIdentity.ts`/`deviceRole.ts`** (nouveaux,
+  même patron que `language.ts`/`theme.ts`) : identité (`deviceId` généré
+  une seule fois et persisté — contrairement au tout premier jet de ce
+  mécanisme côté Fougag, qui régénérait un id à chaque montage d'écran,
+  corrigé plus tard dans son historique ; autant partir directement sur la
+  bonne version ici) et rôle réseau (`master`/`worker`/`null`=Solo), tous
+  deux en `localStorage` — pas une donnée métier, jamais en SQLite/répliqué,
+  exactement comme la langue ou le thème.
+- **`apps/web/src/features/network/`** (nouveau) : `useMasterServer`
+  (démarre le serveur Rust via `invoke`, écoute les événements, traite
+  `hello`→`helloAck`/`ping`→`pong` côté JS, maintient la liste des Workers
+  connectés) et `useWorkerConnection` (`WebSocket` sortant natif — aucune
+  dépendance native nécessaire côté Worker, contrairement au Master qui
+  doit écouter un socket ; machine d'état idle/connecting/connected/error/
+  disconnected avec timeout de handshake et reconnexion manuelle).
+  `NetworkSection.tsx` compose le tout, **réutilise
+  `BarcodeCameraScanner.tsx` telle quelle pour scanner le QR** (le
+  composant gère déjà `qr_code` dans ses formats reconnus, aucun nouveau
+  composant caméra nécessaire) + repli de saisie manuelle (host/port/jeton).
+  Nouvelle dépendance `qrcode` (génération, pas lecture) pour l'affichage
+  du QR côté Master. Intégré dans Paramètres (nouvelle carte, après
+  Multi-boutique).
+- Clés i18n `network.*` (fr/en) — le chantier bilinguisme reste intégral,
+  aucun texte en dur ajouté.
+
+**Vérifié** : `pnpm run build` (monorepo complet) et `pnpm run test` (38
+tests, dont les 18 nouveaux de `packages/network`) passent sans régression.
+`cargo check` puis un **build desktop release complet**
+(`pnpm run build:desktop`, MSI + NSIS produits) confirment que le nouveau
+module Rust compile proprement, pas seulement en mode debug. Dans le
+navigateur (web/PWA, seule plateforme testable dans cet environnement) :
+le bouton "Devenir Maître" est bien absent (masqué par
+`isDesktopTauriRuntime()`, déjà utilisé ailleurs dans le projet pour ce
+même genre de restriction), le rôle Worker s'affiche et fonctionne en FR
+et EN, et une tentative de connexion vers une adresse injoignable transite
+correctement par "Connexion en cours..." puis "Erreur" (confirme que la
+machine d'état de `useWorkerConnection` répond bien aux événements
+`onclose`/timeout réels d'un WebSocket, pas seulement en théorie). Aucune
+erreur console inattendue (seule celle, attendue, du WebSocket refusé).
+
+**Pas vérifiable dans cet environnement** : un vrai appariement Master
+(desktop réel) ↔ Worker (second appareil) bout en bout — nécessite de
+lancer l'exécutable buildé sur un vrai poste et un second appareil (PWA ou
+Android) pour scanner le QR en conditions réelles. À faire par le porteur
+du projet avant de considérer cette Phase 1 close.
+
+**Pas fait / laissé pour les phases suivantes (pas anticipé en détail pour
+ne pas figer des décisions avant d'avoir vu cette fondation tourner)** :
+- **Phase 2** : réplication des données append-only (ventes, mouvements de
+  stock, dépenses) entre Worker et Master — le point 2 ci-dessus
+  (fonctionnement hors-ligne d'un Worker) n'est pour l'instant vrai que
+  parce que chaque appareil garde sa propre base SQLite locale complète
+  (comme en Solo) ; encore aucun mécanisme ne fait réellement remonter/
+  redescendre ces données une fois reconnecté.
+- **Phase 3** : mutations catalogue/paramètres passées en RPC au Master
+  (le Worker envoie la demande, le Master l'exécute via `packages/core`
+  avec les permissions de l'utilisateur demandeur, puis redistribue le
+  résultat accepté à tous les Workers connectés) — voir point 2 ci-dessus.
+- **Import manuel côté Master** d'un export Solo (point 4 ci-dessus) — pas
+  encore construit, viendra avec la Phase 2/3 une fois qu'il y a une vraie
+  base réseau dans laquelle importer.
+- **mDNS/auto-découverte** : différé, le QR suffit et fonctionne
+  identiquement sur les 3 plateformes pour cette étape.
+- **Mode Cloud** : non commencé, comme Fougag qui l'a laissé
+  volontairement `Unimplemented` faute de contrat d'API serveur réel à
+  spécifier contre (WariBox n'a pas plus de backend cloud existant).
+- Persistance de l'état "serveur démarré" entre rechargements de page côté
+  Master (si l'utilisateur recharge l'onglet Paramètres pendant que le
+  serveur tourne, l'UI perd le lien vers le serveur Rust déjà actif côté
+  natif — pas testé, potentiel écart mineur à vérifier en Phase 2).
+
+### 2026-09-04 — Mode réseau, Phase 1b : découverte automatique du Master (mDNS + balayage réseau)
+
+**Contexte** : suite immédiate de la Phase 1 (fondation transport, voir
+entrée précédente) — question du porteur du projet : un Worker peut-il
+retrouver le Master tout seul sur le réseau, plutôt que de dépendre du QR
+à chaque fois ? Choix retenu après présentation des options (mDNS
+Tauri-only vs balayage réseau universel) : **les deux**, en complément
+l'un de l'autre.
+
+**Cadrage important, acté avant de coder** : ni le mDNS ni le balayage ne
+remplacent le QR pour le **tout premier appairage** — les deux ne font que
+retrouver une adresse IP, jamais le jeton secret. Leur vraie valeur est de
+**reconnecter automatiquement un Worker déjà apparié** dont le Master a
+changé d'adresse IP (redémarrage routeur, bail DHCP renouvelé...), sans
+repasser par le QR. Le jeton déjà connu reste utilisé pour valider tout
+candidat trouvé via le handshake `hello`/`helloAck` existant — la seule
+présence mDNS ou un port ouvert ne suffit jamais.
+
+**Recherche de faisabilité faite avant d'écrire le code métier** (pas
+supposée, comme le porteur du projet l'avait explicitement demandé pour un
+sujet précédent) : la crate `mdns-sd` (0.11.5) a été testée dans un projet
+Cargo isolé (scratchpad, jamais dans le dépôt) — annonce + résolution en
+conditions réelles sur l'interface Wi-Fi de la machine de développement.
+**Piège trouvé pendant ce test** : `127.0.0.1` ne fonctionne PAS comme
+adresse annoncée (aucune résolution mDNS), alors que la vraie IP
+d'interface (`local_ip_address::local_ip()`, déjà une dépendance depuis la
+Phase 1) fonctionne — sans ce test, ce piège serait passé inaperçu jusqu'à
+un test réel sur le terrain.
+
+**Fait** :
+- **Port fixe du Master** — `DEFAULT_MASTER_PORT` (51823) dans
+  [network.rs](apps/desktop/src-tauri/src/network.rs), exposé par la
+  nouvelle commande `network_default_port()` (source de vérité unique côté
+  Rust, lue par le JS) — nécessaire pour que le balayage réseau sache sur
+  quel port sonder chaque adresse (le port choisi par l'OS, `port: 0`
+  utilisé en Phase 1, ne s'y prêtait pas). Pas de repli automatique sur un
+  autre port si déjà occupé — cas rare sur le PC dédié d'un commerce,
+  l'erreur de bind remonte telle quelle.
+- **mDNS côté Master** (`network.rs`) : nouvelle dépendance Cargo
+  `mdns-sd = "0.11"`. `network_start_master` annonce désormais le service
+  (`_waribox._tcp.local.`, propriétés TXT `name`/`masterId`) une fois le
+  port lié ; `network_stop_master` désenregistre et arrête le daemon.
+  Best-effort : un échec d'annonce (interface indisponible...) n'empêche
+  jamais le serveur WebSocket de démarrer, le QR reste toujours la voie de
+  secours.
+- **mDNS côté Worker** — nouveau fichier
+  [discovery.rs](apps/desktop/src-tauri/src/discovery.rs) (Tauri
+  uniquement : desktop-worker ou Android, pas de rapport avec la
+  restriction "Master = desktop only", qui ne concerne que l'hébergement).
+  `network_start_discovery(targetMasterId)`/`network_stop_discovery` :
+  parcourt les résolutions mDNS, filtre sur la propriété TXT `masterId`
+  (jamais "un Master WariBox quelconque" — uniquement celui déjà apparié),
+  relaie au frontend via l'événement `network:discovery-event`.
+- **Balayage réseau** — nouveau fichier
+  [lanScan.ts](apps/web/src/features/network/lanScan.ts), pur JS/DOM,
+  fonctionne identiquement sur PWA/Tauri desktop/Tauri Android :
+  `detectLocalIPv4()` (technique standard des candidats ICE WebRTC, sans
+  serveur STUN), `probeHost()` (WebSocket jetable, valide via
+  hello/helloAck, n'affecte jamais l'état de `useWorkerConnection`),
+  `scanForMaster()` (sonde les 254 adresses du /24 détecté, par lots de 24).
+- **`useWorkerConnection`** : nouvelle fonction `searchForMaster()` —
+  lance mDNS (si Tauri) et le balayage en parallèle, le premier des deux à
+  valider un candidat gagne ; nouveaux états `searching`/`searchError`.
+  Utilisable seulement si `lastPayload` existe (un appareil jamais apparié
+  n'a pas de jeton à réutiliser).
+- **[NetworkSection.tsx](apps/web/src/features/network/NetworkSection.tsx)** :
+  bouton "Rechercher le Maître sur le réseau" dans la vue Worker (visible
+  uniquement si déjà apparié une fois), à côté de "Se reconnecter" (qui
+  retente juste la dernière adresse connue, sans balayage). Clés i18n
+  `network.worker.search*`/`errors.searchFailed` (fr/en).
+
+**Vérifié** : `pnpm run build` + `pnpm run test` (aucune régression) ;
+`cargo check` puis un **second build desktop release complet**
+(`pnpm run build:desktop`, MSI + NSIS produits, ~2min16 de compilation)
+confirment que `mdns-sd` et les nouveaux modules compilent proprement en
+production. Dans le navigateur (PWA, seule plateforme testable ici) :
+après une tentative de connexion manuelle échouée (donc `lastPayload`
+défini), le bouton "Rechercher..." apparaît bien, le déclenche correctement
+(mDNS ignoré car hors Tauri, balayage tenté), et affiche le message
+d'échec traduit ("Maître introuvable...") une fois épuisé — sans exception
+JS ni blocage de l'UI, le bouton redevient cliquable ensuite. Confirmé en
+FR et EN.
+
+**Pas vérifiable dans cet environnement** : le vrai scénario cible
+(Worker Tauri déjà apparié, Master change d'IP, "Rechercher..." le
+retrouve via mDNS ou balayage) nécessite deux appareils physiques sur le
+même réseau — même limite que la Phase 1. Le test de faisabilité mDNS
+(scratchpad) confirme que le mécanisme Rust fonctionne sur cette machine,
+mais pas le flux complet Worker→Master via l'appli elle-même.
+
+**Pas fait / laissé pour plus tard** :
+- Détection WebRTC de l'IP locale non fiable sur tous les navigateurs
+  (Firefox masque ces candidats depuis 2021) — traité comme un simple
+  "pas de suggestion" (bascule silencieuse sur mDNS seul si Tauri, sinon
+  échec propre), pas une régression à corriger.
+- Toujours pas de synchronisation de données métier (Phase 2, voir
+  entrée précédente) — cette Phase 1b ne fait qu'améliorer la
+  reconnexion, elle ne rapproche pas de la réplication ventes/stock.
+
+### 2026-09-04 — Mode réseau, Phase 2 : réplication des ventes, du stock et des dépenses
+
+**Contexte** : suite des Phases 1/1b (transport + découverte, voir entrées
+précédentes) — "engage la phase 2" demandé explicitement par le porteur du
+projet, avec le périmètre "Ventes + Stock + Dépenses ensemble" (les trois en
+une passe, plutôt que Ventes seule d'abord) suite à une question de cadrage.
+
+**Trois découvertes faites en lisant le code réel avant d'écrire quoi que ce
+soit**, qui ont changé le périmètre par rapport à une lecture superficielle
+(voir le plan détaillé, toujours dans `.claude/plans/` au moment d'écrire
+cette entrée) :
+1. Une vente touche 7 tables en une transaction (sales, sale_items,
+   stock_movements, payments, customer_credits, loyalty_transactions,
+   parfois customers) — la réplication devait se faire par "effet complet
+   d'une opération", pas table par table.
+2. `addManualStockEntry`/`recordStockLoss`/`transferStock`
+   ([StockService.ts](packages/core/src/services/StockService.ts)) et
+   `createExpense` ([ExpensesService.ts](packages/core/src/services/ExpensesService.ts))
+   n'utilisaient PAS `withTransaction` — gap déjà pressenti dans les pistes
+   du journal, comblé ici comme prérequis mécanique (pas juste une bonne
+   pratique) pour pouvoir répliquer leur résultat comme un tout atomique.
+3. Un Worker qui rejoint le réseau (décision Phase 1 : archive puis repart à
+   zéro) n'a aucun catalogue — sans un instantané initial (produits,
+   emplacements, boutiques, clients, fournisseurs, utilisateurs), rien à
+   référencer. Confirmé avec le porteur du projet : ajouté dans cette même
+   passe (téléchargement à sens unique, une seule fois à la connexion — pas
+   une synchronisation continue, qui reste la Phase 3/RPC catalogue).
+
+**Décision d'architecture rejetée puis remplacée, à ne pas retenter sans
+relire ce paragraphe** : la capture générique du SQL brut exécuté pendant
+une transaction a été envisagée (éviter d'écrire un événement par
+opération) puis explicitement écartée — elle demanderait de deviner, par
+coïncidence numérique, qu'un paramètre d'une requête référence
+l'identifiant généré par une requête précédente de la même transaction ; un
+faux positif corromprait silencieusement des données (ex : une quantité de
+vente qui vaudrait par hasard le même nombre que l'id d'une vente toute
+jeune). Remplacé par des événements **explicitement construits** à partir
+des lignes réellement créées (déjà obtenues via `.returning()` dans le
+code existant) — plus de code par opération, mais aucune ambiguïté.
+
+**Le problème central résolu — identifiants locaux incomparables entre
+appareils** : chaque appareil garde ses propres compteurs auto-incrémentés
+(la Phase 1 a déjà établi que ce n'est pas un proxy réseau, chaque appareil
+a sa base locale complète). Solution : colonne **`sync_id` (UUID)** ajoutée
+à `sales`/`sale_items`/`payments`/`stock_movements`/`stock_batches`/
+`customer_credits`/`loyalty_transactions`/`customers`/`expenses` — c'est
+elle qui voyage dans les événements, jamais l'id local brut ; un appareil
+qui reçoit un événement crée sa propre ligne (son propre id auto-incrémenté)
+mais lui attribue le même `sync_id`, et résout les références croisées en
+cherchant l'id local correspondant à ce `sync_id`. Tout ce qui est
+**catalogue** (variantId, locationId, storeId, userId) reste en revanche un
+id local brut, volontairement : ces tables n'ont qu'un seul écrivain (le
+Master, via l'instantané) tant que la Phase 3 n'existe pas, donc les ids
+correspondent déjà des deux côtés — pas de traduction nécessaire.
+
+**Fait** :
+- **Migration** (`id: 3` dans [client.ts](packages/database/src/client.ts)) :
+  `sync_id TEXT` + index unique partiel sur les 9 tables listées ci-dessus ;
+  3 nouvelles tables d'infrastructure
+  ([schema/sync.ts](packages/database/src/schema/sync.ts)) : `__sync_log`
+  (journal append-only faisant autorité, tenu par le Master, assigne le
+  `seq` de chaque événement), `__sync_outbox` (file d'attente persistée des
+  événements créés localement par un Worker, en attente d'envoi — survit à
+  un redémarrage de l'app), `__sync_state` (watermark `lastAppliedSeq` du
+  Worker).
+- **`packages/core/src/sync/`** (nouveau dossier) :
+  - `syncEvents.ts` — types des 5 événements (`sale.created`/
+    `stockEntry.created`/`stockLoss.created`/`stockTransfer.created`/
+    `expense.created`) + pub/sub minimal (`emitSyncEvent`/`onSyncEvent`),
+    sans dépendance réseau (apps/web s'abonne pour router vers le réseau —
+    même séparation des responsabilités que le reste du projet).
+  - `applyRemoteEvents.ts` — applique un événement reçu à la base locale,
+    idempotent (vérifie le `sync_id` racine avant d'écrire), **sans
+    vérification de permission** (la confiance vient du jeton de pairage
+    déjà validé à la connexion, pas d'une nouvelle autorisation par
+    événement — documenté explicitement dans le code, pas un oubli).
+  - `snapshot.ts` — `buildCatalogSnapshot`/`applyCatalogSnapshot` : instantané
+    du catalogue, ids recopiés tels quels côté Worker (vide d'abord les
+    tables cibles, écrasant les valeurs par défaut du bootstrap standard —
+    un Worker "reparti à zéro" a par exemple déjà sa propre "Boutique
+    principale" à remplacer, pas à cumuler).
+  - `syncStore.ts` — accès typé aux 3 tables d'infrastructure
+    (`appendToSyncLog`/`listSyncLogSince`/`getMaxSyncSeq`/`enqueueOutbox`/
+    `listPendingOutbox`/`markOutboxSent`/`getLastAppliedSeq`/`setLastAppliedSeq`).
+- **`createSale`** ([SalesService.ts](packages/core/src/services/SalesService.ts)) :
+  génère un `syncId` pour chaque ligne créée (vente, lignes, mouvements de
+  stock, paiement, créance, transactions de fidélité, nouveau client de
+  passage éventuel), construit l'événement complet, l'émet **après** le
+  commit de `withTransaction` (jamais depuis l'intérieur — un rollback
+  après émission laisserait un événement fantôme). Forme de retour
+  inchangée (`sale` toujours seul renvoyé) — aucun appelant existant à
+  modifier. `consumeStockFefo` renvoie maintenant les mouvements créés
+  (au lieu de `void`) pour que `createSale` puisse les inclure dans
+  l'événement. `redeemPoints`/`earnPoints`
+  ([LoyaltyService.ts](packages/core/src/services/LoyaltyService.ts))
+  renvoient maintenant la ligne `loyalty_transactions` créée (au lieu de
+  respectivement le client mis à jour et `void`) — aucun appelant existant
+  n'utilisait la valeur de retour, changement sans risque.
+- **Stock/Dépenses** : les 4 fonctions du point 2 ci-dessus enveloppées
+  dans `withTransaction` + construction/émission de leur événement, même
+  patron que `createSale`.
+- **`packages/network`** : 4 nouveaux types de message
+  (`sync`/`syncAck`/`snapshotRequest`/`snapshotResponse`) — **aucun
+  changement côté Rust**, le serveur relaie déjà n'importe quel message tel
+  quel (bénéfice direct du choix de conception de la Phase 1).
+- **`apps/web/src/features/network/useMasterServer.ts`** : à la réception
+  d'un `hello`, lit `lastSyncSeq` du Worker — envoie l'instantané complet
+  (jamais synchronisé) ou le rattrapage `__sync_log` postérieur (déjà
+  connu). À la réception d'un `sync` d'un Worker : applique l'événement,
+  l'ajoute à `__sync_log` (assigne son `seq`), `syncAck`, diffuse aux
+  autres Workers connectés. S'abonne aussi à `onSyncEvent` local (le PC
+  Master peut lui-même créer des ventes) pour les traiter identiquement.
+- **`useWorkerConnection.ts`** : envoie son `lastSyncSeq` dans `hello`
+  (absent = jamais synchronisé) ; vide sa file d'attente locale dès la
+  connexion établie ; s'abonne à `onSyncEvent` local pour mettre en file
+  puis envoyer immédiatement si déjà connecté ; applique les `sync`/
+  `snapshotResponse` reçus et avance son `lastAppliedSeq`.
+
+**Vérifié** : `pnpm run build` + `pnpm run test` (25 tests côté
+`packages/core`, dont les nouveaux tests purs de `syncEvents.ts` — la
+construction/pub-sub, seule partie testable en vitest sans harnais SQLite
+en mémoire, toujours absent de ce projet) ; `cargo check` (aucun changement
+Rust attendu, confirmé). **Vérification bout en bout dans le navigateur des
+5 opérations réécrites, en conditions réelles (pas juste le typecheck)** —
+important vu que ces fonctions sont au cœur de l'app pour TOUS les
+utilisateurs, pas seulement le mode réseau : création d'un produit → entrée
+de stock (20 unités, `addManualStockEntry`) → vente avec client de passage
+créé à la volée (`createSale`, VTE-2026-000001, stock 20→19) → dépense
+(`createExpense`) → transfert Surface→Réserve (`transferStock`, 5→14/19
+inchangé) → retrait pour péremption (`recordStockLoss`, 12/17). Chaque
+étape confirmée par la donnée réellement affichée (pas seulement l'absence
+d'erreur), aucune erreur console à aucune étape. Un premier passage de
+vérification UI a rencontré plusieurs faux échecs (clics simulés qui
+n'atteignaient pas le bon formulaire parmi plusieurs champs de recherche
+identiques, ou un simple `.click()` qui ne déclenchait pas le gestionnaire
+React) — corrigé en ciblant chaque formulaire par sa position DOM précise
+et en simulant la séquence complète mousedown/mouseup/click ; à garder en
+tête pour la prochaine vérification UI automatisée sur une page à
+formulaires multiples similaires.
+
+**Pas vérifiable dans cet environnement** : le scénario réseau complet
+(Worker s'apparie, reçoit l'instantané, crée une vente hors ligne,
+reconnecte, la vente apparaît sur le Master) nécessite deux appareils
+physiques — même limite que les Phases 1/1b. Seule la logique locale
+(construction/application d'événements, transactions, non-régression du
+fonctionnement Solo) a pu être vérifiée ici.
+
+**Pas fait / laissé de côté délibérément** :
+- Achats (`PurchasesService.createPurchase`) non inclus — pas nommé
+  explicitement dans le périmètre demandé (Ventes/Stock manuel/Dépenses),
+  `transferStock` si car il fait partie de "Stock".
+- Aucune synchronisation continue du catalogue après l'instantané initial
+  (Phase 3, RPC).
+- Aucune UI dédiée à l'état de synchronisation (ex. "3 ventes en attente
+  d'envoi") — uniquement la plomberie.
+- Client de passage créé pendant une vente hors ligne : traité comme
+  offline-capable (comme le reste de l'événement vente) plutôt que bloqué
+  derrière "connecté au Master" — un doublon de nom éventuel est
+  corrigible manuellement, jugé préférable à bloquer un geste de caisse
+  courant.
+
+### 2026-09-07 — Audit de sécurité du mode réseau (Phase 2) : 2 failles corrigées
+
+**Contexte** : demande explicite d'un check sécurité/fonctionnalités sur le
+chantier mode réseau (Phases 1/1b/2, jamais testé sur deux appareils
+physiques). Revue menée via `/security-review` (agents indépendants
+d'identification puis de filtrage des faux positifs, seuil de confiance
+≥8/10 pour retenir une trouvaille) sur le diff non commité — 4 pistes
+candidates identifiées, 2 confirmées à haute confiance, 2 écartées (jeton de
+pairage comparé en temps non-constant, serveur qui écoute sur `0.0.0.0` —
+toutes deux jugées non exploitables concrètement dans le modèle de menace de
+cette fonctionnalité : le jeton 128 bits cryptographiquement aléatoire reste
+la vraie frontière de sécurité dans les deux cas).
+
+**Faille 1 — événements de synchronisation appliqués sans aucune
+revalidation métier** ([applyRemoteEvents.ts](packages/core/src/sync/applyRemoteEvents.ts)) :
+une fois le jeton de pairage connu (Worker compromis, capture réseau — le
+canal est un `ws://` en clair par design), n'importe quel client WebSocket
+pouvait forger directement une trame `sync` **sans jamais passer par
+`createSale`/etc.** — `applyRemoteSyncEvent` ne vérifiait ni la cohérence
+des totaux, ni les bornes des points de fidélité (gain illimité,
+directement convertible en remise réelle via `pointsToDiscount`), ni le
+signe/la magnitude des mouvements de stock, ni même l'existence locale des
+`userId`/`storeId` référencés — un événement accepté côté Master est en plus
+rediffusé à tous les Workers connectés, propageant la corruption à tout le
+réseau. **Corrigé** : chaque fonction `apply*Created` revalide maintenant
+ses invariants avant d'écrire quoi que ce soit (voir le commentaire en tête
+de fichier) — total de vente recalculé à partir des lignes (même formules
+que `SalesService.computeSaleItemTotal`/`computeTaxAmount`, réutilisées
+directement plutôt que redupliquées), stock consommé par une vente comparé
+à la quantité réellement vendue, points de fidélité gagnés bornés par
+`total × ratio × multiplicateur_max × 3` (facteur 3 volontaire : tolère un
+`business_settings` local en retard sur le Master tant qu'il n'y a pas de
+sync continue du catalogue, Phase 3 — voir plus bas), points rachetés
+bornés par le solde actuel du client, existence locale de
+`userId`/`storeId`/`variantId`/`locationId` vérifiée, signe des mouvements
+de stock/transfert vérifié. Une revalidation qui échoue lève une erreur
+normale — comme le reste de la fonction tourne dans le `withTransaction`
+ouvert par l'appelant (`handleSync` côté Master/Worker), l'échec annule tout
+ce qui avait déjà été écrit pour cet événement, sans code de nettoyage
+manuel à ajouter. **Ce n'est pas une ré-autorisation métier complète**
+(impossible sans rejouer tout `createSale` côté récepteur, ce que le modèle
+"replay d'un fait déjà validé" évite délibérément, voir le commentaire
+existant) — l'objectif est qu'un événement forgé ne puisse plus créer de
+valeur (points, remise, stock) à partir de rien, pas de retrouver une
+authentification par événement.
+
+**Faille 2 — l'instantané catalogue transmettait `maintenanceCodeHash` à
+tout Worker fraîchement apparié** ([snapshot.ts](packages/core/src/sync/snapshot.ts)) :
+`buildCatalogSnapshot` faisait un `select()` complet sans filtre de colonne
+sur `users` et `business_settings`, donc l'instantané envoyé à tout
+nouveau Worker incluait aussi bien `passwordHash`/`pinHash` de **tous** les
+comptes (y compris Admin/Propriétaire) que `maintenanceCodeHash`. Question
+posée explicitement au porteur du projet avant de corriger, car il y a un
+vrai compromis : l'authentification reste locale/offline-first, donc un
+appareil a besoin du hash d'un compte pour que quelqu'un puisse s'y
+connecter avec ce compte — retirer `passwordHash`/`pinHash` casserait la
+fonctionnalité déjà actée en Phase 1 ("le gérant peut se connecter depuis
+un Worker avec son compte habituel", voir plus haut). Réponse retenue :
+**retirer uniquement `maintenanceCodeHash`** (+ ses 2 colonnes de
+verrouillage anti-brute-force associées, `maintenanceCodeFailedAttempts`/
+`maintenanceCodeLockedUntil`, inutiles sans le hash) — ce secret protège une
+action strictement desktop (`isDesktopTauriRuntime()`, installer une mise à
+jour), sans contrepartie fonctionnelle à perdre sur un Worker. Le risque
+résiduel de `passwordHash`/`pinHash` répliqués sur tout Worker apparié (un
+téléphone perdu/rooté exposerait les hash Argon2id de tous les comptes de
+l'entreprise, pas seulement du sien) reste donc assumé, comme les autres
+compromis déjà documentés de ce chantier (`ws://` en clair, pas de sync
+continue du catalogue...) — à revisiter si un jour un mécanisme de login
+distant (RPC vers le Master) remplace l'authentification locale sur les
+Workers.
+
+**Vérifié** : `pnpm run build` (monorepo complet) et `pnpm run test` (25
+tests `packages/core` + 18 `packages/network`) passent sans régression.
+Pas de changement Rust dans ce correctif. **Pas testé sur un vrai scénario
+réseau à deux appareils** — même limite que tout le chantier mode réseau
+depuis la Phase 1, non levée par ce correctif.
+
+**Pas fait / laissé de côté** :
+- Les 2 pistes écartées par la revue (comparaison de jeton non
+  constant-time, écoute `0.0.0.0` plutôt que la seule IP LAN) — jugées non
+  exploitables concrètement (le jeton 128 bits reste la vraie frontière de
+  sécurité dans les deux cas), mais restent des durcissements "gratuits" à
+  faible risque si quelqu'un veut les ajouter par la suite.
+- Aucune authentification par événement individuel (voir Faille 1 —
+  décision délibérée, pas un oubli).
+- `passwordHash`/`pinHash` toujours répliqués à tout Worker (voir Faille 2
+  — compromis assumé, décision explicite du porteur du projet).
+
+### 2026-09-19 — Veille bugs/sécurité/fonctionnalités/concurrence + mise à jour des dépendances vulnérables
+
+**Contexte** : demande explicite d'une analyse "prochaines étapes" couvrant
+bugs, sécurité, fonctionnalités et concurrence, avec une vraie recherche web
+(pas de mémoire figée) — rapport complet publié en Artifact ("Prochaines
+étapes WariBox"). Suite immédiate : demande de mettre à jour les dépendances
+vulnérables identifiées par cette veille.
+
+**`pnpm audit --prod` (jamais lancé sur ce projet avant cette session)** :
+31 avis (2 critiques, 11 élevés, 15 modérés, 3 faibles), tous dans 3
+dépendances de rendu de documents figées depuis 2023 — `jspdf@2.5.2`,
+`xlsx@0.18.5` (+ `dompurify` transitif via `jspdf`), `drizzle-orm@0.38.4`.
+Vérifié par lecture du code réel qu'aucune n'était exploitable dans l'usage
+actuel (les chemins vulnérables — `doc.html()` de jsPDF, `sql.raw`/
+`sql.identifier` de Drizzle — ne sont appelés nulle part dans le projet),
+mais rester aussi loin en retard prive le projet des correctifs accumulés
+depuis, pas seulement ceux listés par l'audit.
+
+**Fait** :
+- `drizzle-orm` : `^0.38.0` → `^0.45.2` (le dist-tag `latest` réel — les
+  versions `1.0.0-beta`/`rc` visibles sur npm sont une série séparée non
+  encore stable, pas la cible) dans `packages/core`, `packages/database`,
+  `apps/web`.
+- `jspdf` : `^2.5.2` → `^4.2.1` dans `packages/printer`/`packages/reports` —
+  saut de deux versions majeures, mais confirmé sans rupture d'API pour un
+  usage navigateur (les seuls changements cassants documentés dans les
+  notes de version 3.0.0/4.0.0 concernent la dépréciation d'IE et une
+  restriction d'accès disque côté Node.js, aucun des deux ne concerne ce
+  projet — recherche faite avant de lancer la mise à jour, pas après coup).
+- `xlsx` : **volontairement pas touché** — SheetJS ne publie plus de
+  correctif sur npm depuis des années (dernier `0.18.5`), seulement sur son
+  propre CDN hors du registre standard ; aucune version npm plus récente
+  n'existe à installer. La faille annoncée (ReDoS) ne s'applique qu'au
+  **parsing** d'un fichier `.xlsx` — confirmé par `Grep` que
+  `packages/reports` n'appelle jamais `XLSX.read`/`XLSX.parse`, seulement
+  l'écriture (`buildWorkbookBlob`) — donc non exploitable ici tel quel.
+  Documenté explicitement plutôt que laissé en silence, pour qu'une future
+  session ne suppose pas un simple oubli.
+
+**Vérifié** : `pnpm install` puis `pnpm run build` (monorepo complet) et
+`pnpm run test` (43 tests) passent sans erreur ni régression de type. Audit
+relancé après coup : passé de 31 à **2 avis** (les 2 restants, tous les
+deux `xlsx`, ci-dessus expliqués). **Vérification navigateur réelle** —
+pas seulement le typecheck — vu que jsPDF change de 2 versions majeures :
+compte de test créé, export PDF du rapport Ventes intercepté
+(`URL.createObjectURL`) et décodé en octets bruts — blob `%PDF-1.3` valide
+de 3579 octets, texte "Rapport des ventes" confirmé lisible en clair dans
+le flux PDF généré, aucune erreur console. Confirme que `buildReportPdf`
+(le chemin commun à 7 des 9 rapports) fonctionne à l'identique après la
+mise à jour.
+
+**Pas fait / laissé de côté** :
+- `xlsx` reste sur la version vulnérable (ReDoS non exploitable en
+  écriture seule, voir ci-dessus) — à reconsidérer si `packages/reports`
+  gagne un jour une fonctionnalité de lecture/import Excel, qui
+  réactiverait le chemin de code concerné.
+- Pas de vérification navigateur de chaque document généré individuellement
+  (reçu ESC/POS, étiquettes, devis, export Excel) — seul le chemin PDF
+  partagé le plus utilisé (`buildReportPdf`) a été vérifié en conditions
+  réelles ; les autres partagent la même dépendance `jspdf` mise à jour et
+  n'ont subi aucune modification de code propre, risque jugé faible.
+- Le reste du rapport de veille (mode réseau jamais testé à 2 appareils,
+  isolation multi-boutique de la réplication, FNE, positionnement
+  concurrentiel) reste à traiter — voir l'Artifact "Prochaines étapes
+  WariBox" et la section *Prochaines pistes* ci-dessous.
+
+### 2026-09-19 — FNE : coquille complète activable depuis Paramètres, contrat HTTP déduit du SDK tiers vérifié contre le vrai bac à sable DGI
+
+**Contexte** : suite directe de la veille du même jour — demande explicite
+de construire la coquille FNE complète (activable depuis Paramètres) plutôt
+que d'attendre indéfiniment un accès DGI. Plan détaillé écrit et approuvé
+avant codage (voir `.claude/plans/` au moment d'écrire cette entrée) après
+lecture directe du code source du SDK PHP tiers non-officiel
+[PRODESTIC/fne-sdk-php](https://github.com/PRODESTIC/fne-sdk-php)
+(`HttpClient.php`, `InvoiceService.php`, `Utils/Constants.php`,
+`Models/Invoice.php`/`InvoiceItem.php`) — pas seulement son README,
+nettement plus précis : URL sandbox en dur
+(`http://54.247.95.108/ws`, en clair), endpoint
+`POST /external/invoices/sign` (vente et achat), auth `Authorization:
+Bearer <clé>`, forme JSON exacte de la requête/réponse.
+
+**Décisions actées avant de coder** (voir le plan pour le détail complet) :
+1. Seules les **ventes** sont certifiées — l'endpoint d'achat du SDK est
+   spécifiquement pour des bordereaux agricoles/coopératives, pas
+   `PurchasesService` générique.
+2. **Client de passage sans téléphone/email** (la FNE exige les deux, même
+   B2C) : repli sur le téléphone/email de l'**entreprise elle-même**
+   (`business_settings`, déjà toujours renseignés) plutôt qu'inventer une
+   donnée — pas de nouveau champ.
+3. **CORS/contenu mixte** : ajout de `tauri-plugin-http` (appel HTTP natif
+   Rust, cross-platform desktop+Android, pas de bloc `[target...]` dédié
+   contrairement à `android-fs`) utilisé quand `isTauriRuntime()`, repli
+   `fetch()` classique sinon — la section reste visible partout (pas de
+   restriction desktop-only), la fiabilité réelle dépend de la plateforme.
+4. **Offline-first préservé** : une vente se termine et s'imprime toujours
+   immédiatement, jamais bloquée par la certification — même principe que
+   `__sync_outbox` du mode réseau (Phase 2).
+5. Deux conversions documentées comme "best-effort, à ajuster" dans
+   `fnePayload.ts` : remise WariBox = montant absolu → FNE attend un
+   pourcentage 0-100 ; taux de TVA numérique → code FNE
+   (`TVA`/`TVAB`/`TVAC`/`TVAD`, mapping par seuil).
+
+**Fait** :
+- **Migration `id: 4`** : `business_settings` gagne `fne_enabled`/
+  `fne_environment`/`fne_api_key`/`fne_api_base_url`/`fne_establishment`/
+  `fne_point_of_sale` ; `sales` gagne `fne_status`/`fne_reference`/
+  `fne_ncc`/`fne_qr_token`/`fne_balance_sticker`/`fne_error`/
+  `fne_certified_at` (toutes nullables — une vente créée avant activation
+  garde `fne_status = NULL` pour toujours) ; nouvelle table `__fne_queue`
+  (même esprit que `__sync_outbox`, plus simple).
+- **`packages/core/src/fne/`** (logique pure, zéro réseau, même séparation
+  que `sync/`) : `fneTypes.ts` (contrat déduit), `fnePayload.ts`
+  (`buildFneInvoicePayload` + les 2 conversions documentées, réutilise le
+  libellé `syscohadaLabels.walkInCustomer` déjà existant pour le client de
+  passage), `fneQueue.ts` (accès `__fne_queue`, même patron que
+  `syncStore.ts`), `fneEvents.ts` (pub/sub minimal `emitFneQueued`/
+  `onFneQueued`, émis seulement après écriture DB confirmée — jamais de
+  course avec la ligne réellement insérée). `SalesService.createSale` :
+  seul ajout, une vérification `settings.fneEnabled` (settings déjà lu pour
+  la fidélité, juste plus jamais conditionné à l'existence d'un client) +
+  `enqueueFneCertification`/`emitFneQueued` après le commit.
+- **`apps/web/src/features/fne/`** (I/O réelle, même séparation que
+  `features/network/`) : `fneHttp.ts` (`certifyInvoice`, bascule
+  `@tauri-apps/plugin-http` vs `fetch` natif), `useFneQueue.ts` (monté une
+  fois dans `App.tsx`/`MainContent`, comme `useBackupScheduler` — traite la
+  file au montage, sur `onFneQueued`, sur l'évènement `online`, et toutes
+  les 5 min en filet de sécurité).
+- **Tauri** : `tauri-plugin-http = "2"` (Cargo.toml, dépendances communes),
+  `.plugin(tauri_plugin_http::init())` (lib.rs), permission `http:default`
+  avec portée large (`capabilities/default.json`, même raisonnement déjà
+  établi pour `opener:allow-open-path` — l'URL est saisie par l'utilisateur
+  lui-même, pas un contenu non fiable).
+- **Paramètres** : nouvelle section "Facturation électronique (FNE)",
+  même style que la section Google Drive (champ secret + bouton d'action) —
+  interrupteur, environnement Test/Production, clé API, Établissement/
+  Point de vente (identifiants DGI, texte libre), bouton **"Tester la
+  connexion"** (payload minimal factice, affiche le message renvoyé même en
+  cas d'échec — voir vérification ci-dessous), compteur de ventes en
+  attente + bouton "Réessayer maintenant" (déclenche `emitFneQueued()`).
+- **Reçus** (`ReceiptData`, `receipt.ts`/`receiptPdf.ts`) : ligne ajoutée
+  juste après le bloc client existant — "Facture certifiée FNE :
+  {référence}"/"En attente de certification FNE"/"Certification FNE en
+  attente (nouvelle tentative automatique)" selon le statut, rien si la FNE
+  n'a jamais été activée pour cette vente. `SalesPage.tsx` (reçu
+  immédiat, statut déduit de `businessSettings.fneEnabled` plutôt que
+  relu depuis `sale.fneStatus`, encore `null` à cet instant précis — voir
+  commentaire dans le code) et `SalesHistoryPage.tsx` (régénération,
+  statut relu depuis la ligne `sales` stockée) mis à jour.
+- **Pas de QR visuel** dans cette passe (texte de référence seulement) —
+  demanderait d'ajouter une dépendance QR à `packages/printer`, hors
+  périmètre, amélioration ultérieure possible.
+
+**Obstacle rencontré et résolu — compilation Rust bloquée par une politique
+Windows** : `cargo check` a échoué à deux reprises sur la nouvelle chaîne
+de dépendances de `tauri-plugin-http` (`rustls`, via `reqwest`) avec
+`Une stratégie de contrôle d'application a bloqué ce fichier. (os error
+4551)` — Smart App Control (ou équivalent) de Windows refusant d'exécuter
+le binaire de build-script fraîchement compilé. Pas quelque chose à
+contourner par le code — signalé explicitement au porteur du projet plutôt
+que de tenter un contournement, résolu de son côté (probablement une
+autorisation Windows), confirmé par un nouveau `cargo check` réussi
+ensuite.
+
+**Vérifié, de bout en bout, dans le navigateur — pas seulement le
+typecheck** :
+1. `pnpm run build` + `pnpm run test` (43 tests) passent.
+2. `cargo check` puis **build desktop release complet**
+   (`pnpm run build:desktop`, MSI + NSIS produits) — confirme que la
+   nouvelle chaîne de dépendances compile et que la permission
+   `http:default` est un identifiant ACL Tauri v2 valide (une syntaxe
+   fausse aurait fait échouer ce build avec une erreur de validation de
+   schéma, même précédent que `android-fs` en août).
+3. **Bouton "Tester la connexion" appelé contre le vrai bac à sable DGI**
+   (`http://54.247.95.108/ws`, PWA/navigateur, pas Tauri — donc via le repli
+   `fetch()` natif, pas le plugin) avec une fausse clé : réponse HTTP 401
+   réelle reçue et lisible côté JS (`"Le serveur FNE a répondu (bon
+   signe) : Invalid API Key"`) — preuve concrète, sans attendre un vrai
+   accès DGI, que l'URL/l'endpoint/le format d'authentification déduits du
+   SDK tiers sont corrects, et qu'aucun blocage CORS/contenu mixte ne s'est
+   produit depuis ce contexte (les deux origines `http://localhost:5173` et
+   `http://54.247.95.108` sont non sécurisées, donc pas de contenu mixte
+   ici ; le bac à sable DGI semble en plus envoyer des en-têtes CORS
+   permissifs, un point positif inattendu pour la fiabilité en PWA pure).
+4. **Scénario complet réel** : produit + 20 unités en stock → FNE activée
+   (clé factice) et enregistrée → vente anonyme au comptant
+   (VTE-2026-000001, aucun client — exerce exactement le repli
+   client-de-passage) → reçu PDF généré et décodé octet par octet
+   (`URL.createObjectURL` intercepté) : confirmé "En attente de
+   certification" + "FNE" présents juste après l'en-tête, avant le
+   séparateur — le texte de repli entreprise a bien été utilisé côté FNE
+   sans jamais apparaître sur le reçu (le reçu n'affiche le client que si
+   un nom est fourni, comportement inchangé). Compteur Paramètres confirmé
+   à **"1 vente en attente de certification — réessayer maintenant"**
+   (pluralisation `_one` correcte) : la file d'attente a bien tenté une
+   certification automatique en arrière-plan (`useFneQueue`, déclenché par
+   `onFneQueued` juste après la vente), reçu la même erreur 401 réelle, et
+   correctement laissé la ligne en file pour une nouvelle tentative
+   (échec réseau/serveur = retriable, pas un abandon). Aucune erreur
+   console inattendue à aucune étape (seules les 2 erreurs 401 attendues).
+
+**Pas fait / hors périmètre de cette passe** (voir le plan pour le détail) :
+- Pas de génération d'avoir (`/refund`) — `RefundsService.ts` non touché.
+- Pas de QR visuel sur les reçus (texte de référence seulement).
+- Achats (`PurchasesService`) non concernés.
+- Mapping taxe/remise non vérifié contre un vrai compte DGI (best-effort
+  documenté dans `fnePayload.ts`, changement localisé si à ajuster).
+- Interaction avec le mode réseau (un Worker qui certifierait ses propres
+  ventes) non testée — dépend du test à 2 appareils toujours en attente
+  pour tout le chantier réseau (voir piste 7 ci-dessous).
+- **La coquille est fonctionnelle et vérifiée contre le vrai bac à sable,
+  mais reste non testée avec une vraie clé API DGI** — le jour où le
+  porteur du projet obtient un accès réel, le bouton "Tester la connexion"
+  dira immédiatement si le contrat déduit tient tel quel ou nécessite un
+  ajustement (localisé à `fnePayload.ts`/`fneTypes.ts`).
+
+### 2026-09-20 — Refonte visuelle : icônes SVG + couleur par secteur d'activité (Phase 1)
+
+**Contexte** : retour explicite du porteur du projet — l'interface jugée
+"trop monotone, pas assez personnalisable" pour s'adapter à différentes
+activités (boutique, pharmacie, restaurant, pressing...). Après un premier
+avis honnête (l'interface est fonctionnelle mais visuellement neutre, tous
+les emoji comme icônes fonctionnelles n'aident pas), une maquette de
+concept a été publiée en Artifact (design non-codé) pour aligner la
+direction avant de toucher au vrai code — approuvée dans son principe, avec
+deux décisions de cadrage actées explicitement via question posée au
+porteur du projet avant de coder :
+1. **Le menu reste une barre du haut** (pas de passage à un sidebar — jugé
+   trop risqué pour cette passe, réécrirait toute la structure de page déjà
+   retravaillée sur plusieurs sessions pour bien fonctionner de 320px à
+   desktop, voir les nombreuses entrées responsive d'août ci-dessus).
+2. **Le secteur se choisit uniquement dans Paramètres**, pas à
+   l'onboarding — un compte existant sans secteur choisi garde le thème
+   actuel (bleu/indigo) sans aucun changement de comportement.
+
+**Ce qui a rendu cette passe peu risquée malgré son ampleur visuelle** :
+l'app utilisait déjà un système de variables CSS pour l'accent
+(`--color-accent`/`--color-accent-2`/`--gradient-accent`/
+`--color-accent-soft`/`--bg-glow`, voir [index.css](apps/web/src/app/index.css)),
+repris directement par `primaryButtonStyle`
+([sharedStyles.ts](apps/web/src/components/sharedStyles.ts)) et l'état actif
+de [Nav.tsx](apps/web/src/app/Nav.tsx) — surcharger ces variables par
+secteur (exactement comme `:root[data-theme="light"]` le fait déjà pour le
+thème clair) propage donc la couleur à tous les boutons/onglets actifs/
+anneaux de focus de l'app **sans toucher à leur code** — confirmé en
+vérification navigateur sur les pastilles de Nav, le bouton "Enregistrer"
+de Paramètres, et même les sous-onglets de Rapports (Ventes/Marges/...),
+qui n'ont eux non plus rien eu besoin d'être modifiés.
+
+**Fait** :
+- `business_settings.sectorType` existait déjà en base (colonne + support
+  dans `UpdateSettingsInput`, jamais exposé côté UI) — **aucune migration
+  nécessaire**.
+- Nouveau [sectorTypes.ts](apps/web/src/features/settings/sectorTypes.ts) :
+  liste curatée à 4 valeurs (`boutique`/`pharmacie`/`restaurant`/`pressing`)
+  + `isSectorType()`. Pas de 5e option "Autre" — une valeur vide/`null`
+  équivaut déjà à "pas de secteur" et garde le thème actuel.
+- [SettingsPage.tsx](apps/web/src/features/settings/SettingsPage.tsx) :
+  nouveau champ "Secteur d'activité" (`<select>`) dans la section
+  Entreprise. **Piège évité explicitement** : contrairement aux autres
+  champs texte de cette section (`businessName.trim() || undefined` — une
+  valeur vide ne touche pas le champ existant), `sectorType` est envoyé
+  **sans** ce filtre — "Aucun (thème par défaut)" (valeur `""`) doit
+  pouvoir écraser un secteur déjà choisi, pas être traité comme "champ non
+  renseigné, ignorer".
+- [index.css](apps/web/src/app/index.css) : 4 nouveaux blocs
+  `:root[data-sector="..."]` (ambre/terracotta boutique, sarcelle
+  pharmacie, rouge tomate restaurant, violet/prune pressing), chacun avec
+  son pendant `:root[data-theme="light"][data-sector="..."]` pour
+  `--color-accent-soft` (même split dark/light déjà appliqué à
+  `--color-danger`/etc.). `data-sector` appliqué dans l'effet déjà
+  existant de `MainContent` ([App.tsx](apps/web/src/app/App.tsx)) qui
+  charge déjà `getSettings(db)` à chaque changement d'onglet — même
+  mécanique que `data-theme` ([stores/theme.ts](apps/web/src/stores/theme.ts)),
+  mais lu depuis `business_settings` (donnée métier partagée entre
+  appareils) plutôt que `localStorage`. **Limite héritée du même patron
+  déjà connu pour les autres champs de cet effet** (voir StoreSwitcher,
+  journal du 2026-08-12) : l'accent ne se met à jour qu'au changement
+  d'onglet suivant la sauvegarde, pas instantanément sur la page
+  Paramètres elle-même — confirmé pendant la vérification, comportement
+  volontairement pas retouché (cohérent avec le reste de l'app).
+- Nouveau [icons.tsx](apps/web/src/components/icons.tsx) : 29 icônes trait
+  fin (`viewBox` 24×24, `stroke="currentColor"`, sans remplissage — la
+  couleur suit toujours l'élément parent) remplaçant les emoji utilisés
+  comme icônes fonctionnelles.
+- [Nav.tsx](apps/web/src/app/Nav.tsx) : `TABS` gagne `icon` (composant) et
+  `group?: "sales" | "relations" | "finance" | "system"` par entrée
+  (`dashboard` hors groupe ; `reports` rattaché à `finance` plutôt qu'un
+  groupe à lui seul, pour éviter un cluster orphelin d'un seul item dans le
+  menu mobile). `.nav-full` (barre du haut) affiche icône + texte par
+  pastille, sans séparateur de groupe (pour ne pas toucher au `flexWrap`
+  déjà calibré sur plusieurs sessions de vérification responsive).
+  `.nav-compact` (menu déroulant mobile, seuil 1024px — voir journal du
+  2026-08-17 "Nav mobile") affiche en plus un intitulé de section entre les
+  clusters. Nouvel onglet "Produits" adaptatif : icône ET libellé changent
+  selon `sectorType` (pilule/"Médicaments" pharmacie, fourchette/"Plats &
+  boissons" restaurant, cintre/"Services" pressing, boîte/"Produits" par
+  défaut) via une table `PRODUCTS_TAB_OVERRIDE` — `Nav` reçoit `sectorType`
+  en prop (déjà chargé dans `MainContent`, un seul passage supplémentaire).
+- [DashboardPage.tsx](apps/web/src/features/dashboard/DashboardPage.tsx) :
+  `KpiCard`'s prop `icon` passe de `string` (emoji) à `ReactNode` — 7
+  points d'appel mis à jour, **la couleur par carte (`iconColor`) reste
+  inchangée** (différenciation sémantique déjà utile, pas remplacée par
+  l'accent de secteur). Le cercle translucide décoratif remplacé par un
+  bandeau de 3px en haut de carte, même `iconColor` — changement local à
+  `KpiCard`, `cardStyle` partagé par 28 autres fichiers **non touché**.
+- Autres emoji fonctionnels remplacés (inventaire confirmé par
+  exploration) : [TopBar.tsx](apps/web/src/features/auth/TopBar.tsx)
+  (bouton thème, `IconMoon`/`IconSun`), [SalesPage.tsx](apps/web/src/features/sales/SalesPage.tsx)
+  (bouton scanner, `IconCamera`), 4 boutons "✕" de suppression de ligne
+  (SalesPage/ServiceOrdersPage/QuotesPage/PurchasesPage, `IconX`), hamburger
+  du menu mobile (`IconMenu`). `topbar.themeDark`/`themeLight`/
+  `sales.scanCamera` perdent leur préfixe emoji dans les deux langues.
+  **Hors périmètre, volontairement** : emoji décoratifs à l'intérieur de
+  messages traduits (WhatsApp, etc.) — pas des icônes d'interface.
+- i18n : `nav.groups.*` (4×2), `nav.productsPharmacie`/`productsRestaurant`/
+  `productsPressing` (×2), `settings.business.sectorType`/`sectorTypeHint`/
+  `sectorNone`/`sectorBoutique`/`sectorPharmacie`/`sectorRestaurant`/
+  `sectorPressing` (×2) — chantier bilinguisme FR/EN maintenu intégral.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : compte de test créé,
+zéro changement visuel confirmé sans secteur choisi (accent `#38bdf8`
+d'origine), puis les 4 secteurs activés un par un depuis Paramètres —
+accent confirmé propagé (pastille d'onglet actif, bouton "Enregistrer",
+sous-onglets de Rapports) après le changement d'onglet suivant la
+sauvegarde, sans rechargement de page ; icône ET libellé de l'onglet
+"Produits" confirmés adaptés pour les 3 secteurs qui le personnalisent
+(Médicaments/Plats & boissons/Services) ; retour à "Aucun" confirmé
+restaurer l'accent d'origine exactement. Bascule thème clair confirmée sur
+le secteur pharmacie : `--color-accent-soft` recalculé et lisible dans les
+deux thèmes. Responsive re-testé à 375px (menu compact avec groupes et
+icônes, accent violet sur la pastille active, aucun débordement horizontal
+— `scrollWidth` = 375) et 1280px (barre complète avec icônes, deux lignes,
+aucune régression du `flexWrap` déjà calibré). Icônes camera/croix
+confirmées visuellement sur la page Ventes (bouton "Scanner (caméra)",
+panier). Aucune erreur console à aucune étape. `pnpm run build` et les 43
+tests unitaires passent.
+
+**Pas fait / hors périmètre de cette passe** (voir le plan, conservé dans
+`.claude/plans/`, pour le détail complet) :
+- Pas de sidebar (décision actée ci-dessus) — resterait une passe séparée
+  si demandée après avoir vu ce premier résultat en conditions réelles.
+- Pas de sélection du secteur à l'onboarding (décision actée) — seulement
+  dans Paramètres.
+- Pas de nouvelle typographie (Manrope/Public Sans de la maquette de
+  concept) — la police système actuelle n'est pas touchée dans cette passe,
+  pour limiter le risque de régression visuelle sur les largeurs de colonne
+  de tableau déjà calibrées.
+- `cardStyle`/`badgeStyle` partagés (28 fichiers) non modifiés — seul le
+  style local de `KpiCard` (Dashboard) change.
+- Pas de test avec un vrai catalogue de produits par secteur (icônes/
+  couleurs uniquement, pas de contenu ou de disposition de page spécifique
+  au secteur au-delà de l'onglet "Produits") — hors périmètre de cette
+  Phase 1, à considérer si demandé après retour terrain.
+
+### 2026-09-20 — Apparence personnalisable : couleur libre + forme, découplée du secteur d'activité
+
+**Contexte** : suite immédiate de la Phase 1 (icônes + couleur par secteur,
+entrée précédente) — retour du porteur du projet après avoir testé : "je ne
+vois pas la partie apparence... je veux pouvoir changer l'apparence
+(couleur, forme, style) de toute l'appli". Le sélecteur de secteur ne
+proposait que 4 couleurs fixes, pas un vrai réglage d'apparence. Question
+de cadrage posée avant de coder : thèmes prédéfinis seuls, couleur libre
+seule, ou les deux — porteur du projet a choisi **les deux**.
+
+**Décision d'architecture** : plutôt que de garder deux mécanismes
+parallèles (blocs CSS statiques par secteur + un futur picker libre),
+remplacement complet du mécanisme de couleur de la Phase 1 par un seul
+système unifié — les "thèmes prédéfinis" ne sont que des boutons qui
+écrivent une couleur connue dans le même champ que le picker libre
+`<input type="color">`, pas une notion séparée. `sectorType` est
+**découplé de la couleur** : il ne pilote plus que l'icône/libellé de
+l'onglet "Produits" (déjà indépendant dans Nav.tsx depuis la Phase 1),
+tandis qu'une toute nouvelle section "Apparence" pilote couleur et forme.
+
+**Fait** :
+- **Migration `id: 5`** : `business_settings.appearanceAccentColor` (hex,
+  nullable) + `appearanceShape` (`"rounded"`/`"square"`, nullable) —
+  `null` = thème par défaut pour les deux.
+- **[index.css](apps/web/src/app/index.css)** : les 4 blocs
+  `:root[data-sector="..."]` de la Phase 1 **retirés** — une couleur libre
+  ne se prête plus à des blocs CSS statiques par valeur possible.
+- **[lib/color.ts](apps/web/src/lib/color.ts)** (nouveau) : conversion
+  hex↔HSL/RGB sans dépendance externe — `lighten()` (dérive
+  `--color-accent-2` depuis la seule couleur choisie par l'utilisateur) et
+  `toRgba()` (accent-soft/bg-glow).
+- **[lib/appearance.ts](apps/web/src/lib/appearance.ts)** (nouveau) :
+  `applyAppearance(accentColor, shape, theme)` — pose
+  `--color-accent`/`--color-accent-2`/`--gradient-accent`/
+  `--color-accent-soft`/`--bg-glow`/`--radius-md`/`--radius-lg` **en style
+  inline sur `<html>`** (l'emporte sur toute règle CSS, y compris
+  `:root[data-theme="light"]`, donc fonctionne dans les deux thèmes sans
+  bloc dédié) ou les retire (retour aux valeurs par défaut de index.css).
+  `theme` doit être repassé par l'appelant à chaque fois (pas lu en
+  interne) car l'opacité d'accent-soft/bg-glow diffère clair/sombre —
+  **appelé à deux endroits** : l'effet déjà existant de `MainContent`
+  ([App.tsx](apps/web/src/app/App.tsx), post-connexion) et un nouvel effet
+  dans [AuthGate.tsx](apps/web/src/features/auth/AuthGate.tsx) (indépendant
+  de `user`, donc actif dès l'écran de connexion/PIN/configuration — sans
+  lui, "toute l'appli" aurait exclu l'écran de connexion, repéré comme un
+  vrai trou avant de livrer).
+- **[appearancePresets.ts](apps/web/src/features/settings/appearancePresets.ts)** :
+  7 couleurs curatées (les 4 de la Phase 1 renommées Ambre/Sarcelle/Tomate/
+  Prune + 3 nouvelles Émeraude/Rose/Ardoise), plus `DEFAULT_ACCENT_COLOR`
+  pour la valeur de départ du `<input type="color">`.
+- **[SettingsPage.tsx](apps/web/src/features/settings/SettingsPage.tsx)** :
+  nouvelle carte "Apparence" (entre Entreprise et Modules actifs) — rangée
+  de pastilles cliquables (7 presets + "Par défaut" + un `<input
+  type="color">` habillé en pastille pour "Personnalisé"), 2 boutons
+  Arrondi/Carré. **Aperçu en direct** : chaque clic appelle aussi
+  `applyAppearance(...)` immédiatement (avant Enregistrer), contrairement
+  au secteur d'activité (qui n'apparaît qu'au changement d'onglet suivant
+  — limite déjà documentée, héritée du même effet `[db, tab]`) — repéré
+  comme nécessaire dès le départ : un réglage d'apparence sans aperçu
+  immédiat serait frustrant à utiliser. Un aller sans Enregistrer se
+  réinitialise normalement à la prochaine lecture des paramètres (même
+  comportement que tout champ non sauvegardé ailleurs dans l'app).
+  `settings.business.sectorTypeHint` (fr/en) mis à jour pour refléter le
+  découplage (ne mentionne plus la couleur).
+
+**Piège technique rencontré et résolu — verrous OPFS lors de la remise à
+zéro du compte de test** : la base de test du panneau navigateur intégré
+contenait un compte d'une session précédente ("krat") sans mot de passe
+connu. Une tentative de suppression du dossier `.gestion-boutique-vfs` via
+`navigator.storage.getDirectory()` **depuis la page de l'app elle-même**
+échoue silencieusement/partiellement : le worker SQLite de la page a des
+`SyncAccessHandle` ouverts sur les fichiers du pool, donc `removeEntry`
+soit lève `NoModificationAllowedError`, soit "réussit" sans réellement
+libérer le stockage (la donnée survit à un rechargement complet, y compris
+fermeture/réouverture d'onglet — un simple `navigate()`/fermeture d'onglet
+ne suffit pas si un nouvel onglet rouvre aussitôt l'app et réacquiert des
+handles avant la suppression). **Solution fiable** : naviguer vers une
+URL du même serveur Vite qui ne sert PAS `index.html` — un asset statique
+existant comme `http://localhost:5173/db-worker.js` (servi tel quel, pas
+de fallback SPA dessus) — cette page n'exécute aucun JS de l'app, donc
+aucun worker SQLite actif ; `navigator.storage.getDirectory()` y a accès
+au même stockage d'origine (même port/host) sans concurrence, et la
+suppression y est immédiate et définitive (vérifié par re-listage :
+dossier vide après coup). Pas un bug applicatif — une contrainte de l'API
+OPFS elle-même, mais un piège reproductible pour toute future remise à
+zéro d'un compte de test bloqué dans ce panneau.
+
+**Vérifié dans le navigateur**, pas juste le typecheck : compte de test
+recréé après la remise à zéro OPFS ci-dessus, section Apparence localisée
+(7 pastilles + Par défaut + Personnalisé + Arrondi/Carré) ; clic sur
+"Tomate" → confirmé en direct via les variables CSS calculées
+(`--color-accent`/`--color-accent-2`/`--gradient-accent`/
+`--color-accent-soft`/`--bg-glow` tous corrects, y compris la teinte
+éclaircie dérivée pour `--color-accent-2`) **avant même d'enregistrer** ;
+clic sur "Carré" → `--radius-md`/`--radius-lg` passés à 6px/8px, confirmé
+sur un vrai `border-radius` calculé de carte Dashboard (8px, pas
+seulement la variable elle-même) ; Enregistrer → rechargement complet de
+la page (avant connexion) → confirmé que l'écran de connexion lui-même
+("Se connecter") affiche déjà le dégradé tomate et les coins carrés, sans
+être connecté ; reconnexion → confirmé propagé sur le Dashboard (pastilles
+KPI, cartes) ; "Par défaut" + "Arrondi" → confirmé retour exact aux
+valeurs d'origine (`#38bdf8`, aucun style inline restant sur `<html>`) ;
+Enregistrer → confirmé persistant après un nouveau cycle complet
+déconnexion/reconnexion. Aucune erreur console à aucune étape (y compris
+la migration `id: 5`, appliquée proprement sur une base neuve). `pnpm run
+build` et les 43 tests unitaires passent.
+
+**Pas fait / hors périmètre de cette passe** :
+- Pas de retouche des `borderRadius: 8`/`999` codés en dur hors de
+  `cardStyle`/`inputStyle`/`primaryButtonStyle`/`KpiCard` (ex. pastilles de
+  Nav, badges, modales) — ces trois styles partagés déjà branchés sur
+  `var(--radius-md/lg)` couvrent la quasi-totalité des cartes/boutons/
+  champs de l'app (la surface visuelle dominante), retoucher les dizaines
+  d'occurrences isolées restantes serait un balayage plus large et plus
+  risqué, non demandé explicitement.
+- `badgeStyle` (pastilles de statut, `borderRadius: 999`, forme "pilule"
+  intentionnelle) volontairement pas concerné par le réglage de forme —
+  une pilule n'a pas de version "carrée" cohérente.
+- Pas de nouvelle typographie ni de disposition par secteur (toujours hors
+  périmètre, voir entrée précédente).
+
+### 2026-09-24 — Menu en colonne verticale à gauche sur grand écran + bouton "Rejoindre un réseau" invisible
+
+**Bouton invisible (Paramètres → Mode réseau)** : le bouton "Rejoindre un
+réseau" de `NetworkSection.tsx` réutilisait `primaryButtonStyle` (texte
+`#0f172a`) avec un fond `var(--color-bg)` sombre → texte sombre sur fond
+sombre en thème sombre. Corrigé (texte `var(--color-text)` + bordure). Les
+autres boutons "secondaires" de l'app redéfinissent tous leur couleur de
+texte, seul ce cas était fautif (vérifié par recherche).
+
+**Menu vertical** (demande du porteur du projet, capture à l'appui : les
+2 rangées d'onglets mangeaient la hauteur et le contenu centré laissait de
+grands vides latéraux). Décision : **≥1024px uniquement**, tablette
+(768–1023px : barre horizontale à retour à la ligne) et mobile (<768px :
+bouton menu) **inchangés**.
+- [Nav.tsx](apps/web/src/app/Nav.tsx) : nouvelle prop `placement`
+  (`"header"` par défaut = comportement d'avant ; `"sidebar"` = colonne
+  `<aside class="nav-sidebar">`, mêmes onglets/permissions/icônes/
+  intitulés de groupe, libellé "Produits" adaptatif conservé).
+- [App.tsx](apps/web/src/app/App.tsx) : `<Nav placement="sidebar">` monté
+  dans un `.app-body` (flex ≥1024px) à côté d'un `.app-content` qui
+  enveloppe les pages ; la hauteur de l'en-tête sticky est mesurée
+  (`ResizeObserver`) dans `--app-header-h` pour que la colonne se cale
+  juste dessous et ne dépasse jamais la fenêtre (`max-height` + scroll
+  interne).
+- [index.css](apps/web/src/app/index.css) : `.nav-sidebar` (240px,
+  `position: sticky`), `.nav-full` masquée ≥1024px.
+- **Vérifié dans le navigateur** (mesures DOM, pas seulement à l'œil) :
+  1400px → colonne 240px sticky sous l'en-tête, contenu à x=240, 17
+  entrées, 4 groupes, clic "Paramètres" navigue et applique l'accent ;
+  1023px → barre horizontale (colonne masquée) ; 1024px → colonne ;
+  900px → barre horizontale ; 375px → bouton menu, aucun débordement
+  (`scrollWidth` 375). `pnpm run build` + 43 tests passent.
+- **Pas fait** : colonne repliable en icônes seules (proposée, non
+  demandée explicitement).
+- **Piège de vérification** : sur le panneau navigateur intégré, un clic
+  `computer`/`ref` sur le bouton submit d'un formulaire peut ne pas
+  déclencher `onSubmit` ; `form.requestSubmit()` via `javascript_tool`
+  fonctionne. Et après remise à zéro OPFS (voir entrée du 2026-09-20), le
+  compte de test doit être recréé.
+
+### 2026-09-25 — Refonte "ticket de caisse" (papier, encre, tampon)
+
+**Contexte** : l'interface était jugée trop standard/« faite par IA ». Direction validée sur maquette (Artifact) puis appliquée.
+
+**Fait** :
+- Tokens dans [index.css](apps/web/src/app/index.css) : thème clair « papier » par défaut (le sombre « nuit » reste sélectionnable — un utilisateur existant repasse en clair), aplats sans dégradé/lueur (`--gradient-accent` = couleur unie, `--bg-glow: none`, noms conservés car lus par de nombreux composants), `--tint-1..5` pour les monogrammes produit.
+- Polices auto-hébergées `@fontsource` (Familjen Grotesk, IBM Plex Mono pour les montants, Caveat pour les notes manuscrites), incluses dans le precache PWA — aucune dépendance réseau.
+- Accent par défaut terracotta `#b4432b`, `--color-on-accent` calculé par luminance ; 3 formes (standard/arrondi/carré) ; nouveaux presets.
+- Nouveaux composants : `Stamp` (tampon d'encre animé), `TicketEdge` (bord dentelé).
+- Accueil et écran Ventes refaits (ticket avec pointillés, total mono 34px, boutons ±, moyens de paiement en segments, rendu monnaie encadré, coupures rapides).
+- Menu latéral gauche ≥1024px (voir entrée du 2026-09-24).
+
+**Pas fait** : écran de clôture de caisse par comptage, reprise des `borderRadius`/polices codés en dur hors styles partagés, feuille ticket spécifique mobile.
+**Non vérifié visuellement** : écran Ventes refait (build/tests OK, mais pas de session connectée disponible dans le navigateur de test).
+
+### 2026-09-25 — Menus Configuration / Configuration avancée / Apparence + durcissement sécurité
+
+**Organisation** : Paramètres est éclaté en 3 menus (même composant `SettingsPage`, prop `section`, un seul état et un seul bouton Enregistrer ; les blocs hors-section restent montés en `display: contents/none` pour ne perdre aucune saisie). **Configuration** : entreprise, FNE, SYSCOHADA, remises programmées, fidélité, sécurité, sauvegardes. **Configuration avancée** (verrouillée par le code de maintenance) : modules actifs, multi-boutique, mode réseau, maintenance/mise à jour. **Apparence** : secteur d'activité, couleur d'accent, forme, fond de page (papier/blanc/gris, clair seulement) et police (Familjen/système/serif) — migration 6 (`appearance_background`, `appearance_font`), `applyAppearance` prend maintenant un objet.
+
+**Sécurité corrigée** :
+- `updateSettings` écrivait l'objet reçu tel quel (`.set(input)`) : n'importe quel appel pouvait écraser `maintenanceCodeHash` ou remettre à zéro le compteur d'essais. Liste noire des colonnes (`id`, hash, compteurs) ; `setMaintenanceCode` écrit le hash directement.
+- Les champs « avancés » (`enableSales/Products/Stock/Suppliers/Purchases/ServiceOrders`, `printPromisedDateOnTicket`, `multiStoreEnabled`) exigent `advancedCode` (code de maintenance) **côté service** dès qu'un code existe et que l'assistant de premier démarrage est terminé — seulement s'ils *changent* (`changedAdvancedSettings`, testée). L'UI garde le code saisi au déverrouillage en mémoire.
+- `setMaintenanceCode` vérifiait le code actuel sans compteur d'essais (devinable sans limite) : passe maintenant par `checkMaintenanceCode` (`maintenanceCodeCheck.ts`, fichier séparé pour éviter un import circulaire avec SettingsService).
+- Réseau (`network.rs`) : comparaison du jeton de pairage en temps constant.
+- `getSettings` : création de la ligne singleton avec `onConflictDoNothing` (deux lectures simultanées au premier lancement faisaient échouer la seconde).
+
+**Bug trouvé en test navigateur** : juste après avoir défini le code, l'écran se reverrouillait aussitôt — le code défini déverrouille désormais la visite en cours.
+
+**Limites assumées** : le code de maintenance sert aussi de « code vendeur » — à définir avant de livrer, sinon le client peut définir le sien en premier. Mode réseau toujours en `ws://` clair avec hash de mots de passe répliqués (voir 2026-09-07). `xlsx` reste vulnérable en lecture seulement (non utilisée). Le refus côté service n'est couvert que par test unitaire de détection + test navigateur du chemin passant ; pas de test d'intégration du rejet (pas de harnais SQLite).
+
+### 2026-09-25 — Multi-devises (XOF/XAF, NGN, GHS, EUR, USD, GBP) : points 1 à 4
+
+**Contexte** : l'app était pensée FCFA (suffixe « F » en dur, montants arrondis à l'entier ; la colonne `business_settings.currency` existait mais rien ne la lisait). Demande : préparer Nigeria, Ghana, zone euro.
+
+**Fait** :
+1. **Devise réglable** (Configuration → Entreprise → Devise) : `packages/i18n/src/currency.ts` (comme la langue, partagé UI/documents) — presets code/symbole/décimales/position/séparateurs, `setCurrency()` appelé au chargement (App, AuthGate, sélecteur) et gardé en `localStorage` pour le premier rendu. `formatAmount`/`formatMoney` (écran, séparateur insécable), `formatAmountPlain`/`formatMoneyPlain` (documents : ASCII, code ISO sur les totaux — les imprimantes thermiques et polices PDF standard n'affichent ni NBSP ni ₦/₵). Tickets ESC/PDF, devis, étiquettes, 9 rapports PDF et messages WhatsApp convertis. Un changement de devise **ne convertit pas** les montants déjà enregistrés (dit dans l'interface).
+2. **Décimales** : `roundMoney` (`packages/core/src/domain/money.ts`) au centime sur totaux de vente/ticket/achat/devis, paiements, créances/dettes, remboursements (avant : 3×0,10 payé 0,30 = « partiel » à cause de 0,30000000000000004). Champs de prix/paiement/taux de TVA en `step="any"` (sinon la validation HTML refusait les décimales). Tolérance de la validation de synchro réseau passée de 0,5 à 0,02 (0,5 devenait énorme avec des centimes). Bouton « Exact » n'arrondit plus à l'entier ; coupures rapides par devise (`cashQuickAmounts`).
+3. **Modes de paiement** : « Mobile Money » réécrit par devise (`Virement / mobile` NGN, `Virement / autre` EUR/USD/GBP ; inchangé XOF/XAF/GHS) en surchargeant les entrées i18next — piège corrigé par un test : i18next modifie sur place les objets JSON importés, les libellés d'origine sont donc mémorisés au chargement.
+4. **Zone CFA** : cartes FNE et SYSCOHADA masquées hors XOF/XAF (`cfaZone`) ; indicatif WhatsApp proposé si vide (234/233) ; TVA courante indiquée en aide (7,5 % NGN, 15 % GHS, ~20 % EUR/GBP) sans être appliquée.
+
+**Vérifié** (navigateur + tests : 8 tests de formatage/arrondi) : bascule XOF→NGN→EUR→XOF en direct, vente 3×0,10 payée 0,30 = « Payée », vente 3×1 500,50 avec « Exact », reçu PDF « TOTAL : 4,501.50 NGN », retour XOF identique à avant.
+
+**Pas fait** : conformité fiscale propre à chaque pays (FIRS Nigeria, E-VAT Ghana, certification caisse en France), langue par défaut selon le pays, conversion de montants existants, devise choisie à l'installation (seulement dans Configuration), mode de calcul de TVA autre que TTC-extrait, exports Excel (nombres bruts, non formatés).
+
+### 2026-09-25 — Audit complet (bugs, sécurité, fonctionnalités) : 5 correctifs, 1 chantier restant
+
+**Méthode** : build/tests/`pnpm audit`, balayage statique (fonctions de service qui écrivent sans permission, SQL brut, XSS, secrets), puis parcours réel dans le navigateur avec un jeu de données neuf (fournisseur, client, 3 produits, achat à crédit, dette, transferts, ventes comptant/partielle/carte, remboursement, créance, devis→vente, ticket de service, dépense, promotion, caissier restreint, clôture de caisse, PIN, XSS, toutes les pages FR puis EN).
+
+**Corrigé** : TVA affichée/imprimée sur une vente remisée (le reçu utilisait le montant avant promo alors que la base enregistrée était juste) ; flux de trésorerie sans les remboursements clients ; montant attendu au tiroir sans les acomptes de tickets de service ; `setPin` (exporté, non utilisé) sans contrôle de permission ; montants non formatés dans les messages « dépasse le solde » et à la clôture de caisse.
+
+**Vérifié sain** : verrouillage après 5 essais (même avec le bon mot de passe pendant le blocage), droits du Caissier (menus et données limités à ses ventes), PIN, XSS (noms HTML affichés en texte), aucune erreur console sur 21 pages en FR et EN, aucune fuite de texte français en anglais.
+
+**Corrigé ensuite (même jour)** : le chiffre d'affaires est maintenant NET des remboursements partout — `getSalesSummary` (Accueil, Rapports Ventes), `getTopProducts`, `getMarginsSummary` (donc Compte de résultat), `getProductMarginsBreakdown`. Règle : un remboursement se déduit à la date du remboursement (comme le rapport TVA), revenu = `refund_items.total`, coût annulé seulement si l'article est remis en stock (`refundedCost`, testée). Vérifié : Accueil, Ventes, Marges, TVA et Compte de résultat concordent (284 500 sur le jeu de test).
+
+**Restant** : `earnPoints`/`redeemPoints`/`recordMovement` exportés sans permission (primitives internes, non atteignables hors du bundle) ; remboursements de créances clients absents du tiroir (table sans utilisateur) ; montant compté pré-rempli avec l'attendu à la clôture (favorise l'absence de comptage).
+
+### 2026-09-25 — Contrôles de gestion (permissions, approbations, inventaire, chaîne d'audit)
+
+**Contexte** : demande d'un socle anti-fraude (employés, fournisseurs). Inventaire de l'existant fait avant, voir l'échange ; tout ce qui suit est nouveau. **Tous les seuils sont vides/NULL par défaut : aucun blocage tant que le propriétaire n'active rien** — sauf quelques règles toujours actives (voir « Toujours actif »).
+
+**Données (migration 7)** : réglages `approval_*_threshold`, `cash_variance_threshold`, `price_alert_percent`, `require_purchase_receipt`, `default_credit_limit` ; plafonds personnels `users.limit_refund/stock/credit` ; `audit_log.prev_hash/hash` ; `customers.credit_limit` ; `credit_repayments.received_by/store_id`, `supplier_debt_payments.paid_by` ; `refunds/customer_credits/stock_movements.approved_by` ; `stock_movements.note` ; `purchases.invoice_reference/received_at/received_by`, `purchase_items.received_quantity/previous_unit_cost/price_alert` ; tables `stock_counts`, `stock_count_lines`. Nouvelles permissions : `view_controls`, `approve_actions` (rattrapées sur les rôles existants par `ensureDefaultRoles` au démarrage — Admin/Propriétaire seulement).
+
+**Approbations** ([ApprovalService.ts](packages/core/src/services/ApprovalService.ts)) : au-delà d'un plafond (remboursement, perte/entrée de stock manuelle/régularisation d'inventaire, vente ou ticket à crédit), un responsable (permission `approve_actions`, code PIN) doit approuver ; un utilisateur qui peut approuver n'a lui-même pas besoin d'approbation. Plafond personnel prime sur le seuil global ; NULL = pas de contrôle, 0 = tout contrôler. **Deux temps** : `verifyApprovalInput` (vérifie le PIN, HORS transaction — un PIN faux incrémente le compteur d'essais qui doit survivre à un rollback) puis `checkApproval` (lecture seule, dans la transaction, lève `ApprovalRequiredError`). UI : `ApprovalProvider`/`useApproval().run(action)` redemande le PIN si refusé ([ApprovalProvider.tsx](apps/web/src/features/approval/ApprovalProvider.tsx)). Utilisé par StockPage, RefundModal, SalesPage, ServiceOrdersPage, QuotesPage, InventoryPage.
+
+**Journal infalsifiable** : chaque ligne d'`audit_log` porte `hash = SHA-256(hash précédent | champs)` ; écritures sérialisées (file d'attente) ; `verifyAuditChain` détecte modification, suppression au milieu, insertion hors application (bouton dans Contrôles). Limite : la suppression des DERNIÈRES lignes ou un retour à une ancienne sauvegarde ne se voit qu'en comparant l'empreinte de tête affichée à une valeur notée avant. Journalisé en plus : entrées/pertes/transferts de stock (avant/après, valeur, motif, approbateur), anciennes valeurs pour prix produits, dépenses corrigées, plafonds de crédit clients, rôles/plafonds des utilisateurs, approbations refusées.
+
+**Autres contrôles** : caisse clôturée **en aveugle** (montant attendu jamais affiché avant, recalculé côté service — plus accepté du client — inclut règlements de créances en espèces et tickets de service ; écart au-delà du seuil signalé) ; inventaire physique en aveugle (page Inventaire, écart valorisé, régularisation tracée avec approbation) ; achats : numéro de facture unique par fournisseur, alerte de hausse de prix (dernier coût connu), achats en deux temps optionnels avec réception contrôlée (quantités comptées sans voir la facture, manquant valorisé à réclamer) ; plafonds de crédit par client/par défaut ; règlements de créances rattachés à un encaisseur ; rôles sur mesure (Utilisateurs → Rôles et permissions, Admin verrouillé) et PIN modifiable ; tableau de bord **Contrôles** (signaux par employé/fournisseur, écarts de caisse, inventaires, comparatif de prix fournisseurs, événements sensibles) ; bouton Rembourser dans Historique des ventes pour `manage_refunds` (avant : seulement dans Journaux, Admin).
+
+**Toujours actif (même sans seuil)** : motif obligatoire pour un remboursement et pour une entrée de stock manuelle ; transfert/perte refusés si stock insuffisant ; clôture d'inventaire refusée si rien n'est compté.
+
+**Vérifié dans le navigateur** (migration d'une base existante, puis parcours) : rôle sur mesure, remboursement/perte/crédit/inventaire avec approbation (PIN faux refusé puis bon accepté), clôture de caisse en aveugle, facture en double refusée, alerte de prix, réception avec manquant, tableau de bord et intégrité (32 lignes chaînées), Gérant qui rembourse avec le PIN du propriétaire. Tests : 52 (core) dont chaîne d'audit (modif/suppression/insertion), seuils, écarts d'inventaire, hausse de prix, diff.
+
+**Bug trouvé en test** : l'inventaire n'enregistrait les quantités qu'à la perte de focus du champ — la clôture enregistre désormais toutes les saisies avant de clôturer.
+
+**Limites / pas fait** : régularisations d'inventaire, réceptions d'achats et approbations ne sont pas répliquées en mode réseau (comme les achats) ; `credit_repayments` historiques sans encaisseur (NULL) ; heure = horloge de l'appareil ; le code PIN d'un responsable doit exister (Utilisateurs → Modifier) sinon l'approbation est impossible ; export/rapports PDF du tableau de bord Contrôles non faits.
+
+### 2026-09-25 — Droits par catégorie et par utilisateur, approbation stock réservée Propriétaire/Admin
+
+**Demande** : le gérant peut s'entendre avec son staff pour voler — seuls
+Propriétaire/Admin doivent approuver les entrées/sorties de stock, et ils
+doivent pouvoir définir les droits par catégorie (rôles) et par utilisateur.
+
+**Fait** :
+- `permissions.ts` : `PERMISSION_CATEGORIES` (26 droits répartis en 6
+  catégories, chacun une seule fois — testé), `SENSITIVE_PERMISSIONS`
+  (`manage_users`, `manage_settings`, `approve_actions`, `view_audit_logs`,
+  `view_controls`, `switch_store`), `PermissionOverrides` (`true` = accorde,
+  `false` = retire), `applyOverrides`, `assertCanChangePermissions`
+  (anti-escalade : on ne peut accorder/retirer un droit sensible que si on
+  le possède soi-même).
+- Migration `id: 8` : `users.permission_overrides` (JSON). Les droits
+  effectifs de `authenticate` = rôle + exceptions ; les approbateurs
+  (`ApprovalService`) sont calculés sur ces droits effectifs — donc seuls
+  les détenteurs de `approve_actions` (Admin/Propriétaire par défaut, pas
+  Gérant) peuvent approuver.
+- UI : `PermissionOverridesEditor` (Utilisateurs → « Droits particuliers »,
+  Selon le rôle / Autoriser / Interdire par droit) et `RolesSection`
+  regroupée par catégorie avec tout cocher/décocher.
+- Seuil d'approbation stock : `null` = pas de contrôle, `0` = toute
+  entrée/sortie manuelle et régularisation d'inventaire exige un PIN
+  Propriétaire/Admin (Configuration → Contrôles de gestion).
+
+**Vérifié dans le navigateur** : caissier avec `manage_stock` accordé
+individuellement voit Stock + Inventaire (et pas Utilisateurs) ; seuil à 0 →
+entrée manuelle du caissier bloquée par « Approbation requise », seul Test
+Admin proposé (pas de Gérant), PIN valide → stock 5. Build + 60 tests OK.
+
+**Limites** : transferts de stock et réceptions d'achat non soumis à
+approbation ; approbateurs = PIN obligatoire.
+
+### 2026-09-26 — Remises, dépenses et points sous approbation ; droits par action ; score de risque
+
+**Demande** : hors promotion programmée, aucune réduction sans l'approbation du
+propriétaire ; mêmes règles pour les dépenses et les ajustements de points ;
+alertes et score de risque par employé ; tout réglable par boutique (seuils,
+plafonds par utilisateur, droits créer/modifier/approuver/supprimer).
+
+**Fait** :
+- `ApprovalKind` étendu : `discount`, `expense`, `points`. Seuils globaux
+  `approval_discount/expense/points_threshold` (**0 par défaut** = tout exige
+  une approbation ; vide = pas de contrôle) et plafonds personnels
+  `users.limit_discount/expense/points` (migration `id: 9`, aussi les seuils
+  d'alerte `alert_refund/loss/discount_percent`).
+- **Remise hors promotion** (`createSale`) : `computeUnauthorizedDiscount`
+  compare, **côté serveur**, le prix vendu au catalogue (surcharge variante ou
+  prix produit) et la remise aux promotions réellement en cours (produit +
+  facture) — jamais sur la foi de l'écran. L'échange de points de fidélité
+  n'est pas une remise manuelle (exclu). Le montant et le responsable sont
+  journalisés (`unauthorizedDiscount`, `discountApprovedBy`).
+- **Dépenses** : `createExpense` (montant) et `updateExpense` (seulement la
+  hausse) passent par l'approbation ; **points** : `adjustPoints` aussi.
+- **Droits par domaine** : nouvelles permissions `approve_refunds/stock/credit/
+  discounts/expenses/points` (en plus de `approve_actions` = tout), 
+  `delete_expenses` (séparé de `edit_expenses`), `adjust_loyalty_points`
+  (avant : ouvert à quiconque avait `manage_customers`, Vendeur compris).
+  `listApprovers(kind)` ne propose que les approbateurs du domaine ;
+  `checkApproval` revérifie le droit de l'approbateur pour CE domaine.
+  Nouvelle catégorie de droits « Approbations ».
+- Bouton **Refuser** dans la fenêtre d'approbation (`recordApprovalRejected`,
+  compte dans Contrôles).
+- **Contrôles** : score de risque 0-100 par employé (`computeRiskScore`,
+  plancher à 30 si un signal grave), colonnes Risque et Remises hors promo,
+  liste d'**alertes** triée par gravité (`report.alerts`) et carte « Alertes de
+  contrôle » sur l'Accueil (droit `view_controls`). Seuils d'alerte réglables
+  (Configuration → Contrôles de gestion).
+
+**Vérifié dans le navigateur** : dépense du gérant → « Approbation requise »,
+Refuser puis approuver avec le PIN de l'admin ; ajustement de points idem
+(message en points) ; devis converti par le caissier après hausse du prix
+catalogue → « remise hors promotion de 1 000 » ; **vente avec une vraie
+promotion 20 % → aucune approbation demandée** (pas de faux positif) ;
+un gérant avec seulement `approve_discounts` n'est pas proposé pour les points ;
+alerte + score sur Contrôles et sur l'Accueil. 95 tests.
+
+**Effets à connaître** : les seuils à 0 s'appliquent aussi aux installations
+existantes (un gérant qui saisit une dépense a besoin du PIN d'un
+Propriétaire/Admin — il doit en avoir un). Les rôles personnalisés qui avaient
+`edit_expenses` perdent la suppression tant qu'on ne leur donne pas
+`delete_expenses`. **Pas couvert** : prix libres des tickets de service (pas de
+catalogue), synchro réseau (l'événement de vente rejoué n'est pas ré-approuvé).
+
+**Suite du 2026-09-26 — entrées et sorties de stock approuvées** : le seuil
+d'approbation stock passe à **0 par défaut** (migration `id: 10` : les seuils
+vides existants sont mis à 0 ; le propriétaire peut les vider à nouveau).
+Approbation aussi pour la **marchandise qui entre par un achat** (`createPurchase`
+en achat simple, `receivePurchase` en deux temps, montant = valeur au coût de ce
+qui entre) ; le responsable est enregistré sur les mouvements (`approved_by`) et
+dans le journal. Pertes/casse/péremption/vol et entrées manuelles l'étaient déjà
+(même seuil). Vérifié : gérant → retrait de stock et achat demandent le PIN de
+l'admin, stock mis à jour après approbation. **Non gardés** : transferts entre
+emplacements (traçables, pas d'entrée/sortie réelle). **Trous repérés sur les
+tickets de service (pressing), non corrigés** : remise saisie à la création sans
+approbation ; prix d'un article modifiable après encaissement
+(`updateServiceOrderItem` recalcule le total sans rejouer paiement/créance, sans
+valeur avant/après dans le journal) ; statut d'un article réversible
+(retiré → reçu) et retrait possible sans vérifier le solde.
+
+### 2026-09-26 — Contrôles des tickets de service (pressing & autres services)
+
+**Contexte** : le propriétaire d'un service n'est ni au comptoir ni gérant.
+Trous repérés (voir entrée précédente) fermés, migration `id: 11`.
+
+- **Tarifs facultatifs** (`service_tariffs`, `ServiceTariffsService`) : le
+  propriétaire les définit s'il le souhaite (Configuration → « Tarifs des
+  services », droit `manage_settings`) ; **sans tarif la saisie reste
+  entièrement manuelle**. Une ligne choisie dans un tarif garde une copie du
+  prix de référence (`service_order_items.tariff_price`, relu côté serveur,
+  jamais du client) ; une ligne manuelle n'a pas de référence, seule sa
+  remise compte. Réduction (prix sous tarif ou remise) → approbation kind
+  `discount` (`computeTicketUnauthorizedDiscount`).
+- **Nouveau domaine d'approbation `ticket`** (`approve_tickets`,
+  `approval_ticket_threshold` = 0 par défaut, `users.limit_ticket`) pour :
+  baisse du total d'un ticket **déjà encaissé ou à crédit**
+  (`updateServiceOrderItem`, seule la baisse compte, avant/après journalisés),
+  **annulation**, **retour arrière d'un retrait**, et **retrait avec un solde
+  dû** (montant = solde). Un retrait sur un ticket soldé ne demande rien.
+- **Annulation formelle** (`cancelServiceOrder`, jamais de suppression) :
+  motif obligatoire, approbation, impossible si un article est déjà retiré ;
+  l'encaissé est remboursé par une **ligne de paiement négative** (la caisse et
+  la trésorerie se rééquilibrent seules) et les créances sont soldées. Un
+  ticket annulé est exclu du Suivi, du compte de résultat, de SYSCOHADA, de la
+  liste des tickets des Rapports et de l'Accueil.
+- **Contrôles** : tickets « prêts » jamais retirés depuis N jours
+  (`stale_ticket_days`, 30 par défaut), retraits avec solde dû, numéros
+  manquants dans les suites de ventes/tickets (`findNumberGaps`), tickets à zéro
+  ou très bas (< 30 % de la moyenne) et annulations par employé ; alertes
+  `subject: "shop"`.
+- **Résumé du jour** (`getDailySummary`/`buildDailySummaryText`) : chiffres du
+  jour + tout ce qui demande attention, à envoyer par WhatsApp au numéro
+  « à notifier » (Contrôles → Résumé du jour) ; **vérification par appel**
+  (`getVerificationSample`) : tirage au sort d'opérations avec client + téléphone,
+  message WhatsApp de confirmation, part d'opérations anonymes signalée.
+
+**Vérifié dans le navigateur** : tarif « Repassage » créé ; ticket au prix du
+tarif → aucune approbation ; à 200 au lieu de 300 → « remise hors promotion de
+100 » ; baisse 300→100 sur ticket encaissé → approbation « ticket de 200 » ;
+annulation → motif + approbation, ticket marqué Annulé et masqué du Suivi ;
+retour arrière d'un retrait → approbation ; retrait d'un ticket soldé → rien ;
+résumé du jour et tirage au sort générés. 88 tests.
+
+**Pas fait / limites** : les points de fidélité gagnés sur un ticket annulé ne
+sont pas repris ; un ticket dont le total est augmenté après encaissement ne
+crée pas de créance ; les lignes manuelles ne sont pas signalées quand des
+tarifs existent (piste : ratio lignes manuelles par employé) ; création d'un
+ticket toujours saisie du prix libre sans tarif (par choix du propriétaire).
+
+### 2026-09-26 — File d'approbation (validation ultérieure), Phase A locale
+
+**Deux modes par domaine** (Configuration → Contrôles) : `pin` (défaut, comportement inchangé) ou `later` pour stock/dépenses/points (`business_settings.approval_mode_*`, migration 12). Gestes de comptoir (remise, remboursement, retrait avec solde) gardent le PIN.
+- **Stock** : « effet maintenant, validation ensuite » — le mouvement est appliqué, une demande `approval_requests` est créée ; un refus crée des contre-mouvements (grand livre append-only, même lot).
+- **Dépenses / points** : « bloqué jusqu'à validation » — rien n'est enregistré, la demande porte le payload rejoué à l'approbation (`insertExpense`, `applyPointsAdjustment`). `ApprovalQueuedError` informe l'utilisateur.
+- `ApprovalRequestsService.decideApprovalRequest` ; page **Demandes** (`ApprovalsPage`) ; carte sur l'Accueil.
+- **Bug corrigé** : Approuver ne répondait pas car `insertExpense` ouvre sa propre `withTransaction` (pas d'imbrication) ; la dépense est maintenant rejouée hors du wrapper, seul le statut est marqué après. Motif de perte traduit dans le résumé.
+- Vérifié navigateur : dépense créée à l'approbation, retrait approuvé, historique. Refus avec contre-mouvement non re-testé après correctif.
+- **Pas fait (Phase B)** : validation à distance depuis le téléphone du propriétaire (réplication de `approval_requests` via le mode réseau, lui-même non testé sur deux appareils). `sync_id` déjà présent. Anciennes demandes gardent l'ancien libellé brut (« expiry »).
+
+### 2026-09-26 — Approbations sans frein au commerce : profils, plafond d'approbation, « Contrôle effectué », alerte d'attente
+
+Objectif : que le propriétaire soit présent en permanence, chaque soir ou une fois par mois, sans jamais bloquer l'activité (migration 13).
+1. **Profils de contrôle** (`domain/controlProfiles.ts`, Configuration → Contrôles de gestion) : *Présent en permanence* (PIN partout), *Passage chaque soir*, *Hebdomadaire ou mensuel* — remplissent seuils, modes et délai d'alerte (rien n'est enregistré avant « Enregistrer »). Seuils exprimés en FCFA puis mis à l'échelle de la devise (`niceRound`).
+2. **Plafond d'approbation par personne** (`users.limit_approve`, Utilisateurs) : au-dessus, un approbateur ne peut plus approuver seul ni chez les autres → il faut un responsable de niveau supérieur. Appliqué dans `checkApproval`/`requireApproval*` (auto-approbation), `approverWithinLimit` (PIN d'un autre), `listApprovers(kind, amount)`, et `decideApprovalRequest` (file). Sans effet sur les points. Nouveau : on ne peut pas trancher sa propre demande.
+3. **Contrôle effectué** (`ControlsReviewService`, page Contrôles) : date/auteur/note enregistrés dans `business_settings` + journal (`controls_reviewed`) ; affiche les actions et demandes depuis ce contrôle ; bouton « Afficher depuis le dernier contrôle ».
+4. **Alerte d'attente** (`approval_pending_alert_hours`, 48 h par défaut) : demande en attente trop longtemps → alerte `pending_approvals` (danger à 3× le délai), aussi dans le résumé WhatsApp.
+- Vérifié navigateur : profil appliqué (valeurs + 24 h), Contrôle effectué, gérant avec approve_expenses + plafond 10 000 → dépense de 20 000 mise en file, plafond relevé à 50 000 → enregistrée directement. 96 tests.
+- **Non testé** : alerte d'attente en conditions réelles (dépend de l'horloge), escalade avec un PIN de propriétaire sur un gérant plafonné, profils en autre devise dans le navigateur. Le profil ne configure pas les droits du gérant : à faire dans Utilisateurs.
+
+### 2026-09-26 — Droits plus fins, trous d'approbation fermés, confort d'équipe, validation à distance, ticket de service « à payer »
+
+**Ticket de service : le crédit naît au retrait, pas au dépôt.** Un client n'est pas obligé de payer au dépôt : le solde reste « à payer » (statut `unpaid`, aucune créance, client facultatif). `computeUncovered` = total − encaissé − créances déjà créées ; `getServiceOrderBalanceDue`/`listServiceOrderBalancesDue`. `recordServiceOrderPayment` encaisse avant le retrait (« Solde à payer » dans Suivi). Au **retrait** d'un article avec un solde jamais réglé : client obligatoire, approbation `ticket` + plafond de crédit (`checkCreditApproval`), création de la créance (`convertedToCredit` au journal), statut `credit`. Les anciennes créances créées au dépôt restent valables. Vérifié navigateur : ticket sans client à payer plus tard, acompte (Partiel), retrait sans client refusé, retrait avec client → Crédit 2 500.
+
+**Droits découpés** (migration sans effet visible : `PERMISSION_PARENTS`, `inheritSplitPermissions` au démarrage sur tous les rôles ; une exception sur le droit d'origine d'une personne se répercute sur ses enfants sauf exception propre) : `transfer_stock`, `record_stock_losses`, `manage_inventory`, `manage_purchases`, `receive_purchases`, `edit_product_prices`, `view_costs`, `open_close_cash`, `sell_on_credit`, `export_reports`, `manage_backups` + `approve_prices`, `approve_payments`. Appliqués côté service ET dans l'interface (Stock, Produits, Nav, Ventes, exports Rapports/Comptabilité, sauvegardes).
+
+**Trous d'approbation fermés** (migration 14, seuils 0 par défaut, PIN uniquement) : changement de prix produit (écart max vente/achat, kind `price`), paiement d'une dette fournisseur (kind `payment`), suppression d'une dépense (seuil dépense). Ajoutés aux profils de contrôle.
+
+**Confort d'équipe** (migration 15) : le demandeur voit « Décisions sur vos demandes » à l'Accueil et « Nouveau » dans Mes demandes (`decision_seen`) ; approbation groupée dans Demandes ; modèles de rôles (Magasinier, Gérant adjoint, Caissier confirmé, Comptable, Superviseur — jamais de droit d'approbation/administration).
+
+**Validation à distance (mode réseau)** : deux événements `approvalRequest.created`/`decided` (snapshot de la demande, identité = `sync_id`). Seules les demandes dont l'effet est répliqué voyagent : dépenses et stock manuel (avec `movementSyncIds`) ; points, achats, inventaires restent locaux. La décision est rejouée de façon déterministe sur chaque appareil (dépense : mêmes syncIds `<demande>:expense/payment` que l'événement `expense.created` du décideur ; stock : approbation = `approved_by`, refus = contre-mouvements `<demande>:rev:<mouvement>`, idempotents), après revérification du décideur (`assertCanDecide` : droit, plafond, pas le demandeur). L'instantané initial d'un nouveau Worker inclut les demandes en attente.
+- **Non testé** : la validation à distance sur deux appareils réels (comme tout le mode réseau) ; seule la logique pure est testée (111 tests). Le décideur reste soumis au canal `ws://` en clair déjà documenté.
+- **Pas fait** : réplication des demandes de points/achats/inventaire ; notification push au propriétaire ; droits par boutique.
+
+### 2026-09-27 — Vérification des services externes et du mode réseau : 4 défauts réels corrigés
+
+Vérifié avec un **faux Maître WebSocket** (Node, sans dépendance) contre l'appli en Appareil relié dans le navigateur — première vraie preuve du mode réseau, qui n'avait jamais quitté la théorie.
+
+**Défauts trouvés et corrigés (tous antérieurs à cette session, jamais vus faute de test réel) :**
+1. **Le moteur réseau ne tournait que sur l'écran Paramètres** : `useMasterServer`/`useWorkerConnection` étaient appelés dans `NetworkSection` ; dès qu'on changeait d'onglet, plus aucun événement local n'était mis en file ni envoyé, et le Maître ne répondait plus aux connexions. Remonté dans `NetworkProvider` (monté une fois au-dessus de `AuthGate`), que Paramètres ne fait que piloter.
+2. **Aucune reconnexion** : le Maître régénérait un jeton à chaque démarrage (et le serveur Rust gardait l'ancien s'il tournait déjà → QR faux), l'Appareil relié perdait son appairage au redémarrage. Maintenant : jeton du Maître persistant (`waribox-master-token`), Maître relancé tout seul s'il tournait (`waribox-master-running`), Appareil relié qui mémorise son appairage (`waribox-worker-pairing`), se reconnecte au démarrage et réessaie toutes les 15 s après une coupure (sauf refus définitif du jeton). Vérifié : redémarrage du faux Maître → reconnexion automatique.
+3. **Envoi en direct cassé après une reconnexion** : `onclose` d'un ancien socket effaçait `socketRef` du nouveau (course dans `connect`) — les événements restaient en file jusqu'à la reconnexion suivante. Corrigé (seul le socket courant compte). Vérifié : dépense créée sur un autre onglet que Paramètres → reçue par le faux Maître.
+4. **Blocages plateforme** : la CSP Tauri n'autorisait pas `ws:` (connexion Appareil relié et balayage réseau bloqués dans l'appli desktop/Android) → `ws:` ajouté à `connect-src`. Sur Android, `usesCleartextTraffic` était `false` en release (fichier généré `gen/android/app/build.gradle.kts`, gitignoré) → passé à `true` ; **à refaire si `gen/` est régénéré**.
+
+**Vérifié OK :** handshake hello/helloAck avec jeton, réception de `approvalRequest.created/decided` et `expense.created` d'un Maître (demande visible dans Demandes, décision appliquée, dépense créée une seule fois), décision forgée (décideur = demandeur) refusée, envoi Appareil relié → Maître avec syncAck, file d'attente vidée à la reconnexion (`lastSyncSeq` correct). FNE : le bac à sable DGI répond (« Invalid API Key »). Google Drive : sans Client ID, message clair, aucune exception. Liens WhatsApp : construits correctement.
+
+**Bug WhatsApp corrigé :** `buildWhatsAppLink` retirait le 0 initial du numéro pour tous les pays → numéros ivoiriens (+225 07…) et béninois (+229) faux depuis le passage à 10 chiffres. Le 0 est gardé pour 225/229.
+
+**Non testé (matériel/OS requis) :** le serveur Rust du Maître en conditions réelles (compilé seulement), mDNS, balayage réseau, pare-feu Windows, imprimante (WebView2/Android n'exposent pas forcément Web USB/Bluetooth), OAuth Google réel, installation de mise à jour. Le texte d'introduction du mode réseau (« aucune donnée ne transite encore ») était obsolète, corrigé.
+
+### 2026-09-27 — Pays du commerce et numéros WhatsApp (bug signalé sur un vrai ticket)
+
+**Bug** : notifier un client par WhatsApp ouvrait `wa.me/749693849` (« +7 … n'est pas sur WhatsApp ») pour un numéro enregistré 0749693849 — pas d'indicatif configuré et le 0 était retiré. **Corrigé** : nouveau réglage **Pays du commerce** (Configuration → Entreprise, colonne `business_settings.country`, migration 16, 40 pays dans `packages/i18n/src/countries.ts`) qui fixe l'indicatif (`whatsappCountryCode` reste rempli pour compatibilité ; une installation qui n'avait que l'indicatif retrouve son pays). `toInternationalDigits` : numéro « + »/« 00 » gardé tel quel, indicatif déjà présent sans doublon, sinon indicatif ajouté et 0 initial retiré **sauf 225/229** (Côte d'Ivoire, Bénin). Sans pays ni indicatif dans le numéro, le lien n'est plus construit à l'aveugle : message « choisis le pays… » (`openWhatsApp`, garde sur les liens de Contrôles). Le pays proposé suit la devise si aucun n'est choisi. Vérifié : lien `wa.me/2250707070707`. 119 tests.
+
+### 2026-09-29 — Mode réseau : le jeton de pairage n'était visible nulle part en dehors du QR
+
+**Symptôme rapporté** : scan du QR en erreur, recherche automatique du Maître en erreur, et la connexion manuelle par IP/port « demande un jeton » — sous-entendu, aucun moyen de l'obtenir.
+
+**Cause trouvée, confirmée en lisant `MasterView`** : l'écran du Maître (Configuration avancée → Mode réseau) n'affichait le jeton de pairage NULLE PART en texte — seulement encodé dans l'image du QR. Si le scan échoue pour n'importe quelle raison (pas de caméra sur l'appareil relié, contexte non sécurisé, permission refusée), il n'existait **aucun moyen de récupérer le jeton** pour la connexion manuelle, qui l'exige pourtant. La recherche automatique (`searchForMaster`) n'est elle-même utilisable qu'après un premier appairage réussi (elle réutilise le jeton déjà connu, voir Phase 1b) — sans jeton valide, elle échoue aussi, cohérent avec les 3 symptômes rapportés d'un coup.
+
+**Corrigé** : `MasterView` affiche maintenant l'IP, le port et le jeton en clair (texte sélectionnable, bouton « Copier ces informations ») sous le QR, avec un rappel dans le formulaire de connexion manuelle de l'appareil relié (« Trouve ces 3 valeurs sur l'écran du Maître… »). Vérifié dans le navigateur (invoke Tauri simulé, seule façon de faire apparaître l'écran Maître hors runtime réel) : les 3 valeurs s'affichent et le bouton copier ne lève aucune erreur. 119 tests, build OK.
+
+**Pas résolu / à vérifier sur le terrain** : si le jeton maintenant visible reste malgré tout refusé, ou si aucune connexion (scan ou manuelle) n'aboutit même avec le bon jeton, la cause la plus probable est la **joignabilité réseau**, pas l'application — le pare-feu Windows du PC Maître doit autoriser les connexions entrantes vers le port du serveur (une fenêtre Windows demande normalement l'autorisation au premier démarrage du serveur ; si elle a été refusée ou qu'une politique de sécurité l'a bloquée silencieusement — vu une fois avec Smart App Control lors de la compilation, journal du 2026-09-19 — aucune connexion entrante n'aboutira, quel que soit le mécanisme utilisé côté appareil relié). À vérifier : les deux appareils sur le même réseau Wi-Fi (pas un réseau "invité" isolé), et l'autorisation pare-feu du PC Maître pour WariBox sur les réseaux privés.
+
+### 2026-09-29 — Mode réseau : "Le Maître n'a pas répondu à temps" — diagnostic + 2 correctifs de code, cause probable = pare-feu Windows
+
+**Contexte** : suite immédiate de l'entrée précédente (jeton enfin visible) — la connexion échoue toujours, avec ce message précis.
+
+**Diagnostic mené sur la machine réelle du porteur du projet (celle qui héberge le Maître)** :
+- `Get-NetIPConfiguration`/`Get-NetRoute` : plusieurs adaptateurs virtuels présents (VirtualBox Host-Only 192.168.56.1, 2× Hyper-V vEthernet 172.x — cohérent avec Android Studio/émulateur déjà documentés) mais **une seule route par défaut, via Wi-Fi (192.168.100.7)** — `local_ip_address::local_ip()` (utilisé par `network_local_ip`) résout donc la bonne adresse, pas un adaptateur virtuel. Écarté comme cause.
+- `Get-NetFirewallRule -DisplayName "*WariBox*"` : **aucune règle**. Profil réseau Wi-Fi : Privé. **Aucune exception pare-feu n'existe pour l'application** — le comportement par défaut de Windows (bloquer silencieusement une connexion entrante non autorisée, sans forcément réafficher de popup selon les cas) explique un blocage total et silencieux, cohérent avec le symptôme : le Worker n'obtient ni erreur immédiate ni réponse, jusqu'à épuiser son propre délai d'attente.
+- **Pas modifié moi-même** : ajouter une règle pare-feu est un réglage système/sécurité, hors de ce que je peux faire à la place du porteur du projet — voir la piste ci-dessous pour la solution proposée (exception ajoutée par l'installateur, avec sa propre invite d'élévation que l'utilisateur approuve lui-même).
+
+**2 bugs de code réels trouvés en relisant le protocole, corrigés indépendamment de la cause pare-feu** :
+1. **Message d'erreur trompeur sur un refus rapide** (`useWorkerConnection.ts`) : `onclose` ne distinguait pas "le socket ne s'est jamais ouvert" (adresse injoignable, connexion activement refusée — típiquement en quelques millisecondes) de "le délai de 5 s a expiré sans réponse" — les deux affichaient soit le même message de délai, soit, pire, **aucun message du tout** (statut "Erreur" vide) si la fermeture arrivait avant le timer. Corrigé : `timeoutRef.current !== null` au moment de `onclose` signale une fermeture avant toute résolution du handshake → nouveau message dédié (`network.worker.errors.connectionClosed`, distinct du message de délai). Vérifié dans le navigateur : connexion vers un port fermé (localhost) → nouveau message en ~quelques ms ; vers une IP non routable → même message (fermeture rapide côté OS dans cet environnement de test) — les deux chemins de code (fermeture précoce vs délai de 5 s) coexistent et restent corrects.
+2. **Fenêtre de perte d'événements côté Maître** (`useMasterServer.ts`) : `listen("network:master-event", ...)` n'était enregistré qu'**après** deux `invoke` (`network_start_master` qui lance déjà la boucle d'acceptation de connexions, puis `network_local_ip`) — un événement Tauri émis avant qu'un `listen()` existe côté JS est perdu sans rejeu. Fenêtre étroite en pratique (un Worker ne se connecte qu'après avoir vu le QR/jeton, bien après ce court instant), sauf pour la reconnexion automatique très rapide d'un Worker déjà apparié juste après un redémarrage du Maître — corrigé en enregistrant le `listen()` en tout premier, avant tout `invoke`, avec nettoyage du listener si un `invoke` suivant échoue.
+
+**Vérifié** : build + 119 tests OK. Les deux nouveaux messages distincts testés dans le navigateur (voir ci-dessus).
+
+**Pas fait — proposé, pas implémenté** : ajouter automatiquement une exception pare-feu Windows au moment de l'installation (custom action NSIS/WiX élevée, avec sa propre invite que l'utilisateur approuve) — éviterait la manipulation manuelle à chaque nouvelle installation. Pas fait cette session (changement d'installateur plus large, pas vérifiable sans un vrai test d'installation élevée). **En attendant, action manuelle nécessaire sur le PC qui héberge le Maître** : autoriser WariBox dans le pare-feu Windows (réseaux privés) — via Panneau de configuration → Pare-feu Windows Defender → "Autoriser une application" (ou `Set-NetFirewallRule`/`New-NetFirewallRule` en PowerShell, à faire par le porteur du projet lui-même, pas par une IA).
+
+### 2026-10-18 — Pack Pharmacie (lots périmés, fiche médicament, ordonnance, détail de boîtes, traçabilité)
+
+**Contexte** : suite d'une analyse concurrentielle (aucun POS africain ne traite sérieusement la pharmacie). Plan validé avant codage. Décisions du propriétaire : périmé = **blocage + dérogation par un responsable (PIN)** ; boîte/plaquette = **action « Détailler »** (pas de conversion automatique à la vente) ; ordonnance = **indicateur + saisie tracée** (pas de registre des stupéfiants).
+
+**Trou réel trouvé dans le code existant** : `consumeStockFefo` triait par péremption mais **ne retirait pas les lots périmés** — un lot périmé se vendait en premier — et `createSale` validait le stock sur le solde total. Idem `transferStock`. Un achat (`createPurchase`/`receivePurchase`) créait aussi le lot **sans date de péremption**. Corrigé pour toute l'app (une boutique alimentaire en profite aussi), pas seulement en secteur pharmacie.
+
+**Règles métier (à ne pas casser)** :
+- **Périmé = date STRICTEMENT antérieure à aujourd'hui** (`isExpired`, [domain/expiry.ts](packages/core/src/domain/expiry.ts)). Un lot périmé ne se vend pas, ne se transfère pas, ne s'ouvre pas en détail. Il part par un **rebut tracé par lot** (`writeOffExpiredBatches`) ou par une **dérogation de vente** (`createSale({ expiredOverride: true })`, qui exige TOUJOURS un responsable : `checkApproval` avec `thresholdOverride: 0`, même si les seuils sont vides).
+- **Stock vendable ≠ solde** : `getSellableQuantity` = solde − lots périmés (`computeSellableQuantity`). Une ancienne sortie enregistrée sans lot (l'ancien « retrait pour péremption », qui ne touche pas au lot) est supposée avoir évacué les périmés d'abord, sinon un produit dont on a jeté les périmés à la main resterait bloqué.
+- `consumeStockFefo` : `includeExpired` vaut `false` par défaut pour une vente, `true` pour un ajustement (écart d'inventaire).
+- Un produit **suivi en péremption** exige une date à l'achat (`expiryRequired`) et refuse une marchandise déjà périmée (`receivedExpired`) ; en achat en deux temps, lot et date se saisissent à la **réception**.
+- **Ordonnance** : un produit `requires_prescription` oblige une référence sur la vente (`sales.prescription_ref`/`prescriber`), imprimée sur le reçu, répliquée dans l'événement `sale.created`. Un devis converti en vente avec un produit sur ordonnance échoue tant qu'on n'a pas de champ ordonnance côté devis (limite connue).
+- **Détailler** (`breakDownPack`, [StockService.ts](packages/core/src/services/StockService.ts)) : −N boîtes, +N × `units_per_parent` unités, au même emplacement ; le **lot suit** (même numéro, même péremption) et le **coût de la boîte est réparti** sur les unités (`breakdownUnitCost`). Un lot est **toujours créé pour les unités détaillées**, même sans lot d'origine — sans lui la marge retomberait sur `products.purchasePrice`, c'est-à-dire le prix d'une boîte appliqué à une plaquette. Lien boîte → détail : `product_variants.parent_variant_id` + `units_per_parent`, **un seul niveau**, même produit. Les présentations apparaissent comme **tuiles séparées** en caisse (`saleTiles` dans SalesPage) ; `addToCart(product)` ne vise que la variante de base (`parentVariantId == null`).
+- **Équivalents** (`findEquivalents`) : même DCI + même dosage (accents/espaces ignorés, forme comparée seulement si les deux la renseignent) ; sans DCI aucune équivalence n'est devinée.
+- **Traçabilité** (`getLotTrace`) : par numéro de lot (les unités détaillées gardent le numéro) → emplacements, achat/fournisseur d'origine, ventes et clients, avec message WhatsApp de rappel (`whatsapp.lotRecall`). Les clients de passage sans numéro ne sont pas joignables (compté et affiché).
+
+**Fait** : migration `id: 17` (fiche médicament sur `products`, ordonnance sur `sales`, lien boîte→détail sur `product_variants`) ; nouvel événement de synchro `stockBreakdown.created` (appliqué et revalidé dans `applyRemoteEvents.ts` : quantités, même emplacement, lien boîte→détail identique localement) ; `ExpiryPanel` (4 paliers + rebut), `PackPanel`, `LotTracePanel` dans Stock ; section « Pack Pharmacie » dans Apparence avec **catégories de départ** (`installStarterCategories`, idempotent, jamais automatique) ; événements `expired_sale`/`expired_writeoff` dans Contrôles ; 25 tests purs (`expiry.test.ts`, `pharmacy.test.ts`).
+
+**Vérifié dans le navigateur (base neuve puis migration d'une base existante)** : lot périmé exclu de la vente (5 valides vendues, la 6ᵉ déclenche la confirmation puis la dérogation ; le périmé est consommé en dernier recours) ; transfert d'un stock en partie périmé refusé ; rebut (lot vidé, valeur 900 tracée, alerte disparue) ; achat refusé sans date puis avec date passée, accepté avec date valide ; fiche médicament + « Sur ordonnance » ; vente refusée sans référence puis acceptée, référence **dans le PDF du reçu** ; équivalents (accents/espaces normalisés, stock hors périmés) ; Détailler 2 boîtes → 20 plaquettes ; vente de 3 plaquettes ; **marge : coût 990 = 600 + 300 + 3 × 30** (le coût suit la plaquette) ; traçabilité du lot (2 ventes) ; catégories de départ créées une fois, aucun doublon au second clic ; événements visibles dans Contrôles ; aucune erreur console. Build + 144 tests OK.
+
+**Non vérifié / limites** :
+- **Réseau** : `stockBreakdown.created` n'a été testé que par construction (revalidation à l'application) ; pas rejoué sur un faux Maître ni sur deux appareils.
+- Dérogation par un **non-responsable** (flux PIN de `ApprovalProvider`) non rejouée dans le navigateur ; l'administrateur du compte de test s'auto-approuve.
+- Le **rebut** passe toujours par le code PIN (jamais en validation ultérieure) ; l'ancien « Retrait du stock » avec motif Péremption ne vide pas le lot (il reste listé comme périmé tant qu'on n'utilise pas le rebut).
+- L'analyse « top produits » additionne boîtes et plaquettes d'un même produit dans une seule ligne (quantité vendue mélangée).
+- Pas de registre des stupéfiants, pas de base de médicaments préchargée (DCI saisis à la main), pas de tiers-payant/assurance, conformité réglementaire propre à chaque pays **à valider avec un pharmacien** avant commercialisation.
+
+### 2026-10-26 — Audit de sécurité/robustesse du mode réseau et des PIN, harnais de test SQLite réel
+
+**Contexte** : audit complet demandé avant de décider de la direction de l'évolution. 4 points sérieux corrigés, puis chasse aux « petits blocages futurs ».
+
+**Nouveau harnais de test** : `setDatabaseBackend()` ([client.ts](packages/database/src/client.ts)) remplace le worker SQLite du navigateur par un autre moteur ; [testDb.ts](packages/core/src/test/testDb.ts) branche `node:sqlite` en mémoire (bootstrap, migrations, `withTransaction` et drizzle tournent tels quels). `createDevice()`/`useDevice()` simulent plusieurs appareils (une seule base active à la fois — rebasculer avant chaque opération). [seed.ts](packages/core/src/test/seed.ts) fournit une entreprise minimale (admin/gérant/caissier avec PIN). Cela comble la « piste 2 » (tests d'intégration) pour tout ce qui passe par `packages/core`.
+
+**PIN** : 6 à 8 chiffres, imposé côté service ([pin.ts](packages/core/src/auth/pin.ts)) ; les anciens PIN de 4 chiffres restent valides. Verrouillage progressif ([lockout.ts](packages/core/src/auth/lockout.ts)) : dès 5 erreurs 30 s, puis 5 min (10), 30 min (15), 1 h (20) ; le compteur ne repart à zéro qu'après un succès. **Le hash du PIN n'est plus copié sur les appareils reliés** : l'instantané y met `remote:v1`, et le PIN se vérifie chez le Maître par défi/réponse ([pinProof.ts](packages/core/src/auth/pinProof.ts) : nonce à usage unique 60 s, preuve HMAC liée à une opération). Hors connexion au Maître, un appareil relié ne peut plus valider par PIN ni déverrouiller par PIN (se reconnecter avec le mot de passe). `passwordHash` reste répliqué (compromis assumé).
+
+**Décideur d'approbation** : un événement `approvalRequest.decided` envoyé par un appareil relié est refusé (`FORBIDDEN_FROM_WORKER`) ; la décision passe par le message `approvalDecision` avec preuve de PIN ([ApprovalRequestsService.decideApprovalRequestRemote](packages/core/src/services/ApprovalRequestsService.ts)).
+
+**Protocole Maître extrait et testable** : [masterProtocol.ts](packages/core/src/sync/masterProtocol.ts) (le hook `useMasterServer` ne fait plus que le brancher), [workerRpc.ts](packages/core/src/sync/workerRpc.ts) côté appareil relié. Un événement refusé renvoie `syncRejected` + raison (trace d'audit `sync_event_rejected`) ; l'appareil le garde visible dans Mode réseau (`__sync_outbox.rejected_at/reject_reason`, migration 18) avec Réessayer/Abandonner. Les événements sont traités en file (ordre d'arrivée = ordre du journal). Un type d'événement inconnu est refusé (avant : ignoré puis rediffusé).
+
+**Serveur Rust** ([network.rs](apps/desktop/src-tauri/src/network.rs)) : délai de 10 s pour le `hello`, 32 connexions max, `hello` ≤ 4 Ko, messages ≤ 2 Mo, bannissement 60 s d'une IP après 5 poignées de main ratées (testé sur de vraies connexions, voir la re-vérification ci-dessous).
+
+**Blocages futurs corrigés** : (1) **numéros de documents** calculés par `COUNT(*)+1` alors que `number` est UNIQUE : une vente faite hors ligne sur un appareil relié était refusée à jamais par le Maître dès que le numéro existait déjà, une ligne supprimée faisait réutiliser un numéro, et la suite ne repartait jamais de 1 en début d'année (que le contrôle des numéros manquants suppose). Maintenant `nextDocumentNumber` (max de l'année + 1, [documentNumber.ts](packages/core/src/services/documentNumber.ts)) et, à la réception, `uniqueSaleNumber` suffixe le numéro (`VTE-2026-000004-A1B2`) s'il est déjà pris. (2) `getMaxSyncSeq` relisait tout le journal à chaque connexion. (3) Aucun `ErrorBoundary` : une exception de rendu donnait un écran blanc ([ErrorBoundary.tsx](apps/web/src/components/ErrorBoundary.tsx), par page et global). (4) Pages chargées à la demande (`React.lazy`) : bloc principal 2,36 Mo → 766 Ko. (5) Écran d'erreur d'initialisation de la base : bouton Recharger + consigne de ne pas désinstaller. (6) Migrations 15/16 dans le désordre (inoffensif, réordonnées) + test qui impose des ids sans trou ni doublon. (7) Test de parité des clés FR/EN et de présence de chaque `t("…")` littéral. (8) `*.tsbuildinfo` n'est plus suivi par git ; `pnpm lint` (web) = vérification de types au lieu d'un eslint absent.
+
+**Bug trouvé par la vérification navigateur** : `SetupAdminScreen` gardait `pattern="\d{4}"`/`maxLength={4}` (et `UsersPage` `maxLength={4}`), ce qui rendait impossible la saisie d'un PIN de 6 chiffres malgré la règle côté service — corrigé.
+
+**Dépendances** : surcharges pnpm `dompurify >=3.4.17`, `shell-quote >=1.11.0` ; l'audit passe de 8 à 2 avis, tous deux `xlsx` (écriture seule, non exploitable). La version corrigée n'existe que sur le CDN de SheetJS (hors npm) : `pnpm --filter @gestion-boutique/reports add https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`, à faire à la main.
+
+**Risques connus restants** : un appareil relié qui connaît le jeton peut émettre une dépense/vente sans approbation (le Maître ne revérifie pas les seuils d'approbation sur ces événements) ; canal `ws://` en clair ; `__sync_log` et `audit_log` grossissent sans purge ; dates de rapport en UTC alors que `todayISO()` est en heure locale (écart d'un jour possible hors UTC) ; le stock d'un appareil relié ne contient que les lots de l'instantané, pas l'historique des mouvements.
+
+### 2026-10-26 — Deuxième passe de recherche de bugs (parcours métier sur base SQLite réelle)
+
+**Méthode** : parcours complets sur le harnais SQLite réel ([BusinessFlows.test.ts](packages/core/src/services/BusinessFlows.test.ts), [BusinessFlows2.test.ts](packages/core/src/services/BusinessFlows2.test.ts)) en vérifiant des invariants (stock, argent, marge, créances) et en lançant les mêmes actions **en parallèle** (`Promise.allSettled`) pour simuler un double clic ou deux postes. Chaque correctif a été validé en réintroduisant le bug : le test correspondant échoue.
+
+**Bugs réels corrigés** :
+1. **Vente avec quantité nulle/négative/NaN, prix négatif, remise supérieure à la ligne** acceptée par `createSale` (une vente à 0 était enregistrée, une quantité négative pouvait ajouter du stock). Nouveau [validation.ts](packages/core/src/domain/validation.ts) (`assertValidLines`, `assertValidAmount`, `assertValidTaxRate`) appliqué aux ventes, devis, tickets de service, achats (coût), dépenses, produits (prix/TVA), caisse.
+2. **Remboursement d'une vente à crédit** : il sortait la totalité en espèces alors que le client n'avait payé qu'une partie, et la créance restait due pour des articles rendus. Maintenant `createRefund` réduit d'abord la créance ouverte, et ne rend en espèces que le surplus (journal : `cashRefund`, `creditReduced`).
+3. **Règlement de créance / paiement de dette** non atomiques : deux règlements simultanés dépassaient le solde, un montant NaN passait. Mis en transaction ; une créance soldée passe maintenant la **vente** (ou le ticket) à « payée » (elle restait « partielle/crédit » à jamais).
+4. **Retrait d'un article de ticket** : double clic ou deux articles retirés ensemble créaient **deux créances** pour le même solde (client débité deux fois). Mis en transaction (approbation vérifiée avant, hors transaction).
+5. **Vérifications faites avant la transaction, donc périmées** (même famille) : réception d'un achat deux fois (marchandise entrée deux fois), clôture d'inventaire deux fois, annulation d'un ticket deux fois (encaissé remboursé deux fois), approbation d'une demande de points deux fois (points crédités deux fois), conversion d'un devis deux fois (deux ventes), ouverture/clôture de caisse en double. L'état est relu **dans** la transaction (ou réservé par une instruction atomique pour le devis, qui revient à son statut d'origine si la vente échoue).
+6. `createProduct`, `createQuote` et l'ajustement de points sont atomiques (produit sans variante, devis sans lignes).
+7. `SalesPage` : garde de ré-entrée (`useRef`) sur l'encaissement ; vérifié au navigateur (3 activations simultanées = 1 vente).
+
+**Règle à retenir** : `withTransaction` n'est PAS réentrante (verrou en file : une transaction imbriquée se bloque). Tout contrôle d'état (statut, solde, « déjà fait ») doit être relu **à l'intérieur** de la transaction qui écrit, et une vérification de PIN doit rester **hors** transaction (un échec doit laisser son compteur d'essais). Ne jamais appeler une fonction qui ouvre sa propre transaction depuis l'intérieur d'une autre.
+
+**Connu, non corrigé** : les rapports (`getSalesSummary`, marges, trésorerie) relisent des tables entières puis filtrent en JavaScript — lent au-delà de quelques dizaines de milliers de lignes ; dates des rapports en UTC alors que « aujourd'hui » est en heure locale ; les actions de l'interface autres que l'encaissement s'appuient sur le bouton désactivé + l'atomicité des services (pas de garde de ré-entrée dédiée).
+
+### 2026-10-26 — Re-vérification complète (et ce qu'elle a trouvé)
+
+Demandée parce que les vérifications précédentes laissaient des trous. Méthode : build/tests **sans cache** (`turbo run build test --force`), lockfile figé (`pnpm install --frozen-lockfile`), **chaque commit** compilé et testé seul dans un worktree isolé, Rust sur de vraies connexions, navigateur sur les parcours jamais exercés.
+
+**Défaut trouvé par cette re-vérification** : après l'arrêt du Maître (`stop_server`), une connexion **déjà authentifiée restait ouverte** et continuait de relayer ses messages à l'application. La boucle de lecture s'arrête maintenant avec le writer de la connexion (`select!` sur `writer_task`).
+
+**Serveur Rust testable sans Tauri** : `start_server`/`stop_server`/`handle_connection` ne dépendent plus d'`AppHandle` mais d'un `EventSink` (l'événement Tauri en production, une liste en mémoire en test). `tauri::test::mock_app` est inutilisable ici (Windows : `STATUS_ENTRYPOINT_NOT_FOUND`, manifeste manquant). 14 tests dont 9 sur de vraies connexions (client `tokio-tungstenite`) : mauvais jeton coupé + aucun événement, bannissement après 5 échecs, `hello` valide relayé et réponse serveur→client, message > 2 Mio coupé, connexion TCP/WebSocket muette coupée (`HELLO_TIMEOUT` vaut 800 ms en test), `hello` surdimensionné refusé, plafond de 32 connexions, démarrage idempotent, arrêt. Lancés 3 fois de suite : stables.
+
+**Navigateur** (faux Maître WebSocket Node + faux runtime Tauri injecté dans la page, scripts jetables) : appareil relié connecté de bout en bout ; une dépense créée hors ligne part en `sync`, le Maître répond `syncRejected`, la liste « Événements refusés » s'affiche avec la raison, **Réessayer** renvoie l'événement, **Abandonner** le retire ; côté Maître, `Démarrer le serveur` affiche IP/port/jeton, un `hello` reçoit `helloAck` + instantané (seulement les 2 hash de mot de passe, **aucun hash de PIN ni de code de maintenance**), un événement `approvalRequest.decided` forgé reçoit `syncRejected`. Aussi vérifiés : PIN de 4 chiffres refusé / 6 chiffres accepté dans Utilisateurs, verrouillage réel de l'écran PIN (le bon PIN reste refusé pendant le verrou, puis accepté), `ErrorBoundary` déclenché par une vraie erreur de rendu (message, Réessayer, retour, changement d'onglet), et **aucune clé de traduction brute** sur les 22 onglets en FR et en EN (détecteur validé en y injectant une fausse clé).
+
+**Encore jamais exécuté** : la vérification de PIN à distance par un vrai appareil relié contre un vrai Maître (couverte seulement par les tests vitest qui relient `masterProtocol` et `workerRpc` en mémoire), l'appli Tauri installée (desktop/Android), le réseau sur deux machines.
+
+### 2026-10-26 — Mode focus (plein écran) + PIN de déverrouillage séparé du PIN d'approbation
+
+**Demande** : l'appli se lance en plein écran sur PC et tablette (concentration), avec retour possible en mode fenêtre, mais **sortir demande un code à définir**. En même temps : recenser tous les codes demandés par l'appli et décider lesquels sont communs ou distincts.
+
+**Inventaire des codes (décisions du propriétaire)** :
+
+| Code | Où | Portée |
+|---|---|---|
+| Mot de passe | connexion, changement de mot de passe | par utilisateur |
+| **PIN de déverrouillage** (`users.pin_hash`) | écran de verrouillage de session | par utilisateur, 6-8 chiffres |
+| **PIN d'approbation** (`users.approval_pin_hash`, nouveau) | validation d'une remise, remboursement, dépense, perte de stock, etc. | par utilisateur, 6-8 chiffres, **obligatoirement différent** du PIN de déverrouillage |
+| **Code de maintenance** (`business_settings.maintenance_code_hash`) | Configuration avancée, installer une mise à jour | un seul pour l'entreprise, 6 caractères mini |
+| **Code du mode focus** (`business_settings.focus_code_hash`, nouveau) | quitter le plein écran | un seul pour l'entreprise, 4 caractères mini |
+
+Décisions : code focus **dédié** (≠ maintenance), maintenance et PIN d'approbation **séparés**, PIN de déverrouillage et PIN d'approbation **séparés** (un PIN vu par-dessus l'épaule à l'écran de verrouillage ne permet plus d'approuver).
+
+**PIN d'approbation** : migration `id: 19` ajoute `approval_pin_hash` + compteur d'essais propre (`approval_failed_attempts/locked_until`, un échec de l'un ne bloque pas l'autre) et **copie le PIN existant** dans `approval_pin_hash` pour que les responsables continuent d'approuver après la mise à jour (ils le changent ensuite dans Utilisateurs). `verifyApprovalPin` (AuthService) sert `verifyApprovalInput`/`listApprovers` (un responsable sans PIN d'approbation n'est plus proposé). À distance : le défi/réponse de `pinProof.ts` porte un `kind` (`unlock`|`approval`) — le Maître prend le hash et le compteur correspondants, et `decideApprovalRequestRemote` refuse une preuve du PIN de déverrouillage (`expectedKind: "approval"`). L'instantané remplace aussi `approvalPinHash` par `remote:v1`. `createUser`/`updateUser` refusent deux PIN identiques (y compris quand un seul est modifié, en comparant au hash de l'autre).
+
+**Mode focus** : `tauri.conf.json` démarre la fenêtre PC en `fullscreen: true` (aucun flash) ; permissions `core:window:allow-set-fullscreen/is-fullscreen`. La **décision** (qui a droit au plein écran, quand il s'enclenche, quand un code est exigé) est pure et testée : `packages/core/src/domain/focusPolicy.ts` — téléphone (petit côté < 600 px) = pas de mode focus ; PC Tauri et tablette Android = automatique ; PWA installée = au premier toucher (l'API Fullscreen exige un geste) ; simple onglet de navigateur = jamais forcé (bouton manuel). `apps/web/src/features/focus/` : `FocusProvider` (monté au-dessus d'`AuthGate`, donc actif dès l'écran de connexion), `FocusToggleButton` (barre du haut + bouton flottant sur connexion/verrouillage), `FocusCodeSection` (Configuration → Sécurité). **La sortie n'est pas mémorisée** : chaque lancement repart en plein écran (c'est le but). Sans code défini, la sortie est libre. Le code de maintenance sert de secours (« code oublié ») mais **se vérifie séparément** (compteurs d'essais distincts).
+- **Android** : le `WebChromeClient` de wry ferme immédiatement toute demande plein écran de la page (`onShowCustomView` → `onCustomViewHidden`), l'API Fullscreen y est donc inutilisable. Le plein écran passe par un pont natif `WariBoxNative.setImmersive()` posé dans `MainActivity.kt` (`onWebViewCreate` + `addJavascriptInterface`) qui cache les barres système. **`gen/` est ignoré par git** : la copie versionnée est `apps/desktop/android-overrides/MainActivity.kt`, à recopier dans `gen/android/app/src/main/java/com/waribox/app/` après tout `tauri android init` (comme `usesCleartextTraffic`). Un ancien APK sans ce pont n'a pas de mode focus (la politique le détecte).
+- **Limites assumées** : en PWA/navigateur, Échap ou F11 quittent le plein écran sans code (impossible à empêcher depuis une page web) — l'appli y rentre au toucher suivant. Sur PC, Alt+F4 / la touche Windows restent disponibles (c'est un mode concentration, pas un kiosque verrouillé). Le hash du code focus est répliqué aux appareils reliés (une tablette Worker doit pouvoir vérifier le code hors ligne) ; pas celui de maintenance, donc le secours « code oublié » n'y fonctionne pas.
+
+**Tests** : 257 (core) dont `focusPolicy`, `FocusCodeService` (verrouillage progressif, secours maintenance, `updateSettings` ne peut pas écraser le hash, instantané), séparation des deux PIN (compteurs, identiques refusés, type de PIN demandé à distance, décision d'approbation refusant une preuve du mauvais PIN).
+
+### 2026-10-31 — Performance des lectures (index + Accueil) mesurée sur 20 000 ventes
+
+**Mesure** (harnais SQLite natif, donc un MINIMUM : le worker WASM d'un téléphone est plusieurs fois plus lent) : avec 20 000 ventes, `getSalesSummary` prenait 253 ms et l'Accueil l'appelle **3 fois** par visite (aujourd'hui, hier, « mes ventes ») en relisant TOUTES les ventes à chaque fois. La base n'avait **aucun index** (hors contraintes UNIQUE).
+
+**Fait** : migration `id: 20` (12 index : `sales(created_at)`, `sales(store_id, created_at)`, `sale_items(sale_id)`, `payments(reference_type, reference_id)`, `stock_movements(variant_id, location_id)`/`(reference_type, reference_id)`/`(batch_id)`, `refunds(created_at)`, `refund_items(refund_id)`, `audit_log(created_at)`, `customer_credits(sale_id)`...) ; `getSalesSummary` filtre en SQL (dates, boutique, vendeur) au lieu de tout relire — 253 ms → 3 ms pour « aujourd'hui ». [ReportsSummary.test.ts](packages/core/src/services/ReportsSummary.test.ts) compare le résultat à un calcul naïf en JavaScript sur 10 cas (bornes 00:00:00 / 23:59:59, remboursements d'anciennes ventes, hors période, autre boutique, autre vendeur) ; deux bugs injectés à la main sont attrapés.
+
+**Suite le même jour** : voir l'entrée « Les derniers restes » ci-dessous (rapport Contrôles, Marges, Historique paginé).
+
+### 2026-10-31 — Les derniers restes : performance, approbations des appareils reliés, sauvegardes chiffrées, fuseaux, Android, xlsx
+
+**Performance (mesures sur 20 000 ventes, harnais natif = minimum)** : `getControlsReport` ne relit plus les tables entières (SQL pour refunds/audit/stock/caisse/créances, Maps au lieu de `.filter()` dans les boucles ; ventes limitées à 6 colonnes mais toutes lues, car numéros manquants et ventes anciennes remboursées l'exigent). `getMarginsSummary`/`getProductMarginsBreakdown`/`getTopProducts` partagent `loadPeriodData` (ventes de la période + remboursements de la période + ventes d'origine, `IN (...)` découpés par 500 : SQLite limite les paramètres) et ne lisent que les mouvements/lots de ces ventes : marges d'un mois **580 → 44 ms**, toute l'année 268 ms. `listSales` accepte `limit`/`offset` et son filtre « mode de paiement » est une sous-requête (l'ancienne liste d'identifiants dépassait la limite de paramètres au-delà de ~32 000 ventes) ; `listSalePayments(db, ids)` ; l'**Historique des ventes** charge 100 ventes à la fois (« Afficher plus de ventes », une ligne de plus lue pour savoir s'il y en a d'autres) et cherche le paiement de chaque ligne dans une Map (avant : `find` sur tous les paiements, par ligne). **Chaque réécriture est prouvée par un instantané pris avec l'ANCIEN code** ([ControlsReport.test.ts](packages/core/src/services/ControlsReport.test.ts), [MarginsReports.test.ts](packages/core/src/services/MarginsReports.test.ts) — recapturer en remettant temporairement l'ancienne version du service, voir l'en-tête du test) et par des mutations injectées à la main (filtre boutique des remboursements, prorata des quantités d'une vente remboursée, type de mouvement, période des remboursements, coût du lot : toutes détectées ; le jeu de données a été complété jusqu'à ce que chaque mutation échoue).
+
+**Approbations des appareils reliés (le gros trou « Risques connus » du 2026-10-26)** : le Maître **revérifie** maintenant les seuils pour `expense.created`, `sale.created` (remise hors promotion, part à crédit + plafond du client, mêmes calculs que `createSale` via `computeUnauthorizedDiscountForItems`) et `stockEntry/stockLoss.created` ([workerApproval.ts](packages/core/src/sync/workerApproval.ts), appelé par `applyRemoteSyncEvent` quand l'origine est `worker`, après le test d'idempotence : le renvoi d'un événement déjà appliqué passe). Un responsable n'est reconnu que par une **autorisation** (`grantId`, [approvalGrants.ts](packages/core/src/sync/approvalGrants.ts)) que le Maître délivre quand il vérifie lui-même un PIN d'**approbation** pour cet appareil : 5 minutes, usage unique, liée au responsable et à l'appareil, retirée de ce qui est consigné/rediffusé. L'appareil la joint à l'événement (`attachApprovalGrant`, `SyncEvent.approverId/actorId/grantId`). Le droit et le plafond du responsable sont revérifiés (`checkApproval`). Tests : [masterProtocol.test.ts](packages/core/src/sync/masterProtocol.test.ts) (autorisation absente, inventée, déjà utilisée, d'un autre appareil, PIN de déverrouillage, renvoi) + mutation « croire l'approbation déclarée ». **Limites** : stock en validation ultérieure accepté sans approbation (la demande suit dans un autre événement, non reliable avec certitude) ; l'autorisation n'est pas liée à UNE opération (5 min, une fois, dans les limites du responsable) ; dérogation de lot périmé non revérifiée ; la voie vente/stock n'est testée que par le code commun (le test bout en bout porte sur la dépense). Piège du banc d'essai : une requête PIN fait passer le moteur sur la base du Maître ; la réponse doit rendre la main à l'appareil relié.
+
+**Sauvegardes chiffrées** : mot de passe optionnel (Configuration → Sauvegardes) → AES-256-GCM, clé PBKDF2-SHA256 600 000 itérations, en-tête `WBXBKP1` avec itérations/sel/IV ([backupCrypto.ts](packages/core/src/backup/backupCrypto.ts)) ; GCM refuse un mauvais mot de passe ET un fichier altéré. Le mot de passe est gardé sur l'appareil (`localStorage`, [backupPassphrase.ts](apps/web/src/features/settings/backupPassphrase.ts)) pour que les sauvegardes automatiques se chiffrent sans rien demander (local, Drive, téléchargement manuel, copie « avant import »), extension `.enc`. L'import reconnaît un fichier chiffré par son en-tête, essaie le mot de passe de l'appareil puis le demande. Sans mot de passe défini, comportement inchangé (fichier `.sqlite3` en clair, toujours importable). **Un mot de passe perdu = sauvegarde irrécupérable** (dit dans l'interface). Vérifié dans le navigateur : fichier chiffré sans « SQLite format 3 » lisible, mauvais mot de passe refusé avec message, bon mot de passe → restauration, rechargement, reconnexion.
+
+**Fuseaux horaires** : les `created_at` sont en UTC mais « aujourd'hui » est un jour local. [localDay.ts](packages/core/src/domain/localDay.ts) convertit les bornes d'un jour local en bornes UTC (`localDayStartUtc/EndUtc`) pour tous les filtres de période (ventes, tickets, stock, audit, caisse, rapports, SYSCOHADA, Contrôles, résumé du jour) et un horodatage UTC en jour local (`utcToLocalDay`) pour les regroupements par jour/mois des rapports. Sans effet en fuseau UTC (Côte d'Ivoire, Ghana, Sénégal) ; en UTC+1 (Nigeria, Cameroun, Bénin) une vente à 23h30 locale tombe dans le bon jour (testé avec `TZ=Africa/Lagos`). **Pas converti** : l'affichage des heures (les écrans montrent encore l'heure UTC brute) et les dates de dépense (jour saisi + midi, ≤ 12 h d'écart).
+
+**Android** : `pnpm android:sync` ([sync-android-overrides.mjs](scripts/sync-android-overrides.mjs)) recopie `android-overrides/MainActivity.kt` dans `gen/` et force `usesCleartextTraffic = "true"` ; `--check` vérifie sans écrire (testé : dérive détectée puis corrigée). À lancer après tout `tauri android init`.
+
+**xlsx** : `xlsx` (SheetJS, failles de lecture, plus de correctif sur npm) n'est plus une dépendance d'exécution — [xlsxWriter.ts](packages/reports/src/xlsxWriter.ts) écrit directement le ZIP/XML d'un classeur (onglets, en-têtes, nombres, textes, échappement XML, noms d'onglet valides, largeurs de colonnes). SheetJS reste en devDependency, uniquement pour **relire** dans les tests ce que l'écrivain produit (10 tests). `pnpm audit --prod` : **0 avis** (avant : 2). Export Excel vérifié dans le navigateur (ZIP valide, nom et type corrects). Non ouvert dans Excel/LibreOffice réels.
+
+**Vérifié** : `turbo run build test --force` (4 tâches), 298 tests core + 18 network + 10 reports ; aucune erreur console. Le code Rust n'a pas changé. **Pas vérifié** : Historique avec plus de 100 ventes dans le navigateur (couvert par `SalesList.test.ts` côté service), mode réseau sur deux appareils réels.
+
+### 2026-10-31 — Analyse complète : le mode réseau ne suivait pas le Maître (4 incohérences graves corrigées)
+
+**Ce que l'analyse a prouvé par des tests réels** (puis corrigé) :
+1. **Un appareil relié n'avait AUCUN stock après l'appairage** : le solde se déduit des mouvements, l'instantané ne copiait que les lots. Il ne pouvait rien vendre du stock existant (stock du Maître 5, de l'appareil relié 0).
+2. **Le catalogue était figé à l'appairage** : un produit/client/prix/utilisateur créé ensuite sur le Maître n'arrivait jamais ; les événements qui le référençaient (stock, vente) étaient rejetés « variante introuvable » et, le repère de progression avançant malgré tout, **perdus définitivement**. L'interface laissait de plus modifier le catalogue sur l'appareil relié (collisions d'identifiants).
+3. **Les opérations non répliquées (achats, remboursements, inventaires...) divergeaient en silence**, et le texte du mode réseau ne le disait pas.
+4. **Un remboursement ne reprenait pas les points de fidélité** (acheter, gagner des points, se faire rembourser, échanger les points contre une remise non soumise à approbation).
+
+**Corrections** :
+- **Le Maître fait foi pour le catalogue ET le stock** ([snapshot.ts](packages/core/src/sync/snapshot.ts)). L'appareil relié redemande l'état (`snapshotRequest` avec les empreintes SHA-256 des tables déjà reçues → seules les tables changées reviennent) à la connexion, toutes les 5 min, et dès que le Maître envoie `catalogChanged` (le Maître compare ses empreintes chaque minute, `checkCatalogChanged`). Tables d'identifiants du Maître (produits, variantes, rôles, boutiques, utilisateurs, catégories, fournisseurs, emplacements, réglages) : mise à jour/ajout par identifiant puis suppression du reste — **plus de `DELETE` global** (refusé dès que des clés étrangères sont actives, et lent). **Clients et lots : fusion par `sync_id`** (un appareil relié en crée avec ses propres identifiants locaux, déjà référencés par ses ventes ; test avec collision d'identifiants). Réglages propres à l'appareil jamais écrasés (`DEVICE_LOCAL_SETTINGS` : fréquence de sauvegarde, Client ID Drive, colonnes du ticket).
+- **Stock : alignement par mouvements de correction** (`rebaseStock`, type `rebase`). Le Maître envoie ses soldes par (variante, emplacement, lot) ; l'appareil enregistre l'écart comme un mouvement, sans toucher à son historique. N'a lieu que si l'appareil est « au calme » : rien en attente d'envoi, aucun événement local créé depuis la demande (compteur synchrone), tous les événements du Maître appliqués (`lastAppliedSeq` ≥ `asOfSeq`) — sinon l'état reçu est périmé et jeté (test : une vente faite pendant l'alignement n'est pas effacée).
+- **Plus aucun événement perdu** ([workerSync.ts](packages/core/src/sync/workerSync.ts), testable sans réseau) : tout est traité en file ; un événement qui échoue attend, l'appareil redemande le catalogue et le rejoue ; le repère `lastAppliedSeq` n'avance pas tant qu'un événement attend (le Maître le renverra) ; s'il reste impossible après un catalogue à jour il est abandonné **visiblement** (`applyError`, bandeau). Le `syncAck` porte le numéro attribué par le Maître (`seq`), sinon un appareil qui n'envoie que ses propres événements ne pouvait jamais atteindre `asOfSeq`.
+- **Migration 21** : `sync_id` pour les clients et lots d'avant le mode réseau (sans lui une vente à un tel client partait sans client, la créance s'évaporait).
+- **Appareil relié = lecture seule sur le catalogue et sur les opérations non partagées** ([relayGuard.ts](packages/core/src/domain/relayGuard.ts), contrôle côté service, drapeau posé par `NetworkProvider`) : refusés avec un message clair — produits, variantes, catégories, clients, fournisseurs, utilisateurs, rôles, boutiques, promotions, tarifs, code du mode focus, réglages de l'entreprise (seuls les réglages propres à l'appareil passent ; une valeur identique ou « vide » n'est pas un changement) ; achats, réception, remboursements, inventaires, rebut des périmés, correction/suppression de dépense, ajustement de points. Restent possibles et partagés : ventes, dépenses, entrées/pertes/transferts de stock, demandes d'approbation. [RelayBanner.tsx](apps/web/src/features/network/RelayBanner.tsx) : état de la connexion, règles, et dernière erreur d'application.
+- **Remboursement** : reprend au prorata les points gagnés sur la vente (`refund_reversal`, jamais plus que gagné, solde jamais négatif, cumul à vie — donc le palier — réduit de la totalité).
+
+**Vérifié** : 321 tests core dont [workerSync.test.ts](packages/core/src/sync/workerSync.test.ts) (Maître + appareil relié, vrai protocole des deux côtés : stock de départ, vente appareil→Maître, produit créé et vendu avant le catalogue, achat sur le Maître, clients avec collision d'identifiants, prix, réglage local, état périmé, repère avec événement en attente) et [RefundLoyaltyAndRelay.test.ts](packages/core/src/services/RefundLoyaltyAndRelay.test.ts) ; mutations injectées à la main (garde « au calme », fusion des clients par identifiant du Maître, repère avancé malgré un événement en attente, reprise de points, garde des réglages) : toutes détectées. **Dans le navigateur, l'application réelle reliée à un vrai Maître** (vrai protocole derrière un serveur WebSocket jetable) : première connexion → connexion avec le compte du Maître, stock 12 visible ; produit, achat (+20 en réserve), client et prix créés ensuite sur le Maître → arrivés sur l'appareil relié ; création d'un produit refusée avec le message ; vente faite sur l'appareil relié → reçue et acquittée par le Maître.
+
+**Reste à faire (assumé)** : répliquer vraiment achats, remboursements, règlements de créances/dettes, sessions de caisse, tickets de service, devis, inventaires et ajustements de points (aujourd'hui : bloqués sur l'appareil relié, ou — pour règlements, tickets, devis, caisse — gardés sur l'appareil, ce que dit le bandeau) ; l'appareil relié ne génère pas non plus d'avoir FNE. Un même état de stock est visible au plus tard 5 minutes après un achat du Maître. Non testé sur deux appareils physiques.
+
+**Autres constats de l'analyse, non traités ici** : aucun `PRAGMA foreign_keys` (42 clés étrangères déclarées mais non appliquées) ; permission Tauri `fs:allow-write-file **` accordée sans qu'aucun code n'utilise `plugin-fs` ; montant attendu en caisse qui ignore les dépenses/achats/dettes réglés en espèces depuis le tiroir ; seuils d'approbation par défaut incohérents (remboursement et crédit sans contrôle, le reste à 0) ; heures affichées en UTC brut sur ~10 écrans (l'Accueil convertit) ; messages réseau en français en dur (`workerRpc.ts`, motifs de rejet) ; TVA, journal SYSCOHADA et résumé du jour relisent encore des tables entières ; pas d'intégration continue ; `CLAUDE.md` est devenu très long.
+
+### 2026-10-31 — Les autres constats de l'analyse : tous traités sauf deux (documentés)
+
+- **Clés étrangères activées** (`PRAGMA foreign_keys = ON` à chaque ouverture, [sahpool-worker.js](packages/database/src/sahpool-worker.js) + sa copie `apps/web/public/db-worker.js`) : les ~40 `REFERENCES` du schéma n'étaient que documentaires. Les tests du cœur tournaient DÉJÀ avec les clés actives (`node:sqlite` les active par défaut) — c'est ce qui avait fait échouer le `DELETE` global de l'ancien instantané. Au démarrage, `PRAGMA foreign_key_check` signale (console, jamais bloquant) les lignes orphelines héritées d'avant. Vérifié dans le navigateur : création de compte et de produit sur une base neuve avec les clés actives. **Non observé directement dans le worker WASM** : le réglage lui-même (instruction SQLite standard) n'a pas pu être interrogé depuis la page.
+- **Permission d'écriture Tauri retirée** : `tauri-plugin-fs` (Rust, dépendances, capacités `fs:allow-write-file **`/`mkdir`/`exists`) supprimé — aucun code ne l'utilisait plus depuis le passage à `android-fs`. `cargo check` et `cargo test --lib` (14 tests) passent. Reste large par nature : `http` (URL du serveur FNE saisie par l'utilisateur) et `opener:allow-open-path` (installation d'une mise à jour choisie par l'utilisateur) ; la CSP autorise toujours le script de Google pour la sauvegarde Drive.
+- **Caisse** ([CashSessionService.getExpectedCashAmount](packages/core/src/services/CashSessionService.ts)) : le montant attendu retire maintenant les achats payés comptant et les dépenses payées en espèces par ce caissier depuis l'ouverture (pour une dépense, l'heure de SAISIE compte, pas sa date d'effet — une dépense de rattrapage saisie aujourd'hui sort bien du tiroir d'aujourd'hui). Test [CashExpected.test.ts](packages/core/src/services/CashExpected.test.ts). **Choix métier à connaître** : une dépense en espèces payée de la poche du propriétaire et saisie par le caissier créera un écart. Les règlements de dettes fournisseurs n'ont pas de mode de paiement enregistré : non comptés.
+- **Seuil d'approbation des remboursements à 0 par défaut** (migration 22 pour l'existant, valeur initiale dans `getSettings` pour les nouvelles bases) : c'était, avec le crédit, le seul geste sortant sans contrôle alors que remise, dépense, stock, points, ticket, prix et paiement étaient à 0. Un remboursement exige donc un responsable (un Administrateur/Propriétaire s'auto-approuve). **Changement de comportement pour les installations existantes** : un Gérant sans droit d'approbation a besoin du PIN d'un responsable ; vider ou relever le seuil reste possible dans Configuration → Contrôles de gestion. Le seuil de crédit reste VIDE volontairement (ventes à crédit routinières, déjà bornées par le plafond de crédit du client).
+- **Heures locales partout** ([dateTime.ts](apps/web/src/lib/dateTime.ts), `formatDateTime`) : Journaux, Créances, Dettes, Achats, Demandes, Contrôles, Inventaire, Historique des ventes, Rapports (écran et PDF/Excel de caisse), sauvegardes, événements refusés. Identique en fuseau UTC (vérifié : `2026-10-31 13:05`).
+- **Messages réseau traduits** : `workerRpc`, `masterProtocol`, décisions d'approbation, numéro de vente, client/lot introuvable (`coreErrors.network.*`) et les **57 contrôles de validation des événements reçus** (`syncChecks.*`, `assertSync` prend maintenant une fonction : le texte n'est construit que si le contrôle échoue). Il reste en français technique : `pinProof.ts` (hash Argon2 invalide), `backupCrypto.ts` (erreur interne) — jamais montrés à l'utilisateur.
+- **Lectures filtrées par la base** : TVA (`getTaxCollected`), résumé du jour (`getDailySummary`) et tirage de vérification (`getVerificationSample`) ne relisent plus les tables entières. Prouvé comme pour les marges : instantané pris avec l'ANCIEN code ([TaxAndDailyReads.test.ts](packages/core/src/services/TaxAndDailyReads.test.ts)) ; mutations détectées (filtre boutique des remboursements, types de mouvements, fenêtre de tirage) sauf deux filtres de la base redondants avec un filtre JavaScript conservé en filet de sécurité (mutants équivalents). **Pas fait : le journal SYSCOHADA** (export rare, relit encore ventes/achats/mouvements entiers).
+- **Intégration continue** : [.github/workflows/ci.yml](.github/workflows/ci.yml) — `turbo run build test` + `pnpm audit --prod` sur Node 22, à chaque push sur `main` et chaque pull request. Le Rust n'est pas compilé en CI (bibliothèques système de Tauri) : `cargo test --lib` reste local. Non exécutée avant le premier push.
+- **Documentation** : `CLAUDE.md` passe de 4 517 à ~280 lignes (architecture, conventions — dont les règles apprises : `withTransaction` non réentrante, jours locaux, `assertMasterOnly`, instantané avant réécriture —, environnement, état actuel) ; tout l'historique est dans [docs/JOURNAL.md](docs/JOURNAL.md). Versions alignées (0.1.6), `engines.node >= 22.13`, dossier vide `packages/ui` supprimé.
+- **Dépendances de développement** : `vitest` 2 → 3.2.7, `vite` 6.4.4, surcharges pnpm (`fast-uri`, `nanoid`, `source-map-js`, `brace-expansion`). `pnpm audit` : 50 → 18 avis ; **production : 0**. Restent (outils de développement/compilation seulement) : `xlsx` (relecture dans les tests, aucun correctif publié), `tinypool` (corrigé seulement avec vitest 4), `brace-expansion` 4.x via `workbox-build`.
+
+## Prochaines pistes suggérées
+
+1. Décider d'installer ESLint ou de retirer le script `lint` du
+   `package.json` pour ne pas induire en erreur.
+2. Un harnais de test d'intégration (SQLite en mémoire compatible avec le
+   type `Database` du proxy) permettrait de couvrir automatiquement les flux
+   multi-étapes (transferStock, createSale→marge, sessions de caisse) plutôt
+   que par vérification manuelle dans le navigateur à chaque session.
+3. Si le besoin apparaît : distinguer les opérateurs mobile money (décision
+   explicite de ne pas le faire pour l'instant, prise à la session précédente).
+4. **FNE Côte d'Ivoire** — ~~bloqué tant qu'aucun compte DGI/clé API n'est
+   disponible~~ **coquille complète construite et activable depuis
+   Paramètres le 2026-09-19** (voir journal) : contrat HTTP déduit du SDK
+   PHP tiers PRODESTIC/fne-sdk-php, vérifié en conditions réelles contre le
+   vrai bac à sable DGI (réponse HTTP authentique reçue). Reste seulement à
+   saisir une vraie clé API DGI le jour où le porteur du projet en obtient
+   une — le bouton "Tester la connexion" révélera immédiatement si le
+   contrat déduit tient tel quel ou nécessite un ajustement.
+5. ~~Bilinguisme FR/EN~~ — **chantier intégralement terminé** le 2026-08-17
+   sur son périmètre initial ("Interface + documents", lancé le
+   2026-08-15) : toutes les pages de l'app, tout l'écran de connexion, les
+   62 messages d'erreur de `packages/core` (`coreErrors.*`),
+   `TIER_LABELS`→`getTierLabel`, `SimpleChart.tsx`, les 5 messages WhatsApp
+   générés côté client (`whatsapp.*`), le contenu des documents
+   `packages/printer`/`packages/reports` (`documents.*`), et enfin
+   `DEFAULT_ROLES` (via `getRoleDisplayName`, mapping d'affichage sans
+   toucher au nom stocké en base) — voir le journal et la section
+   *Internationalisation* ci-dessus pour le détail complet. Plus aucune
+   piste ouverte sur ce chantier.
+6. ~~À investiguer : activer "Appliquer la TVA"/"Tickets de service" ne
+   persistait pas~~ — **résolu, ce n'était pas un bug applicatif.** Cause
+   trouvée en session suivante (2026-08-16, conversion de
+   `ServiceOrdersPage.tsx`) : `document.querySelectorAll('button')` avec un
+   filtre sur le texte exact "Save" attrapait le *premier* bouton "Save" du
+   DOM, qui est un bouton "Enregistrer" par ligne du tableau de mapping
+   SYSCOHADA (`SyscohadaAccountsSection.tsx`, un par catégorie de dépense),
+   pas le bouton principal de sauvegarde des Paramètres tout en bas de la
+   page — les deux partagent le même texte. Une fois ce bouton précis ciblé
+   (`.filter(...)[length-1]`, le dernier plutôt que le premier), la
+   sauvegarde a fonctionné du premier coup et les deux cases sont restées
+   cochées après rechargement. Un piège de script de vérification, pas de
+   l'application — à garder en tête pour les prochaines vérifications
+   navigateur : toute page avec plusieurs boutons au texte identique
+   ("Save"/"Enregistrer"/"Delete"/"Supprimer"...) doit être ciblée par un
+   sélecteur plus précis qu'un simple filtre sur le texte.
+7. **Mode réseau (Solo/Réseau local/Cloud), Phase 3+** — voir journal
+   2026-09-04 : transport (rôle d'appareil, pairage QR, mDNS, balayage
+   réseau) et réplication ventes/mouvements de stock/dépenses (via
+   `sync_id` + `__sync_log`/`__sync_outbox`/`__sync_state`, instantané
+   initial du catalogue) sont posés. Reste à construire : **mutations
+   catalogue/paramètres en RPC au Master** (le Worker envoie sa demande,
+   le Master l'exécute avec les permissions du demandeur via les fonctions
+   `packages/core` existantes — celles-ci vérifient déjà les permissions,
+   donc pas de nouveau code d'autorisation, juste le tunnel RPC — puis
+   redistribue le résultat accepté à tous les Workers, probablement en le
+   faisant simplement transiter par le même mécanisme `__sync_log` que la
+   Phase 2 plutôt qu'un système séparé) ; import manuel d'un export Solo
+   côté Master (mentionné mais jamais construit) ; Achats
+   (`PurchasesService.createPurchase`) dans le même moule que Phase 2 si
+   besoin d'un jour ; à plus long terme, Mode Cloud (bloqué comme FNE,
+   faute d'un vrai contrat de serveur à spécifier contre). Nécessite
+   d'abord un test Master↔Worker réel sur deux appareils physiques (pas
+   vérifiable dans cet environnement, pour aucune des phases livrées à ce
+   jour) avant de considérer le chantier réseau réellement éprouvé.
+8. **Refonte visuelle, Phase 2+** — voir journal 2026-09-20 : icônes SVG +
+   couleur d'accent par secteur d'activité (boutique/pharmacie/restaurant/
+   pressing, choisi dans Paramètres) posées sur la structure de nav
+   existante (barre du haut). Volontairement laissé de côté dans cette
+   Phase 1, à reprendre seulement si demandé après retour terrain sur ce
+   premier résultat : passage à un sidebar, sélection du secteur à
+   l'onboarding, nouvelle typographie (Manrope/Public Sans, explorée dans
+   la maquette de concept mais jamais appliquée au vrai code), et toute
+   personnalisation allant au-delà de l'accent couleur + icône/libellé de
+   l'onglet "Produits" (ex. disposition de page ou contenu spécifique par
+   secteur).
