@@ -1,5 +1,6 @@
 import {
   applyCatalogSnapshot,
+  attachApprovalGrant,
   applyRemoteSyncEvent,
   createWorkerRpc,
   discardRejectedOutbox,
@@ -301,7 +302,8 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
     if (!enabled) return;
     unsubscribeLocalSyncRef.current = onSyncEvent((event) => {
       void (async () => {
-        const outboxId = await enqueueOutbox(db, event);
+        // L'autorisation du Maître pour le responsable qui a approuvé (si besoin) part avec l'événement.
+        const outboxId = await enqueueOutbox(db, attachApprovalGrant(event));
         const socket = socketRef.current;
         if (socket && socket.readyState === WebSocket.OPEN) {
           const message = new WsMessage({ type: WsMessageTypes.sync, payload: { event } });

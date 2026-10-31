@@ -1,6 +1,7 @@
 import { WsMessage, WsMessageTypes } from "@gestion-boutique/network";
 import { computePinProof, PIN_VERIFY_CONTEXT, pinDecisionContext, type PinChallenge } from "../auth/pinProof";
 import type { PinKind } from "../auth/remotePin";
+import { rememberApprovalGrant } from "./approvalGrants";
 
 // Côté appareil relié : requêtes/réponses vers le Maître (vérifier un PIN,
 // trancher une demande d'approbation). Sans réseau ni interface — la couche
@@ -65,6 +66,10 @@ export function createWorkerRpc(options: WorkerRpcOptions) {
       const proof = await computePinProof(pin, ch, PIN_VERIFY_CONTEXT);
       const reply = await call(WsMessageTypes.pinVerify, { approverId, nonce: ch.nonce, proof });
       if (reply.payload.error) throw new Error(String(reply.payload.error));
+      // Autorisation délivrée par le Maître : jointe à l'action approuvée (voir attachApprovalGrant).
+      if (reply.payload.ok === true && kind === "approval" && typeof reply.payload.grantId === "string") {
+        rememberApprovalGrant(approverId, reply.payload.grantId);
+      }
       return reply.payload.ok === true;
     },
 

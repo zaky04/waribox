@@ -5,6 +5,7 @@ import { eq, sql } from "drizzle-orm";
 import { uniqueSaleNumber } from "../services/documentNumber";
 import { computeSaleItemTotal, computeTaxAmount } from "../services/SalesService";
 import { applyApprovalRequestCreated, applyApprovalRequestDecided } from "../services/ApprovalRequestsService";
+import { APPROVAL_GATED_EVENT_TYPES, assertWorkerEventApproved, isEventAlreadyApplied } from "./workerApproval";
 import type {
   ApprovalRequestCreatedEventPayload,
   ApprovalRequestDecidedEventPayload,
@@ -569,9 +570,19 @@ export type SyncOrigin = "master" | "worker";
 // decideApprovalRequestRemote) ; le Maître la rediffuse ensuite lui-même.
 const FORBIDDEN_FROM_WORKER: ReadonlySet<SyncEvent["type"]> = new Set(["approvalRequest.decided"]);
 
-export async function applyRemoteSyncEvent(db: Database, event: SyncEvent, origin: SyncOrigin = "master"): Promise<void> {
+export async function applyRemoteSyncEvent(
+  db: Database,
+  event: SyncEvent,
+  origin: SyncOrigin = "master",
+  // Responsable dont le Maître a lui-même vérifié le PIN pour cet appareil (voir approvalGrants.ts).
+  verifiedApproverId: number | null = null,
+): Promise<void> {
   if (origin === "worker" && FORBIDDEN_FROM_WORKER.has(event.type)) {
     throw new Error(t("coreErrors.auth.syncEventNotAllowed"));
+  }
+  // Une action qui dépassait un seuil doit prouver son approbation (le renvoi d'un événement déjà appliqué passe).
+  if (origin === "worker" && APPROVAL_GATED_EVENT_TYPES.has(event.type) && !(await isEventAlreadyApplied(db, event))) {
+    await assertWorkerEventApproved(db, event, verifiedApproverId);
   }
   switch (event.type) {
     case "sale.created":

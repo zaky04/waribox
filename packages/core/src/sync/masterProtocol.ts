@@ -1,9 +1,10 @@
 import type { Database } from "@gestion-boutique/database";
 import { withTransaction } from "@gestion-boutique/database";
 import { WsMessage, WsMessageTypes } from "@gestion-boutique/network";
-import { issuePinChallenge, PIN_VERIFY_CONTEXT, verifyPinProof } from "../auth/pinProof";
+import { issuePinChallenge, PIN_VERIFY_CONTEXT, pinChallengeKind, verifyPinProof } from "../auth/pinProof";
 import { decideApprovalRequestRemote } from "../services/ApprovalRequestsService";
 import { logAction } from "../services/AuditService";
+import { createGrantStore } from "./approvalGrants";
 import { applyRemoteSyncEvent } from "./applyRemoteEvents";
 import { buildCatalogSnapshot } from "./snapshot";
 import { appendToSyncLog, getMaxSyncSeq, listSyncLogSince } from "./syncStore";
@@ -53,6 +54,8 @@ function errorMessage(err: unknown): string {
 export function createMasterProtocol(deps: MasterProtocolDeps) {
   const { db, masterId, masterName } = deps;
   const workers = new Map<string, ConnectedWorker>();
+  // Autorisations d'approbation délivrées après vérification d'un PIN (voir approvalGrants.ts).
+  const grants = createGrantStore();
 
   // Tout ce qui écrit (événements reçus, décisions) passe dans une seule file :
   // l'ordre d'arrivée est l'ordre d'application ET l'ordre des numéros du journal.
@@ -121,10 +124,16 @@ export function createMasterProtocol(deps: MasterProtocolDeps) {
     const worker = workers.get(connectionId);
     try {
       if (!isSyncEvent(event)) throw new Error("événement de synchronisation invalide");
-      await withTransaction(() => applyRemoteSyncEvent(db, event, "worker"));
-      const seq = await appendToSyncLog(db, event, worker?.deviceId ?? connectionId);
+      // Le responsable n'est reconnu que si le Maître a lui-même vérifié son PIN pour cet appareil.
+      const deviceId = worker?.deviceId ?? connectionId;
+      const approverId = grants.check(event.grantId, event.approverId, deviceId) ? (event.approverId as number) : null;
+      await withTransaction(() => applyRemoteSyncEvent(db, event, "worker", approverId));
+      if (event.grantId) grants.consume(event.grantId);
+      // L'autorisation ne sert qu'à la validation : on ne la consigne pas ni ne la rediffuse.
+      const { grantId: _grantId, ...loggable } = event;
+      const seq = await appendToSyncLog(db, loggable, deviceId);
       await send(connectionId, new WsMessage({ type: WsMessageTypes.syncAck, correlationId: message.correlationId }));
-      await broadcast(event, seq, connectionId);
+      await broadcast(loggable, seq, connectionId);
     } catch (err) {
       const reason = errorMessage(err);
       await send(
@@ -164,8 +173,12 @@ export function createMasterProtocol(deps: MasterProtocolDeps) {
     const { approverId, nonce, proof } = message.payload;
     try {
       if (!Number.isInteger(approverId) || typeof nonce !== "string" || typeof proof !== "string") throw new Error("demande invalide");
+      const kind = pinChallengeKind(nonce);
       const ok = await verifyPinProof(db, approverId as number, nonce, PIN_VERIFY_CONTEXT, proof);
-      await send(connectionId, new WsMessage({ type: WsMessageTypes.pinVerifyResult, payload: { ok }, correlationId: message.correlationId }));
+      // Un PIN d'approbation vérifié donne droit à une autorisation à usage unique pour cet appareil.
+      const worker = workers.get(connectionId);
+      const grantId = ok && kind === "approval" && worker ? grants.issue(approverId as number, worker.deviceId) : undefined;
+      await send(connectionId, new WsMessage({ type: WsMessageTypes.pinVerifyResult, payload: { ok, ...(grantId ? { grantId } : {}) }, correlationId: message.correlationId }));
     } catch (err) {
       await send(connectionId, new WsMessage({ type: WsMessageTypes.pinVerifyResult, payload: { ok: false, error: errorMessage(err) }, correlationId: message.correlationId }));
     }

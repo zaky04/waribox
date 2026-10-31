@@ -12,9 +12,10 @@ import { getSettings } from "../services/SettingsService";
 import { ADMIN_APPROVAL_PIN, ADMIN_PIN, CASHIER_APPROVAL_PIN, MANAGER_PIN, seedBusiness, type SeededBusiness } from "../test/seed";
 import { createDevice, releaseDevices, useDevice, type TestDevice } from "../test/testDb";
 import { applyRemoteSyncEvent } from "./applyRemoteEvents";
+import { attachApprovalGrant, takeApprovalGrant } from "./approvalGrants";
 import { createMasterProtocol, type MasterProtocol } from "./masterProtocol";
 import { applyCatalogSnapshot, type CatalogSnapshot } from "./snapshot";
-import { buildSyncEvent, onSyncEvent, type SyncEvent } from "./syncEvents";
+import { buildSyncEvent, onSyncEvent, type ExpenseCreatedEventPayload, type SyncEvent } from "./syncEvents";
 import { discardRejectedOutbox, enqueueOutbox, listPendingOutbox, listRejectedOutbox, markOutboxRejected, retryRejectedOutbox } from "./syncStore";
 import { createWorkerRpc } from "./workerRpc";
 
@@ -77,6 +78,9 @@ beforeAll(async () => {
     masterName: "Caisse principale",
     send: (_id, message) => {
       toWorker.push(message);
+      // Une requête de l'appareil relié (PIN, défi) fait passer le moteur sur la base du Maître le temps
+      // de la traiter ; la réponse rend la main à l'appareil relié, qui poursuit son opération sur SA base.
+      if (message.type === WsMessageTypes.pinChallengeResult || message.type === WsMessageTypes.pinVerifyResult) useDevice(worker);
       rpc?.handle(message);
     },
   });
@@ -558,5 +562,128 @@ describe("file d'attente de l'appareil relié : un refus ne boucle pas", () => {
     const id = await enqueueOutbox(worker.db!, event!);
     await discardRejectedOutbox(worker.db!, id);
     expect((await listPendingOutbox(worker.db!)).map((p) => p.id)).toContain(id);
+  });
+});
+
+describe("approbations revérifiées par le Maître sur les actions d'un appareil relié", () => {
+  const expenseInput = (category: string, amount: number) => ({ category, amount, expenseDate: "2026-10-25", paymentMethod: "cash", userId: biz.manager.id, storeId: biz.storeId });
+  const masterExpenses = async (category: string) => {
+    asMaster();
+    return (await master.db!.select().from(schema.expenses)).filter((e) => e.category === category);
+  };
+  const sendEvent = async (event: SyncEvent) => {
+    toWorker = [];
+    const msg = new WsMessage({ type: WsMessageTypes.sync, payload: { event } });
+    await sendToMaster(msg);
+    return { acked: lastReply(WsMessageTypes.syncAck)?.correlationId === msg.correlationId, rejected: lastReply(WsMessageTypes.syncRejected) };
+  };
+  /** Dépense d'un gérant (qui ne peut pas s'auto-approuver) créée sur l'appareil relié avec le PIN de l'administrateur vérifié par le Maître. */
+  const approvedExpenseEvent = async (category: string, amount: number) => {
+    useDevice(worker);
+    setRemotePinVerifier(rpc.verifyPin);
+    const events = await captureEvents(() =>
+      createExpense(worker.db!, { ...expenseInput(category, amount), approval: { approverId: biz.admin.id, pin: ADMIN_APPROVAL_PIN } }, biz.manager.permissions),
+    );
+    setRemotePinVerifier(null);
+    return attachApprovalGrant(events[0]!);
+  };
+
+  beforeAll(async () => {
+    for (const d of [master, worker]) {
+      useDevice(d);
+      await d.db!.update(schema.businessSettings).set({ approvalExpenseThreshold: 1000 }).run();
+    }
+  });
+  afterAll(async () => {
+    for (const d of [master, worker]) {
+      useDevice(d);
+      await d.db!.update(schema.businessSettings).set({ approvalExpenseThreshold: null }).run();
+    }
+  });
+
+  it("une dépense au-dessus du seuil, approuvée par un PIN vérifié par le Maître, est acceptée", async () => {
+    const event = await approvedExpenseEvent("Appro-OK", 5000);
+    expect(event.approverId).toBe(biz.admin.id);
+    expect(event.grantId).toBeTruthy();
+    const r = await sendEvent(event);
+    expect(r.acked).toBe(true);
+    expect(r.rejected).toBeUndefined();
+    expect(await masterExpenses("Appro-OK")).toHaveLength(1);
+    // L'autorisation n'est ni consignée ni rediffusée.
+    asMaster();
+    const log = await master.db!.select().from(schema.syncLog);
+    expect(JSON.stringify(log)).not.toContain(event.grantId!);
+  });
+
+  it("sous le seuil, aucune approbation n'est exigée", async () => {
+    useDevice(worker);
+    const events = await captureEvents(() => createExpense(worker.db!, expenseInput("Appro-petit", 500), biz.manager.permissions));
+    const r = await sendEvent(events[0]!);
+    expect(r.acked).toBe(true);
+    expect(await masterExpenses("Appro-petit")).toHaveLength(1);
+  });
+
+  it("un événement qui AFFIRME une approbation sans autorisation du Maître est refusé", async () => {
+    const event = await approvedExpenseEvent("Appro-forgé", 5000);
+    const { grantId: _g, ...withoutGrant } = event;
+    const r = await sendEvent(withoutGrant as SyncEvent);
+    expect(r.acked).toBe(false);
+    expect(r.rejected).toBeDefined();
+    expect(await masterExpenses("Appro-forgé")).toHaveLength(0);
+  });
+
+  it("une autorisation inventée est refusée", async () => {
+    const event = await approvedExpenseEvent("Appro-inventé", 5000);
+    const r = await sendEvent({ ...event, grantId: "00000000-0000-0000-0000-000000000000" });
+    expect(r.rejected).toBeDefined();
+    expect(await masterExpenses("Appro-inventé")).toHaveLength(0);
+  });
+
+  it("une dépense au-dessus du seuil sans aucune approbation est refusée", async () => {
+    // Événement fabriqué à la main : montant élevé, gérant, aucun responsable.
+    useDevice(worker);
+    const [base] = await captureEvents(() => createExpense(worker.db!, { ...expenseInput("Appro-sans", 100), userId: biz.admin.id }, biz.admin.permissions));
+    const forged = { ...base!, payload: { ...(base!.payload as ExpenseCreatedEventPayload), expense: { ...(base!.payload as ExpenseCreatedEventPayload).expense, amount: 9000, userId: biz.manager.id, category: "Appro-sans" } }, actorId: undefined };
+    const r = await sendEvent(forged as SyncEvent);
+    expect(r.rejected).toBeDefined();
+    expect(await masterExpenses("Appro-sans")).toHaveLength(0);
+  });
+
+  it("l'autorisation ne sert qu'une fois", async () => {
+    const first = await approvedExpenseEvent("Appro-1x", 5000);
+    expect((await sendEvent(first)).acked).toBe(true);
+    // Une seconde dépense réutilisant la même autorisation (événement distinct, même grantId).
+    useDevice(worker);
+    const [second] = await captureEvents(() => createExpense(worker.db!, { ...expenseInput("Appro-1x-bis", 100), userId: biz.admin.id }, biz.admin.permissions));
+    const reused = { ...second!, payload: { ...(second!.payload as ExpenseCreatedEventPayload), expense: { ...(second!.payload as ExpenseCreatedEventPayload).expense, amount: 7000, userId: biz.manager.id } }, approverId: first.approverId, grantId: first.grantId };
+    const r = await sendEvent(reused as SyncEvent);
+    expect(r.rejected).toBeDefined();
+    expect(await masterExpenses("Appro-1x-bis")).toHaveLength(0);
+  });
+
+  it("renvoyer un événement déjà appliqué (accusé perdu) reste accepté même si l'autorisation est consommée", async () => {
+    const event = await approvedExpenseEvent("Appro-renvoi", 5000);
+    expect((await sendEvent(event)).acked).toBe(true);
+    expect((await sendEvent(event)).acked).toBe(true);
+    expect(await masterExpenses("Appro-renvoi")).toHaveLength(1);
+  });
+
+  it("une autorisation délivrée à un autre appareil est refusée", async () => {
+    const event = await approvedExpenseEvent("Appro-autre", 5000);
+    // Un second appareil se connecte et présente l'autorisation du premier.
+    await sendToMaster(new WsMessage({ type: WsMessageTypes.hello, payload: { deviceId: "tel-2", deviceName: "Autre téléphone", lastSyncSeq: 0 } }), "conn-2");
+    toWorker = [];
+    const msg = new WsMessage({ type: WsMessageTypes.sync, payload: { event } });
+    await sendToMaster(msg, "conn-2");
+    expect(lastReply(WsMessageTypes.syncRejected)).toBeDefined();
+    expect(await masterExpenses("Appro-autre")).toHaveLength(0);
+    protocol.handleDisconnect("conn-2");
+  });
+
+  it("le PIN de déverrouillage (et non d'approbation) ne délivre aucune autorisation", async () => {
+    useDevice(worker);
+    const ch = await rpc.verifyPin(biz.admin.id, ADMIN_PIN, "unlock");
+    expect(ch).toBe(true);
+    expect(takeApprovalGrant(biz.admin.id)).toBeUndefined();
   });
 });

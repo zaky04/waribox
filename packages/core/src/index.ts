@@ -47,6 +47,7 @@ export * from "./fne/fnePayload";
 export * from "./fne/fneQueue";
 export * from "./fne/fneEvents";
 export * from "./sync/applyRemoteEvents";
+export { attachApprovalGrant } from "./sync/approvalGrants";
 export * from "./sync/snapshot";
 export * from "./sync/syncEvents";
 export * from "./sync/syncStore";

@@ -110,6 +110,11 @@ function purgeExpired(now: number): void {
   for (const [nonce, entry] of pending) if (entry.expiresAt <= now) pending.delete(nonce);
 }
 
+/** Quel PIN vise ce défi ? (à lire AVANT de vérifier la preuve, qui consomme le défi) */
+export function pinChallengeKind(nonce: string): PinKind | undefined {
+  return pending.get(nonce)?.kind;
+}
+
 export function pendingPinChallengeCount(): number {
   return pending.size;
 }
