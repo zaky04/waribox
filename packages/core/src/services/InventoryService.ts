@@ -7,6 +7,7 @@ import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { checkApprovalDeferrable, createApprovalRequest, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
 import { logAction } from "./AuditService";
 import { consumeStockFefo, recordMovement } from "./StockService";
+import { assertMasterOnly } from "../domain/relayGuard";
 
 // Inventaire physique d'un emplacement. Démarrage : on fige la liste des
 // produits avec leur coût (la quantité théorique du moment est gardée mais NE
@@ -55,6 +56,7 @@ export interface StartStockCountInput {
 }
 
 export async function startStockCount(db: Database, input: StartStockCountInput, actingPermissions: PermissionSet) {
+  assertMasterOnly("operation");
   requirePermission(actingPermissions, "manage_inventory");
   if (await getOpenStockCount(db, input.locationId)) {
     throw new Error(t("coreErrors.inventory.alreadyOpen"));
@@ -163,6 +165,7 @@ export async function closeStockCount(
   input: CloseStockCountInput,
   actingPermissions: PermissionSet,
 ): Promise<CloseStockCountResult> {
+  assertMasterOnly("operation");
   requirePermission(actingPermissions, "manage_inventory");
   const count = await db.select().from(schema.stockCounts).where(eq(schema.stockCounts.id, input.countId)).get();
   if (!count || count.status !== "open") throw new Error(t("coreErrors.inventory.notOpen"));

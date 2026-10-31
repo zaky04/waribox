@@ -7,6 +7,7 @@ import { ApprovalQueuedError, buildApprovalRequestCreatedEvent, checkApproval, c
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { assertValidAmount } from "../domain/validation";
 import { buildSyncEvent, emitSyncEvent, type ExpenseCreatedEventPayload } from "../sync/syncEvents";
+import { assertMasterOnly } from "../domain/relayGuard";
 
 // Suggestions pour un datalist en UI — la catégorie reste un champ texte
 // libre (pas de table de référence rigide) pour ne pas bloquer un gérant sur
@@ -169,6 +170,7 @@ export async function updateExpense(
   input: UpdateExpenseInput,
   actingPermissions: PermissionSet,
 ) {
+  assertMasterOnly("operation");
   requirePermission(actingPermissions, "edit_expenses");
   const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
   const before = await db.select().from(schema.expenses).where(eq(schema.expenses.id, id)).get();
@@ -244,6 +246,7 @@ export async function deleteExpense(
   userId?: number,
   approval?: ApprovalInput,
 ) {
+  assertMasterOnly("operation");
   requirePermission(actingPermissions, "delete_expenses");
   const existing = await db.select().from(schema.expenses).where(eq(schema.expenses.id, id)).get();
   if (!existing) return;

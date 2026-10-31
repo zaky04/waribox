@@ -3,6 +3,7 @@ import { schema } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
 import { desc, eq } from "drizzle-orm";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
+import { assertMasterOnly } from "../domain/relayGuard";
 
 export type PromotionScope = "product" | "invoice";
 
@@ -31,6 +32,7 @@ function validatePromotionInput(input: CreatePromotionInput) {
 }
 
 export async function createPromotion(db: Database, input: CreatePromotionInput, actingPermissions: PermissionSet) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_promotions");
   validatePromotionInput(input);
 
@@ -72,6 +74,7 @@ export async function updatePromotion(
   input: UpdatePromotionInput,
   actingPermissions: PermissionSet,
 ) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_promotions");
 
   const existing = await db.select().from(schema.promotions).where(eq(schema.promotions.id, id)).get();
@@ -110,6 +113,7 @@ export async function updatePromotion(
 }
 
 export async function deletePromotion(db: Database, id: number, actingPermissions: PermissionSet) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_promotions");
   await db.delete(schema.promotionProducts).where(eq(schema.promotionProducts.promotionId, id));
   await db.delete(schema.promotions).where(eq(schema.promotions.id, id));

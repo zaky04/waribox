@@ -2,6 +2,7 @@ import { WsMessage, WsMessageTypes } from "@gestion-boutique/network";
 import { computePinProof, PIN_VERIFY_CONTEXT, pinDecisionContext, type PinChallenge } from "../auth/pinProof";
 import type { PinKind } from "../auth/remotePin";
 import { rememberApprovalGrant } from "./approvalGrants";
+import { t } from "@gestion-boutique/i18n";
 
 // Côté appareil relié : requêtes/réponses vers le Maître (vérifier un PIN,
 // trancher une demande d'approbation). Sans réseau ni interface — la couche
@@ -23,20 +24,20 @@ export function createWorkerRpc(options: WorkerRpcOptions) {
       const message = new WsMessage({ type, payload });
       const timer = setTimeout(() => {
         pending.delete(message.correlationId);
-        reject(new Error("Le Maître n'a pas répondu."));
+        reject(new Error(t("coreErrors.network.noReply")));
       }, timeoutMs);
       pending.set(message.correlationId, { resolve, reject, timer });
       if (!options.send(message)) {
         clearTimeout(timer);
         pending.delete(message.correlationId);
-        reject(new Error("Pas de connexion au Maître."));
+        reject(new Error(t("coreErrors.network.notConnected")));
       }
     });
   }
 
   async function challenge(approverId: number, kind: PinKind): Promise<PinChallenge> {
     const reply = await call(WsMessageTypes.pinChallenge, { approverId, kind });
-    if (reply.payload.ok !== true) throw new Error(String(reply.payload.error ?? "Défi refusé."));
+    if (reply.payload.ok !== true) throw new Error(String(reply.payload.error ?? t("coreErrors.network.challengeRefused")));
     return reply.payload.challenge as PinChallenge;
   }
 
@@ -85,7 +86,7 @@ export function createWorkerRpc(options: WorkerRpcOptions) {
         nonce: ch.nonce,
         proof,
       });
-      if (reply.payload.ok !== true) throw new Error(String(reply.payload.error ?? "Décision refusée."));
+      if (reply.payload.ok !== true) throw new Error(String(reply.payload.error ?? t("coreErrors.network.decisionRefused")));
     },
 
     pendingCount: () => pending.size,

@@ -7,6 +7,7 @@ import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { checkApproval, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
 import { recordMovement } from "./StockService";
+import { assertMasterOnly } from "../domain/relayGuard";
 
 // Répartit `amount` unités sur une liste de lots ordonnée (même ordre FEFO
 // que consumeStockFefo, dérivé de l'ordre des mouvements de vente) en
@@ -87,6 +88,7 @@ export async function getRefundedQuantities(db: Database, saleId: number): Promi
 }
 
 export async function createRefund(db: Database, input: CreateRefundInput, actingPermissions: PermissionSet) {
+  assertMasterOnly("operation");
   requirePermission(actingPermissions, "manage_refunds");
 
   if (input.items.length === 0) {
@@ -288,6 +290,46 @@ async function createRefundInTransaction(
       toCancel = roundMoney(toCancel - reduction);
     }
   }
+  // Points de fidélité gagnés sur cette vente : repris au prorata de ce qui est remboursé. Sans cela on
+  // pouvait acheter, gagner des points, se faire rembourser et échanger les points contre une remise
+  // (l'échange de points n'est pas une « remise manuelle » soumise à approbation).
+  // Les points déjà DÉPENSÉS ne peuvent pas être repris au-delà du solde (il ne devient jamais négatif),
+  // mais le cumul à vie, qui fixe le palier, diminue de la totalité : le palier reflète les vrais achats.
+  if (sale.customerId != null && sale.total > 0) {
+    const previous = await db
+      .select()
+      .from(schema.loyaltyTransactions)
+      .where(and(eq(schema.loyaltyTransactions.customerId, sale.customerId), eq(schema.loyaltyTransactions.referenceId, sale.id)));
+    const earned = previous.filter((p) => p.reason === "purchase").reduce((sum, p) => sum + p.pointsDelta, 0);
+    const alreadyReversed = previous.filter((p) => p.reason === "refund_reversal").reduce((sum, p) => sum - p.pointsDelta, 0);
+    const refundedSoFar = (await db.select({ total: schema.refunds.total }).from(schema.refunds).where(eq(schema.refunds.saleId, sale.id))).reduce(
+      (sum, r) => sum + r.total,
+      0,
+    );
+    const share = Math.min(1, refundedSoFar / sale.total);
+    const toReverse = roundMoney(earned * share - alreadyReversed);
+    if (earned > 0 && toReverse > 0.005) {
+      const customer = await db.select().from(schema.customers).where(eq(schema.customers.id, sale.customerId)).get();
+      if (customer) {
+        await db.insert(schema.loyaltyTransactions).values({
+          syncId: crypto.randomUUID(),
+          customerId: customer.id,
+          pointsDelta: -toReverse,
+          reason: "refund_reversal",
+          referenceId: sale.id,
+        });
+        await db
+          .update(schema.customers)
+          .set({
+            loyaltyPoints: Math.max(0, customer.loyaltyPoints - toReverse),
+            lifetimeLoyaltyPoints: Math.max(0, customer.lifetimeLoyaltyPoints - toReverse),
+          })
+          .where(eq(schema.customers.id, customer.id))
+          .run();
+      }
+    }
+  }
+
   const cashRefund = roundMoney(total - creditReduced);
   if (cashRefund > 0) {
     await db.insert(schema.payments).values({

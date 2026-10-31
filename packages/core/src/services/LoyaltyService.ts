@@ -6,6 +6,7 @@ import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { ApprovalQueuedError, createApprovalRequest, requireApprovalDeferrable, type ApprovalInput } from "./ApprovalService";
 import { logAction } from "./AuditService";
 import { getSettings } from "./SettingsService";
+import { assertMasterOnly } from "../domain/relayGuard";
 
 // Taux symétrique : `ratio` points gagnés par unité de devise dépensée, et
 // la valeur de rachat d'un point est l'inverse exact (1 / ratio en devise).
@@ -175,6 +176,7 @@ export interface AdjustPointsInput {
 // quel client, en contournant la restriction purement visuelle de l'onglet
 // Clients (voir audit du 2026-08-18).
 export async function adjustPoints(db: Database, input: AdjustPointsInput, actingPermissions: PermissionSet) {
+  assertMasterOnly("operation");
   requirePermission(actingPermissions, "adjust_loyalty_points");
   const customer = await db
     .select()

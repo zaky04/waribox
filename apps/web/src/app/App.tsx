@@ -13,6 +13,7 @@ import { BusinessHeader } from "./BusinessHeader";
 import { AuthGate } from "../features/auth/AuthGate";
 import { FocusProvider } from "../features/focus/FocusProvider";
 import { NetworkProvider } from "../features/network/NetworkProvider";
+import { RelayBanner } from "../features/network/RelayBanner";
 import { TopBar } from "../features/auth/TopBar";
 import { useAuth } from "../features/auth/useAuth";
 import { useIdleLock } from "../features/auth/useIdleLock";
@@ -158,6 +159,7 @@ function MainContent() {
         <TopBar multiStoreEnabled={multiStoreEnabled} stores={stores} />
         <BusinessHeader businessName={businessName} logoDataUrl={logoDataUrl} />
         <Nav active={tab} onChange={setTab} enabledModules={enabledModules} sectorType={sectorType} />
+        <RelayBanner />
       </div>
       <div className="app-body">
         <Nav

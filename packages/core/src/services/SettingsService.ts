@@ -3,6 +3,7 @@ import { schema } from "@gestion-boutique/database";
 import { eq } from "drizzle-orm";
 import { t } from "@gestion-boutique/i18n";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
+import { assertMasterOnly, DEVICE_LOCAL_SETTINGS, isRelayDevice } from "../domain/relayGuard";
 import { checkMaintenanceCode } from "./maintenanceCodeCheck";
 
 const SETTINGS_ID = 1;
@@ -28,7 +29,8 @@ export async function getSettings(db: Database) {
   // seconde échouait sur la clé primaire.
   await db
     .insert(schema.businessSettings)
-    .values({ id: SETTINGS_ID, modulesConfigured: false })
+    // Seuil de remboursement à 0 (tout remboursement exige un responsable) : voir la migration 22.
+    .values({ id: SETTINGS_ID, modulesConfigured: false, approvalRefundThreshold: 0 })
     .onConflictDoNothing()
     .run();
   const created = await db
@@ -159,6 +161,20 @@ export async function updateSettings(db: Database, input: UpdateSettingsInput, a
 
   const { advancedCode, ...values } = input;
   for (const key of NEVER_WRITABLE_KEYS) delete (values as Record<string, unknown>)[key];
+
+  // Appareil relié : les réglages de l'entreprise viennent du Maître. Seuls les réglages propres à
+  // l'appareil se changent ici ; une valeur identique à l'actuelle n'est pas un changement (la page
+  // renvoie tous ses champs, et « vide » vaut « absent »).
+  if (isRelayDevice()) {
+    const blank = (v: unknown) => v === undefined || v === null || v === "";
+    const local = new Set<string>(DEVICE_LOCAL_SETTINGS);
+    const changed = Object.entries(values).some(([key, value]) => {
+      if (local.has(key) || value === undefined) return false;
+      const existing = (current as Record<string, unknown>)[key];
+      return !(blank(value) && blank(existing)) && value !== existing;
+    });
+    if (changed) assertMasterOnly("catalog");
+  }
 
   // Défense en profondeur (l'écran est déjà verrouillé côté UI) : sans ce
   // contrôle, un appel direct depuis la console contournait le code. Pas de

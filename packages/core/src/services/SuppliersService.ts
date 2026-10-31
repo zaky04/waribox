@@ -3,6 +3,7 @@ import { schema } from "@gestion-boutique/database";
 import { eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
+import { assertMasterOnly } from "../domain/relayGuard";
 
 export async function listSuppliers(db: Database) {
   return db.select().from(schema.suppliers);
@@ -20,6 +21,7 @@ export async function createSupplier(
   input: CreateSupplierInput,
   actingPermissions: PermissionSet,
 ) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_suppliers");
   const supplier = await db
     .insert(schema.suppliers)
@@ -57,6 +59,7 @@ export async function updateSupplier(
   input: UpdateSupplierInput,
   actingPermissions: PermissionSet,
 ) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "edit_suppliers");
   const supplier = await db
     .update(schema.suppliers)

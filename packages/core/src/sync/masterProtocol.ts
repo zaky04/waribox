@@ -9,6 +9,7 @@ import { applyRemoteSyncEvent } from "./applyRemoteEvents";
 import { buildCatalogSnapshot } from "./snapshot";
 import { appendToSyncLog, getMaxSyncSeq, listSyncLogSince } from "./syncStore";
 import type { SyncEvent } from "./syncEvents";
+import { t } from "@gestion-boutique/i18n";
 
 // Cœur du protocole côté Maître, sans réseau ni interface : on lui donne une
 // fonction d'envoi (`send`) et on lui passe chaque trame reçue ; la couche
@@ -101,7 +102,7 @@ export function createMasterProtocol(deps: MasterProtocolDeps) {
     );
     // Jamais synchronisé : instantané complet ; déjà connu : rattrapage du manqué.
     if (typeof lastSyncSeq !== "number") {
-      await sendSnapshot(connectionId);
+      await sendSnapshot(connectionId, undefined, true);
     } else {
       for (const { seq, event } of await listSyncLogSince(db, lastSyncSeq)) {
         await send(connectionId, new WsMessage({ type: WsMessageTypes.sync, payload: { event, seq } }));
@@ -109,11 +110,23 @@ export function createMasterProtocol(deps: MasterProtocolDeps) {
     }
   }
 
-  async function sendSnapshot(connectionId: string) {
-    const snapshot = await buildCatalogSnapshot(db);
+  // Premier appairage (`first`) : tout, plus les demandes d'approbation en attente. Ensuite : seulement
+  // les tables dont l'empreinte a changé, plus les soldes de stock (que l'appareil relié aligne).
+  async function sendSnapshot(connectionId: string, request?: { knownHashes?: Record<string, string>; correlationId?: string }, first = false) {
+    const snapshot = await buildCatalogSnapshot(db, { knownHashes: first ? undefined : request?.knownHashes, includePending: first, includeStock: true });
     const asOfSeq = await getMaxSyncSeq(db);
-    await send(connectionId, new WsMessage({ type: WsMessageTypes.snapshotResponse, payload: { snapshot, asOfSeq } }));
+    await send(
+      connectionId,
+      new WsMessage({
+        type: WsMessageTypes.snapshotResponse,
+        payload: { snapshot, asOfSeq, mode: first ? "full" : "refresh" },
+        correlationId: request?.correlationId,
+      }),
+    );
   }
+
+  // Empreintes du catalogue à la dernière vérification : sert à détecter qu'il a changé sur le Maître.
+  let lastCatalogHashes: Record<string, string> | null = null;
 
   // Événement reçu d'un appareil relié : validé et appliqué atomiquement, puis
   // consigné et rediffusé. Un refus est TOUJOURS signalé à l'émetteur
@@ -123,7 +136,7 @@ export function createMasterProtocol(deps: MasterProtocolDeps) {
     const event = message.payload.event;
     const worker = workers.get(connectionId);
     try {
-      if (!isSyncEvent(event)) throw new Error("événement de synchronisation invalide");
+      if (!isSyncEvent(event)) throw new Error(t("coreErrors.network.invalidSyncEvent"));
       // Le responsable n'est reconnu que si le Maître a lui-même vérifié son PIN pour cet appareil.
       const deviceId = worker?.deviceId ?? connectionId;
       const approverId = grants.check(event.grantId, event.approverId, deviceId) ? (event.approverId as number) : null;
@@ -132,7 +145,7 @@ export function createMasterProtocol(deps: MasterProtocolDeps) {
       // L'autorisation ne sert qu'à la validation : on ne la consigne pas ni ne la rediffuse.
       const { grantId: _grantId, ...loggable } = event;
       const seq = await appendToSyncLog(db, loggable, deviceId);
-      await send(connectionId, new WsMessage({ type: WsMessageTypes.syncAck, correlationId: message.correlationId }));
+      await send(connectionId, new WsMessage({ type: WsMessageTypes.syncAck, payload: { seq }, correlationId: message.correlationId }));
       await broadcast(loggable, seq, connectionId);
     } catch (err) {
       const reason = errorMessage(err);
@@ -160,7 +173,7 @@ export function createMasterProtocol(deps: MasterProtocolDeps) {
   async function handlePinChallenge(connectionId: string, message: WsMessage) {
     try {
       const approverId = Number(message.payload.approverId);
-      if (!Number.isInteger(approverId)) throw new Error("responsable invalide");
+      if (!Number.isInteger(approverId)) throw new Error(t("coreErrors.network.invalidApprover"));
       const kind = message.payload.kind === "approval" ? "approval" : "unlock";
       const challenge = await issuePinChallenge(db, approverId, Date.now(), kind);
       await send(connectionId, new WsMessage({ type: WsMessageTypes.pinChallengeResult, payload: { ok: true, challenge }, correlationId: message.correlationId }));
@@ -172,7 +185,7 @@ export function createMasterProtocol(deps: MasterProtocolDeps) {
   async function handlePinVerify(connectionId: string, message: WsMessage) {
     const { approverId, nonce, proof } = message.payload;
     try {
-      if (!Number.isInteger(approverId) || typeof nonce !== "string" || typeof proof !== "string") throw new Error("demande invalide");
+      if (!Number.isInteger(approverId) || typeof nonce !== "string" || typeof proof !== "string") throw new Error(t("coreErrors.network.invalidRequest"));
       const kind = pinChallengeKind(nonce);
       const ok = await verifyPinProof(db, approverId as number, nonce, PIN_VERIFY_CONTEXT, proof);
       // Un PIN d'approbation vérifié donne droit à une autorisation à usage unique pour cet appareil.
@@ -188,7 +201,7 @@ export function createMasterProtocol(deps: MasterProtocolDeps) {
     const { requestSyncId, approverId, approve, note, nonce, proof } = message.payload;
     try {
       if (typeof requestSyncId !== "string" || !Number.isInteger(approverId) || typeof approve !== "boolean" || typeof nonce !== "string" || typeof proof !== "string") {
-        throw new Error("demande invalide");
+        throw new Error(t("coreErrors.network.invalidRequest"));
       }
       await decideApprovalRequestRemote(db, {
         requestSyncId,
@@ -224,8 +237,15 @@ export function createMasterProtocol(deps: MasterProtocolDeps) {
       switch (message.type) {
         case WsMessageTypes.sync:
           return enqueue(() => handleSync(connectionId, message));
-        case WsMessageTypes.snapshotRequest:
-          return enqueue(() => sendSnapshot(connectionId));
+        case WsMessageTypes.snapshotRequest: {
+          const known = message.payload.knownHashes;
+          return enqueue(() =>
+            sendSnapshot(connectionId, {
+              knownHashes: typeof known === "object" && known !== null ? (known as Record<string, string>) : {},
+              correlationId: message.correlationId,
+            }),
+          );
+        }
         case WsMessageTypes.pinChallenge:
           return enqueue(() => handlePinChallenge(connectionId, message));
         case WsMessageTypes.pinVerify:
@@ -255,6 +275,26 @@ export function createMasterProtocol(deps: MasterProtocolDeps) {
     },
 
     getWorkers: (): ConnectedWorker[] => [...workers.values()],
+
+    /**
+     * À appeler de temps en temps (ex. chaque minute) : si le catalogue du Maître a changé depuis la
+     * dernière vérification, prévient chaque appareil relié, qui redemande l'état dès qu'il est au calme.
+     * Renvoie vrai s'il y a eu un changement.
+     */
+    checkCatalogChanged(): Promise<boolean> {
+      let changed = false;
+      return enqueue(async () => {
+        const snapshot = await buildCatalogSnapshot(db, { knownHashes: lastCatalogHashes ?? {} });
+        const previous = lastCatalogHashes;
+        lastCatalogHashes = snapshot.hashes;
+        // Première vérification : on mémorise seulement (les appareils demandent leur état à la connexion).
+        if (previous === null) return;
+        if (JSON.stringify(previous) === JSON.stringify(snapshot.hashes)) return;
+        changed = true;
+        const notice = new WsMessage({ type: WsMessageTypes.catalogChanged });
+        await Promise.all([...workers.keys()].map((id) => send(id, notice)));
+      }).then(() => changed);
+    },
 
     /** Résolu quand tout ce qui était en cours est terminé (tests). */
     idle: (): Promise<void> => queue,

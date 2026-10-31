@@ -21,6 +21,7 @@ import {
 } from "./lockout";
 import { assertValidPin, isRemotePinHash } from "./pin";
 import { getRemotePinVerifier } from "./remotePin";
+import { assertMasterOnly } from "../domain/relayGuard";
 
 export interface AuthenticatedUser {
   id: number;
@@ -114,6 +115,7 @@ export async function createUser(
   },
   actingPermissions: PermissionSet,
 ): Promise<AuthenticatedUser> {
+  assertMasterOnly("catalog");
   // Aucune vérification si la base ne contient encore aucun compte — c'est
   // le tout premier compte (Admin) créé par SetupAdminScreen, avant qu'une
   // session ne puisse exister.
@@ -268,6 +270,7 @@ export async function setPin(
   pin: string,
   actingPermissions: PermissionSet,
 ): Promise<void> {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_users");
   assertValidPin(pin);
   const pinHash = await hashSecret(pin);
@@ -321,6 +324,7 @@ export async function setUserActive(
   actingPermissions: PermissionSet,
   updatedBy?: number,
 ): Promise<void> {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_users");
   await db.update(schema.users).set({ isActive }).where(eq(schema.users.id, userId)).run();
 
@@ -349,6 +353,7 @@ export async function changeOwnPassword(
   currentPassword: string,
   newPassword: string,
 ): Promise<void> {
+  assertMasterOnly("catalog");
   const user = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get();
   if (!user?.passwordHash) {
     throw new Error(t("coreErrors.auth.accountNotFound"));
@@ -409,6 +414,7 @@ export async function updateUser(
   actingPermissions: PermissionSet,
   updatedBy?: number,
 ): Promise<AuthenticatedUser> {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_users");
 
   const updates: Partial<typeof schema.users.$inferInsert> = {};

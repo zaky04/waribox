@@ -7,6 +7,7 @@ import { lockoutSecondsForAttempts, remainingLockSeconds } from "../auth/lockout
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { logAction } from "./AuditService";
 import { checkMaintenanceCode } from "./maintenanceCodeCheck";
+import { assertMasterOnly } from "../domain/relayGuard";
 
 // Code du mode focus : il sert uniquement à quitter le plein écran sur PC et
 // tablette. C'est un secret à part, ni le code de maintenance (qui ouvre la
@@ -76,6 +77,7 @@ export async function verifyFocusCode(db: Database, code: string): Promise<boole
 }
 
 export async function setFocusCode(db: Database, input: SetFocusCodeInput): Promise<void> {
+  assertMasterOnly("catalog");
   requirePermission(input.actingPermissions, "manage_settings");
   if (input.newCode.length < FOCUS_CODE_MIN_LENGTH) {
     throw new Error(t("coreErrors.focus.codeTooShort", { min: FOCUS_CODE_MIN_LENGTH }));

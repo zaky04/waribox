@@ -112,15 +112,15 @@ describe("poignée de main et instantané", () => {
 
   it("l'instantané ne contient AUCUN hash de PIN ni code de maintenance", async () => {
     const snapshot = lastReply(WsMessageTypes.snapshotResponse)!.payload.snapshot as CatalogSnapshot;
-    expect(snapshot.users.length).toBeGreaterThanOrEqual(3);
-    for (const u of snapshot.users) expect(u.pinHash === null || u.pinHash === REMOTE_PIN_HASH).toBe(true);
+    expect(snapshot.users!.length).toBeGreaterThanOrEqual(3);
+    for (const u of snapshot.users!) expect(u.pinHash === null || u.pinHash === REMOTE_PIN_HASH).toBe(true);
     // Aucun des vrais hash de PIN du Maître n'apparaît nulle part dans ce qui part sur le réseau.
     const serialized = JSON.stringify(snapshot);
     const realPinHashes = (await asMaster().select({ pinHash: schema.users.pinHash }).from(schema.users)).map((r) => r.pinHash!);
     expect(realPinHashes.length).toBeGreaterThanOrEqual(3);
     for (const hash of realPinHashes) expect(serialized).not.toContain(hash);
-    expect(snapshot.users.every((u) => u.passwordHash === null || u.passwordHash.startsWith("$argon2id$"))).toBe(true);
-    expect(snapshot.users.filter((u) => u.pinHash).length).toBe(3);
+    expect(snapshot.users!.every((u) => u.passwordHash === null || u.passwordHash.startsWith("$argon2id$"))).toBe(true);
+    expect(snapshot.users!.filter((u) => u.pinHash).length).toBe(3);
     expect(snapshot.businessSettings).toBeDefined();
     expect(snapshot.businessSettings).not.toHaveProperty("maintenanceCodeHash");
     expect(serialized).not.toContain("SECRET-MAINTENANCE-HASH");

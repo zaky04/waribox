@@ -1,8 +1,7 @@
 import {
-  applyCatalogSnapshot,
   attachApprovalGrant,
-  applyRemoteSyncEvent,
   createWorkerRpc,
+  createWorkerSync,
   discardRejectedOutbox,
   enqueueOutbox,
   getLastAppliedSeq,
@@ -12,14 +11,11 @@ import {
   markOutboxSent,
   onSyncEvent,
   retryRejectedOutbox,
-  setLastAppliedSeq,
   setRemotePinVerifier,
-  type CatalogSnapshot,
   type RejectedOutboxEntry,
   type SyncEvent,
 } from "@gestion-boutique/core";
 import type { Database } from "@gestion-boutique/database";
-import { withTransaction } from "@gestion-boutique/database";
 import { MasterPairingPayload, WsMessage, WsMessageTypes } from "@gestion-boutique/network";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -105,6 +101,21 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
   useEffect(() => {
     if (enabled) void refreshRejected();
   }, [enabled, refreshRejected]);
+  // Réception de ce que le Maître envoie (événements, catalogue, stock) : voir workerSync.ts.
+  const sync = useMemo(
+    () =>
+      createWorkerSync({
+        db,
+        send: (message) => {
+          const socket = socketRef.current;
+          if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+          socket.send(message.encode());
+          return true;
+        },
+        onApplyError: setApplyError,
+      }),
+    [db],
+  );
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // correlationId du message `sync` envoyé → id de la ligne __sync_outbox
   // correspondante, le temps d'en recevoir le `syncAck` (voir handleSyncAck).
@@ -195,6 +206,8 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
 
         // Réponse à une requête en cours (défi de PIN, décision d'approbation...).
         if (rpc.handle(message)) return;
+        // Événements, catalogue et stock envoyés par le Maître.
+        if (sync.handleMessage(message)) return;
 
         if (message.type === WsMessageTypes.helloAck) {
           clearHandshakeTimeout();
@@ -228,20 +241,6 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
               ? message.payload.message
               : t("network.worker.errors.rejected"),
           );
-        } else if (message.type === WsMessageTypes.sync) {
-          void (async () => {
-            const remoteEvent = message.payload.event as SyncEvent | undefined;
-            const seq = message.payload.seq as number | undefined;
-            if (!remoteEvent) return;
-            try {
-              await withTransaction(() => applyRemoteSyncEvent(db, remoteEvent));
-              if (typeof seq === "number") await setLastAppliedSeq(db, seq);
-              setApplyError(null);
-            } catch (err) {
-              // Ne plus rester silencieux : l'événement du Maître n'a pas pu être appliqué ici.
-              setApplyError(err instanceof Error ? err.message : String(err));
-            }
-          })();
         } else if (message.type === WsMessageTypes.syncRejected) {
           const outboxId = pendingAcksRef.current.get(message.correlationId);
           if (outboxId != null) {
@@ -255,14 +254,8 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
             pendingAcksRef.current.delete(message.correlationId);
             void markOutboxSent(db, outboxId);
           }
-        } else if (message.type === WsMessageTypes.snapshotResponse) {
-          void (async () => {
-            const snapshot = message.payload.snapshot as CatalogSnapshot | undefined;
-            const asOfSeq = message.payload.asOfSeq as number | undefined;
-            if (!snapshot) return;
-            await withTransaction(() => applyCatalogSnapshot(db, snapshot));
-            await setLastAppliedSeq(db, asOfSeq ?? 0);
-          })();
+          // Le numéro que le Maître a donné à notre événement fait partie de notre historique.
+          void sync.noteAck(message.payload.seq);
         }
       };
 
@@ -292,7 +285,7 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
         }
       };
     },
-    [db, deviceId, deviceName, flushOutbox, refreshRejected, rpc, t],
+    [db, deviceId, deviceName, flushOutbox, refreshRejected, rpc, sync, t],
   );
 
   // Toute vente/mouvement/dépense créé localement (hors ligne ou non) part
@@ -301,6 +294,8 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
   useEffect(() => {
     if (!enabled) return;
     unsubscribeLocalSyncRef.current = onSyncEvent((event) => {
+      // Synchrone : un état du Maître demandé avant cet événement serait périmé (voir workerSync.ts).
+      sync.noteLocalEvent();
       void (async () => {
         // L'autorisation du Maître pour le responsable qui a approuvé (si besoin) part avec l'événement.
         const outboxId = await enqueueOutbox(db, attachApprovalGrant(event));
@@ -315,7 +310,16 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
     return () => {
       unsubscribeLocalSyncRef.current?.();
     };
-  }, [db, enabled]);
+  }, [db, enabled, sync]);
+
+  // Tant que la connexion est ouverte : redemande régulièrement au Maître son catalogue et son stock
+  // (achats, prix, clients créés de son côté...), dès que plus rien n'attend d'être envoyé.
+  useEffect(() => {
+    if (!enabled || status !== "connected") return;
+    void sync.tick();
+    const timer = setInterval(() => void sync.tick(), 15_000);
+    return () => clearInterval(timer);
+  }, [enabled, status, sync]);
 
   const reconnect = useCallback(() => {
     if (lastPayload) connect(lastPayload);

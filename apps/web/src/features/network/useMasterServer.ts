@@ -154,6 +154,15 @@ export function useMasterServer(db: Database, masterId: string, masterName: stri
     }
   }, [masterId, masterName, t]);
 
+  // Tant que le serveur tourne : vérifie chaque minute si le catalogue a changé sur ce PC
+  // (produit, prix, client, utilisateur...) et prévient les appareils reliés, qui redemandent leur état.
+  useEffect(() => {
+    if (!running) return;
+    void protocolRef.current.checkCatalogChanged();
+    const timer = setInterval(() => void protocolRef.current.checkCatalogChanged(), 60_000);
+    return () => clearInterval(timer);
+  }, [running]);
+
   // Arrête le serveur Rust si le composant qui pilote cet écran est démonté
   // pendant qu'il tourne (navigation ailleurs) — évite un serveur fantôme
   // qui continue d'écouter sans plus aucun écran pour en montrer l'état.

@@ -3,6 +3,7 @@ import { schema } from "@gestion-boutique/database";
 import { eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
+import { assertMasterOnly } from "../domain/relayGuard";
 
 export async function listCustomers(db: Database) {
   return db.select().from(schema.customers);
@@ -48,6 +49,7 @@ export async function createCustomer(
   input: CreateCustomerInput,
   actingPermissions: PermissionSet,
 ) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_customers");
   const customer = await insertCustomer(db, input);
 
@@ -80,6 +82,7 @@ export async function updateCustomer(
   input: UpdateCustomerInput,
   actingPermissions: PermissionSet,
 ) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "edit_customers");
   const before = await db.select({ creditLimit: schema.customers.creditLimit }).from(schema.customers).where(eq(schema.customers.id, id)).get();
   const customer = await db

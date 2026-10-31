@@ -5,6 +5,7 @@ import { asc, eq } from "drizzle-orm";
 import { roundMoney } from "../domain/money";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { logAction } from "./AuditService";
+import { assertMasterOnly } from "../domain/relayGuard";
 
 // Tarifs de services — FACULTATIF. Le propriétaire y enregistre ses services
 // courants pour que le prix soit contrôlé au comptoir (un prix sous le tarif ou
@@ -22,6 +23,7 @@ export async function createServiceTariff(
   input: { name: string; price: number; userId?: number },
   actingPermissions: PermissionSet,
 ) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_settings");
   const name = input.name.trim();
   if (!name) throw new Error(t("coreErrors.serviceTariffs.nameRequired"));
@@ -48,6 +50,7 @@ export async function updateServiceTariff(
   userId: number | undefined,
   actingPermissions: PermissionSet,
 ) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_settings");
   const before = await db.select().from(schema.serviceTariffs).where(eq(schema.serviceTariffs.id, id)).get();
   if (!before) throw new Error(t("coreErrors.serviceTariffs.notFound"));

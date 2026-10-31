@@ -115,3 +115,23 @@ export async function setLastAppliedSeq(db: Database, seq: number): Promise<void
     await db.insert(schema.syncState).values({ key: LAST_APPLIED_SEQ_KEY, value: String(seq) }).run();
   }
 }
+
+const CATALOG_HASHES_KEY = "catalogHashes";
+
+/** Appareil relié : empreintes des tables reçues du Maître (vide = rien reçu encore). */
+export async function getCatalogHashes(db: Database): Promise<Record<string, string>> {
+  const row = await db.select().from(schema.syncState).where(eq(schema.syncState.key, CATALOG_HASHES_KEY)).get();
+  if (!row) return {};
+  try {
+    return JSON.parse(row.value) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+export async function setCatalogHashes(db: Database, hashes: Record<string, string>): Promise<void> {
+  const value = JSON.stringify(hashes);
+  const existing = await db.select().from(schema.syncState).where(eq(schema.syncState.key, CATALOG_HASHES_KEY)).get();
+  if (existing) await db.update(schema.syncState).set({ value }).where(eq(schema.syncState.key, CATALOG_HASHES_KEY)).run();
+  else await db.insert(schema.syncState).values({ key: CATALOG_HASHES_KEY, value }).run();
+}

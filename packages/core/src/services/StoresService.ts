@@ -4,6 +4,7 @@ import { t } from "@gestion-boutique/i18n";
 import { asc, eq } from "drizzle-orm";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { ensureLocationsForStore } from "./StockService";
+import { assertMasterOnly } from "../domain/relayGuard";
 
 export async function listStores(db: Database) {
   return db.select().from(schema.stores).orderBy(asc(schema.stores.id));
@@ -27,6 +28,7 @@ export interface CreateStoreInput {
 }
 
 export async function createStore(db: Database, input: CreateStoreInput, actingPermissions: PermissionSet) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_settings");
   const store = await db
     .insert(schema.stores)
@@ -55,6 +57,7 @@ export async function updateStore(
   input: UpdateStoreInput,
   actingPermissions: PermissionSet,
 ) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_settings");
   return db.update(schema.stores).set(input).where(eq(schema.stores.id, storeId)).returning().get();
 }

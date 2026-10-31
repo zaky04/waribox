@@ -1,3 +1,4 @@
+import { setRelayDevice } from "@gestion-boutique/core";
 import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
@@ -26,6 +27,13 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
 
   const master = useMasterServer(db, deviceId, deviceName.trim() || t("network.defaultMasterName"));
   const worker = useWorkerConnection(db, deviceId, deviceName.trim() || t("network.defaultWorkerName"), role === "worker");
+
+  // Un appareil relié ne modifie ni le catalogue ni les opérations non partagées : le Maître fait foi
+  // (contrôle côté service, voir domain/relayGuard.ts).
+  useEffect(() => {
+    setRelayDevice(role === "worker");
+    return () => setRelayDevice(false);
+  }, [role]);
 
   // Maître qui tournait avant la fermeture de l'application : redémarre tout seul.
   const autoStartedRef = useRef(false);

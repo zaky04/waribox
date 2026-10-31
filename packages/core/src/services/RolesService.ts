@@ -13,6 +13,7 @@ import {
   type PermissionSet,
 } from "../domain/permissions";
 import { logAction } from "./AuditService";
+import { assertMasterOnly } from "../domain/relayGuard";
 
 // Idempotent : crée les rôles par défaut s'ils n'existent pas encore (par nom),
 // puis retourne l'id de chacun. Appelé au démarrage de l'app.
@@ -85,6 +86,7 @@ export interface SaveRoleInput {
 }
 
 export async function createRole(db: Database, input: SaveRoleInput, actingPermissions: PermissionSet) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_users");
   const name = input.name.trim();
   if (!name) throw new Error(t("coreErrors.roles.nameRequired"));
@@ -106,6 +108,7 @@ export async function updateRolePermissions(
   input: { permissions: PermissionSet; userId?: number },
   actingPermissions: PermissionSet,
 ) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_users");
   const role = await db.select().from(schema.roles).where(eq(schema.roles.id, roleId)).get();
   if (!role) throw new Error(t("coreErrors.roles.notFound"));

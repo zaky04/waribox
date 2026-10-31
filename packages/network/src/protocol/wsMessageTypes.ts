@@ -31,10 +31,16 @@ export const WsMessageTypes = {
   sync: "sync",
   /** Accusé de réception d'un `sync` — référence son correlationId. */
   syncAck: "syncAck",
-  /** Demande du Worker, une seule fois à sa toute première connexion (aucun `lastSyncSeq` connu). */
+  /**
+   * Worker → Maître : demande l'état à jour (catalogue + soldes de stock). Porte les empreintes des
+   * tables déjà reçues (`knownHashes`) pour ne recevoir que ce qui a changé. Envoyé à la connexion,
+   * périodiquement, et à la réception d'un `catalogChanged`.
+   */
   snapshotRequest: "snapshotRequest",
-  /** Réponse du Master à `snapshotRequest` — porte un `CatalogSnapshot`. */
+  /** Maître → Worker : réponse à `snapshotRequest` (ou instantané complet au premier appairage) — porte un `CatalogSnapshot`. */
   snapshotResponse: "snapshotResponse",
+  /** Maître → Worker : le catalogue a changé, redemande l'état dès que tu es au calme. */
+  catalogChanged: "catalogChanged",
   /**
    * Le Maître refuse un `sync` (validation échouée) — référence son correlationId.
    * Sans ce message, l'appareil relié renvoyait indéfiniment un événement que

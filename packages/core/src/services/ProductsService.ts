@@ -6,6 +6,7 @@ import { logAction } from "./AuditService";
 import { requireApproval, type ApprovalInput } from "./ApprovalService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { assertValidAmount, assertValidTaxRate } from "../domain/validation";
+import { assertMasterOnly } from "../domain/relayGuard";
 
 export interface CategoryInput {
   name: string;
@@ -18,6 +19,7 @@ export async function listCategories(db: Database) {
 }
 
 export async function createCategory(db: Database, input: CategoryInput, actingPermissions: PermissionSet) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_products");
   const category = await db
     .insert(schema.categories)
@@ -47,6 +49,7 @@ export async function installStarterCategories(
   userId: number | undefined,
   actingPermissions: PermissionSet,
 ): Promise<string[]> {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_products");
   const existing = new Set((await listCategories(db)).map((c) => c.name.trim().toLowerCase()));
   const created: string[] = [];
@@ -97,6 +100,7 @@ async function createProductUnsafe(
   input: ProductInput,
   actingPermissions: PermissionSet,
 ): Promise<ProductWithVariant> {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_products");
   assertValidAmount(input.purchasePrice, { allowZero: true });
   assertValidAmount(input.salePrice, { allowZero: true });
@@ -175,6 +179,7 @@ export async function updateProduct(
   input: UpdateProductInput,
   actingPermissions: PermissionSet,
 ) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_products");
   if (input.salePrice !== undefined) assertValidAmount(input.salePrice, { allowZero: true });
   if (input.purchasePrice !== undefined) assertValidAmount(input.purchasePrice, { allowZero: true });
@@ -242,6 +247,7 @@ export async function updateVariantBarcode(
   barcode: string | null,
   actingPermissions: PermissionSet,
 ) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_products");
   return db
     .update(schema.productVariants)
@@ -264,6 +270,7 @@ export interface VariantInput {
 }
 
 export async function createVariant(db: Database, input: VariantInput, actingPermissions: PermissionSet) {
+  assertMasterOnly("catalog");
   requirePermission(actingPermissions, "manage_products");
   if (input.parentVariantId != null || input.unitsPerParent != null) {
     if (input.parentVariantId == null || !(input.unitsPerParent! > 0)) {

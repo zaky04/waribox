@@ -18,6 +18,7 @@ import {
   type StockTransferCreatedEventPayload,
 } from "../sync/syncEvents";
 import { localDayEndUtc, localDayStartUtc } from "../domain/localDay";
+import { assertMasterOnly } from "../domain/relayGuard";
 
 // Idempotent : crée les emplacements par défaut (Réserve / Surface de vente)
 // d'une boutique s'ils n'existent pas encore, puis retourne leurs ids. Le
@@ -882,6 +883,7 @@ export async function writeOffExpiredBatches(
   input: WriteOffExpiredInput,
   actingPermissions: PermissionSet,
 ): Promise<{ batches: number; units: number; value: number }> {
+  assertMasterOnly("operation");
   requirePermission(actingPermissions, "record_stock_losses");
   const all = await listExpiredBatches(db, input.storeId);
   const targets = all.filter((e) => e.remaining > 0 && (!input.batchIds || input.batchIds.includes(e.batch.id)));

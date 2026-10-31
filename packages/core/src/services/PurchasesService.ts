@@ -11,6 +11,7 @@ import { checkApprovalDeferrable, createApprovalRequest, verifyApprovalInput, ty
 import { getSettings } from "./SettingsService";
 import { isExpired, todayISO } from "../domain/expiry";
 import { createBatch, listLocations, recordMovement } from "./StockService";
+import { assertMasterOnly } from "../domain/relayGuard";
 
 const nextPurchaseNumber = (db: Database) => nextDocumentNumber(db, schema.purchases, "ACH");
 
@@ -111,6 +112,7 @@ export async function createPurchase(
   input: CreatePurchaseInput,
   actingPermissions: PermissionSet,
 ) {
+  assertMasterOnly("operation");
   requirePermission(actingPermissions, "manage_purchases");
   if (input.items.length === 0) {
     throw new Error(t("coreErrors.purchases.itemRequired"));
@@ -293,6 +295,7 @@ export interface ReceivePurchaseInput {
 // les quantités RÉELLEMENT comptées. L'écart avec la facture (manquant à
 // réclamer au fournisseur) est valorisé et tracé, pas absorbé.
 export async function receivePurchase(db: Database, input: ReceivePurchaseInput, actingPermissions: PermissionSet) {
+  assertMasterOnly("operation");
   requirePermission(actingPermissions, "receive_purchases");
   const purchase = await db.select().from(schema.purchases).where(eq(schema.purchases.id, input.purchaseId)).get();
   if (!purchase) throw new Error(t("coreErrors.purchases.notFound"));
