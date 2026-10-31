@@ -18,6 +18,10 @@ function getDb() {
       const sqlite3 = await sqlite3InitModule();
       const poolUtil = await sqlite3.installOpfsSAHPoolVfs({ name: "gestion-boutique-vfs" });
       const db = new poolUtil.OpfsSAHPoolDb(DB_FILENAME);
+      // SQLite n'applique PAS les clés étrangères par défaut : les ~40 `REFERENCES` du schéma n'étaient que
+      // documentaires (une ligne pouvait pointer vers un parent inexistant). Activé à chaque ouverture — le
+      // réglage est par connexion. Les tests du cœur tournent déjà avec les clés étrangères actives.
+      db.exec("PRAGMA foreign_keys = ON");
       return { db, poolUtil };
     })();
   }

@@ -64,7 +64,7 @@ export async function openSession(
 
 // Montant théoriquement présent dans le tiroir : le fond de caisse d'ouverture
 // plus les encaissements espèces de la session (ventes et tickets de service, moins remboursements),
-// réglés par ce même caissier depuis l'ouverture. Ignore les paiements par
+// moins les achats et dépenses payés en espèces, par ce même caissier depuis l'ouverture. Ignore les paiements par
 // carte/mobile money — seul le liquide passe physiquement par le tiroir.
 export async function getExpectedCashAmount(
   db: Database,
@@ -100,6 +100,29 @@ export async function getExpectedCashAmount(
     if (payment.referenceType === "sale" || payment.referenceType === "service_order") net += payment.amount;
     else if (payment.referenceType === "refund") net -= payment.amount;
   }
+
+  // Espèces SORTIES du tiroir par ce caissier depuis l'ouverture : achats payés comptant et dépenses payées
+  // en espèces. Sans cela, une dépense de 5 000 prise dans le tiroir apparaissait comme un « manque » de
+  // 5 000 à la clôture (ou, pire, un vrai manque était noyé dans l'écart). Les dépenses portent une date
+  // d'effet (modifiable, paiement miroir daté à midi) : c'est leur heure de SAISIE qui compte ici.
+  // (Les règlements de dettes fournisseurs n'ont pas de mode de paiement enregistré : non comptés.)
+  for (const payment of cashPayments) {
+    if (payment.referenceType === "purchase") net -= payment.amount;
+  }
+  const expensePayments = await db
+    .select({ amount: schema.payments.amount, enteredAt: schema.expenses.createdAt })
+    .from(schema.payments)
+    .innerJoin(schema.expenses, eq(schema.expenses.id, schema.payments.referenceId))
+    .where(
+      and(
+        eq(schema.payments.referenceType, "expense"),
+        eq(schema.payments.method, "cash"),
+        eq(schema.payments.receivedBy, session.userId),
+        gte(schema.expenses.createdAt, session.openedAt),
+        ...(session.storeId != null ? [eq(schema.payments.storeId, session.storeId)] : []),
+      ),
+    );
+  for (const e of expensePayments) net -= e.amount;
 
   return session.openingAmount + net;
 }

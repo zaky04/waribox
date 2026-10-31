@@ -95,6 +95,17 @@ function ensureBootstrapped(): Promise<void> {
       }
 
       await runMigrations();
+
+      // Les clés étrangères sont actives (voir sahpool-worker.js) mais n'étaient pas appliquées avant : une base
+      // existante peut contenir d'anciennes lignes orphelines. Elles restent lisibles ; on le signale dans la
+      // console pour le support, sans jamais bloquer le démarrage.
+      try {
+        const check = await callWorker("exec", { sql: "PRAGMA foreign_key_check" });
+        const orphans = check.resultRows?.length ?? 0;
+        if (orphans > 0) console.warn(`[base] ${orphans} ligne(s) orpheline(s) héritée(s) d'avant l'activation des clés étrangères`);
+      } catch {
+        // diagnostic seulement
+      }
     })();
     bootstrapByBackend.set(key, bootstrapPromise);
   }
@@ -440,6 +451,26 @@ export const MIGRATIONS: Migration[] = [
       "CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at)",
       "CREATE INDEX IF NOT EXISTS idx_customer_credits_sale ON customer_credits(sale_id)",
     ],
+  },
+  // Identité universelle (sync_id) des clients et des lots créés AVANT le mode réseau
+  // (migration 3) : sans elle, une vente à un tel client partait sans client (la créance
+  // s'évaporait côté récepteur) et un mouvement de stock partait sans son lot (FEFO et coût
+  // perdus). Les nouvelles lignes reçoivent déjà un sync_id à la création.
+  {
+    id: 21,
+    statements: [
+      "UPDATE customers SET sync_id = lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))) WHERE sync_id IS NULL",
+      "UPDATE stock_batches SET sync_id = lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))) WHERE sync_id IS NULL",
+    ],
+  },
+  // Seuil d'approbation des remboursements : c'était le seul geste sortant (avec le crédit) sans contrôle par
+  // défaut, alors que remise, dépense, stock, points, ticket, prix et paiement sont à 0 (tout contrôlé). Un
+  // remboursement en espèces est une sortie d'argent comme une dépense : il suit la même règle. Le seuil de
+  // crédit reste vide VOLONTAIREMENT — les ventes à crédit sont routinières et déjà bornées par le plafond de
+  // crédit du client. Un propriétaire peut vider ou relever ce seuil (Configuration → Contrôles de gestion).
+  {
+    id: 22,
+    statements: ["UPDATE business_settings SET approval_refund_threshold = 0 WHERE approval_refund_threshold IS NULL"],
   },
 ];
 
