@@ -7,11 +7,15 @@
   "types": "./src/index.ts",
   "dependencies": {
     "@gestion-boutique/i18n": "workspace:*",
-    "jspdf": "^4.2.1",
-    "xlsx": "^0.18.5"
+    "jspdf": "^4.2.1"
   },
   "devDependencies": {
     "@gestion-boutique/config": "workspace:*",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "xlsx": "^0.18.5",
+    "vitest": "^2.1.8"
+  },
+  "scripts": {
+    "test": "vitest run"
   }
 }

@@ -254,9 +254,6 @@ importers:
       jspdf:
         specifier: ^4.2.1
         version: 4.2.1
-      xlsx:
-        specifier: ^0.18.5
-        version: 0.18.5
     devDependencies:
       '@gestion-boutique/config':
         specifier: workspace:*
@@ -264,6 +261,12 @@ importers:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)(terser@5.49.0)
+      xlsx:
+        specifier: ^0.18.5
+        version: 0.18.5
 
   packages/sync:
     dependencies:
