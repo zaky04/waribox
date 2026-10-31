@@ -24,6 +24,15 @@ export const products = sqliteTable("products", {
   lowStockThreshold: integer("low_stock_threshold").notNull().default(5),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  // Fiche médicament (pack Pharmacie) — tous facultatifs. La DCI (dénomination
+  // commune internationale = principe actif) + le dosage servent à proposer un
+  // équivalent quand un produit est en rupture (voir findEquivalents).
+  dci: text("dci"),
+  dosage: text("dosage"), // ex: "500 mg"
+  dosageForm: text("dosage_form"), // comprimé, sirop, injectable...
+  laboratory: text("laboratory"),
+  // Délivrance sur ordonnance : la vente exige alors une référence d'ordonnance.
+  requiresPrescription: integer("requires_prescription", { mode: "boolean" }).notNull().default(false),
 });
 
 export const productVariants = sqliteTable("product_variants", {
@@ -37,4 +46,9 @@ export const productVariants = sqliteTable("product_variants", {
   attributes: text("attributes"),
   priceOverride: real("price_override"),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  // Présentation conditionnée : une variante « plaquette » pointe vers sa variante
+  // « boîte » (même produit) et le nombre d'unités qu'une boîte contient — voir
+  // StockService.breakDownPack (action « Détailler »). NULL = pas de lien.
+  parentVariantId: integer("parent_variant_id"),
+  unitsPerParent: real("units_per_parent"),
 });

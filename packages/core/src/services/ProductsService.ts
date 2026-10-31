@@ -1,9 +1,11 @@
 import type { Database } from "@gestion-boutique/database";
-import { schema } from "@gestion-boutique/database";
+import { schema, withTransaction } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
 import { eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
+import { requireApproval, type ApprovalInput } from "./ApprovalService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
+import { assertValidAmount, assertValidTaxRate } from "../domain/validation";
 
 export interface CategoryInput {
   name: string;
@@ -36,6 +38,28 @@ export async function createCategory(db: Database, input: CategoryInput, actingP
   return category;
 }
 
+// Crée les catégories proposées d'un secteur (ex. pharmacie) qui n'existent pas
+// encore — comparaison sans casse ni espaces superflus, donc relancer l'action ne
+// crée jamais de doublon. Retourne les noms réellement créés.
+export async function installStarterCategories(
+  db: Database,
+  names: string[],
+  userId: number | undefined,
+  actingPermissions: PermissionSet,
+): Promise<string[]> {
+  requirePermission(actingPermissions, "manage_products");
+  const existing = new Set((await listCategories(db)).map((c) => c.name.trim().toLowerCase()));
+  const created: string[] = [];
+  for (const raw of names) {
+    const name = raw.trim();
+    if (!name || existing.has(name.toLowerCase())) continue;
+    await createCategory(db, { name, createdBy: userId }, actingPermissions);
+    existing.add(name.toLowerCase());
+    created.push(name);
+  }
+  return created;
+}
+
 export interface ProductInput {
   name: string;
   categoryId?: number | null;
@@ -47,6 +71,18 @@ export interface ProductInput {
   trackExpiry?: boolean;
   barcode?: string | null;
   createdBy?: number;
+  // Fiche médicament (pack Pharmacie) — tous facultatifs.
+  dci?: string | null;
+  dosage?: string | null;
+  dosageForm?: string | null;
+  laboratory?: string | null;
+  requiresPrescription?: boolean;
+}
+
+// Texte facultatif : vide ou espaces → NULL (jamais une chaîne vide en base).
+function cleanText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 export interface ProductWithVariant {
@@ -56,12 +92,15 @@ export interface ProductWithVariant {
 
 // Chaque produit possède toujours au moins une variante "de base" (attributes: {})
 // pour rester vendable même sans déclinaisons (taille/couleur, etc.).
-export async function createProduct(
+async function createProductUnsafe(
   db: Database,
   input: ProductInput,
   actingPermissions: PermissionSet,
 ): Promise<ProductWithVariant> {
   requirePermission(actingPermissions, "manage_products");
+  assertValidAmount(input.purchasePrice, { allowZero: true });
+  assertValidAmount(input.salePrice, { allowZero: true });
+  assertValidTaxRate(input.taxRate);
   const product = await db
     .insert(schema.products)
     .values({
@@ -74,6 +113,11 @@ export async function createProduct(
       salePrice: input.salePrice,
       taxRate: input.taxRate ?? null,
       lowStockThreshold: input.lowStockThreshold ?? 5,
+      dci: cleanText(input.dci),
+      dosage: cleanText(input.dosage),
+      dosageForm: cleanText(input.dosageForm),
+      laboratory: cleanText(input.laboratory),
+      requiresPrescription: input.requiresPrescription ?? false,
     })
     .returning()
     .get();
@@ -111,6 +155,18 @@ export interface UpdateProductInput {
   lowStockThreshold?: number;
   trackExpiry?: boolean;
   updatedBy?: number;
+  approval?: ApprovalInput;
+  dci?: string | null;
+  dosage?: string | null;
+  dosageForm?: string | null;
+  laboratory?: string | null;
+  requiresPrescription?: boolean;
+}
+
+// Produit + variante par défaut + trace d'audit : tout ou rien (un produit sans
+// variante n'est ni vendable ni modifiable depuis l'écran).
+export function createProduct(db: Database, input: ProductInput, actingPermissions: PermissionSet): Promise<ProductWithVariant> {
+  return withTransaction(() => createProductUnsafe(db, input, actingPermissions));
 }
 
 export async function updateProduct(
@@ -120,6 +176,19 @@ export async function updateProduct(
   actingPermissions: PermissionSet,
 ) {
   requirePermission(actingPermissions, "manage_products");
+  if (input.salePrice !== undefined) assertValidAmount(input.salePrice, { allowZero: true });
+  if (input.purchasePrice !== undefined) assertValidAmount(input.purchasePrice, { allowZero: true });
+  assertValidTaxRate(input.taxRate);
+  const before = await db.select().from(schema.products).where(eq(schema.products.id, productId)).get();
+  // Changer un prix (vente ou achat) : droit dédié et, au-delà du seuil, approbation.
+  let priceApprovedBy: number | null = null;
+  const saleDelta = input.salePrice !== undefined && before ? Math.abs(input.salePrice - before.salePrice) : 0;
+  const purchaseDelta = input.purchasePrice !== undefined && before ? Math.abs(input.purchasePrice - before.purchasePrice) : 0;
+  const priceDelta = Math.max(saleDelta, purchaseDelta);
+  if (priceDelta > 0.001) {
+    requirePermission(actingPermissions, "edit_product_prices");
+    priceApprovedBy = await requireApproval(db, { kind: "price", amount: priceDelta, userId: input.updatedBy, actingPermissions, approval: input.approval });
+  }
   const updates: Partial<typeof schema.products.$inferInsert> = {};
   if (input.name !== undefined) updates.name = input.name;
   if (input.categoryId !== undefined) updates.categoryId = input.categoryId;
@@ -129,6 +198,11 @@ export async function updateProduct(
   if (input.taxRate !== undefined) updates.taxRate = input.taxRate;
   if (input.lowStockThreshold !== undefined) updates.lowStockThreshold = input.lowStockThreshold;
   if (input.trackExpiry !== undefined) updates.trackExpiry = input.trackExpiry;
+  if (input.dci !== undefined) updates.dci = cleanText(input.dci);
+  if (input.dosage !== undefined) updates.dosage = cleanText(input.dosage);
+  if (input.dosageForm !== undefined) updates.dosageForm = cleanText(input.dosageForm);
+  if (input.laboratory !== undefined) updates.laboratory = cleanText(input.laboratory);
+  if (input.requiresPrescription !== undefined) updates.requiresPrescription = input.requiresPrescription;
 
   const updated = await db
     .update(schema.products)
@@ -146,7 +220,14 @@ export async function updateProduct(
       action: "update_product",
       entity: "product",
       entityId: productId,
-      metadata: { name: updated.name, salePrice: updated.salePrice },
+      // Uniquement les champs réellement modifiés, avec l'ancienne ET la nouvelle
+      // valeur : un changement de prix silencieux est un classique de fraude.
+      metadata: {
+        name: updated.name,
+        salePrice: updated.salePrice,
+        ...(priceApprovedBy != null ? { approvedBy: priceApprovedBy } : {}),
+        changes: diffFields(before, updated, ["name", "categoryId", "unit", "purchasePrice", "salePrice", "taxRate", "lowStockThreshold", "trackExpiry", "dci", "dosage", "dosageForm", "laboratory", "requiresPrescription"]),
+      },
     });
   }
 
@@ -176,10 +257,29 @@ export interface VariantInput {
   sku?: string;
   barcode?: string;
   priceOverride?: number;
+  // Présentation conditionnée (ex. « plaquette » contenue dans une « boîte ») :
+  // variante parente du MÊME produit et nombre d'unités qu'elle contient.
+  parentVariantId?: number;
+  unitsPerParent?: number;
 }
 
 export async function createVariant(db: Database, input: VariantInput, actingPermissions: PermissionSet) {
   requirePermission(actingPermissions, "manage_products");
+  if (input.parentVariantId != null || input.unitsPerParent != null) {
+    if (input.parentVariantId == null || !(input.unitsPerParent! > 0)) {
+      throw new Error(t("coreErrors.pharmacy.packInvalid"));
+    }
+    const parent = await db
+      .select()
+      .from(schema.productVariants)
+      .where(eq(schema.productVariants.id, input.parentVariantId))
+      .get();
+    // Même produit, et un seul niveau (une boîte contient des plaquettes, une
+    // plaquette ne contient rien) : pas de chaîne, donc pas de cycle possible.
+    if (!parent || parent.productId !== input.productId || parent.parentVariantId != null) {
+      throw new Error(t("coreErrors.pharmacy.packInvalid"));
+    }
+  }
   await db
     .update(schema.products)
     .set({ hasVariants: true })
@@ -194,6 +294,8 @@ export async function createVariant(db: Database, input: VariantInput, actingPer
       sku: input.sku,
       barcode: input.barcode,
       priceOverride: input.priceOverride,
+      parentVariantId: input.parentVariantId ?? null,
+      unitsPerParent: input.unitsPerParent ?? null,
     })
     .returning()
     .get();
@@ -245,4 +347,17 @@ export async function ensureVariantBarcode(db: Database, variantId: number): Pro
     .run();
 
   return barcode;
+}
+
+// Champs qui diffèrent entre deux états d'une ligne : { champ: { from, to } }.
+export function diffFields<T extends Record<string, unknown>>(
+  before: T | undefined,
+  after: T,
+  fields: (keyof T & string)[],
+): Record<string, { from: unknown; to: unknown }> {
+  const out: Record<string, { from: unknown; to: unknown }> = {};
+  for (const f of fields) {
+    if (before && before[f] !== after[f]) out[f] = { from: before[f] ?? null, to: after[f] ?? null };
+  }
+  return out;
 }

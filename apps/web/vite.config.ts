@@ -77,14 +77,14 @@ export default defineConfig({
         name: "WariBox",
         short_name: "WariBox",
         description: "Application universelle de gestion de commerce (POS offline-first)",
-        theme_color: "#0f172a",
-        background_color: "#0f172a",
+        theme_color: "#f4efe6",
+        background_color: "#f4efe6",
         display: "standalone",
         start_url: "/",
         icons: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" }],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm}"],
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm,woff2}"],
         // Le binaire WASM SQLite peut dépasser la limite par défaut de 2 Mo.
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },

@@ -9,6 +9,11 @@ export const auditLog = sqliteTable("audit_log", {
   entity: text("entity").notNull(),
   entityId: integer("entity_id"),
   metadata: text("metadata"), // JSON diff avant/après
+  // Chaîne d'intégrité : hash = SHA-256(prevHash | contenu de la ligne). Toute
+  // suppression ou modification d'une ligne casse la chaîne (voir
+  // AuditService.verifyAuditChain). NULL pour les lignes antérieures.
+  prevHash: text("prev_hash"),
+  hash: text("hash"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 

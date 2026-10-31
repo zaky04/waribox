@@ -1,0 +1,457 @@
+import {
+  applyCatalogSnapshot,
+  attachApprovalGrant,
+  applyRemoteSyncEvent,
+  createWorkerRpc,
+  discardRejectedOutbox,
+  enqueueOutbox,
+  getLastAppliedSeq,
+  listPendingOutbox,
+  listRejectedOutbox,
+  markOutboxRejected,
+  markOutboxSent,
+  onSyncEvent,
+  retryRejectedOutbox,
+  setLastAppliedSeq,
+  setRemotePinVerifier,
+  type CatalogSnapshot,
+  type RejectedOutboxEntry,
+  type SyncEvent,
+} from "@gestion-boutique/core";
+import type { Database } from "@gestion-boutique/database";
+import { withTransaction } from "@gestion-boutique/database";
+import { MasterPairingPayload, WsMessage, WsMessageTypes } from "@gestion-boutique/network";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { isTauriRuntime } from "../settings/tauriRuntime";
+import { scanForMaster } from "./lanScan";
+
+export type WorkerConnectionStatus = "idle" | "connecting" | "connected" | "error" | "disconnected";
+
+const HANDSHAKE_TIMEOUT_MS = 5000;
+
+type DiscoveryEvent =
+  | { kind: "found"; masterId: string; host: string; port: number }
+  | { kind: "lost"; masterId: string };
+
+/**
+ * Pilote la connexion sortante de ce Worker vers le Master (ouverture du
+ * WebSocket, poignée de main hello/helloAck avec le jeton de pairage) et,
+ * depuis la Phase 2 (voir CLAUDE.md), la réplication des ventes/mouvements
+ * de stock/dépenses : envoi des événements créés localement (file d'attente
+ * persistée si hors ligne), application des événements reçus du Master,
+ * instantané initial du catalogue à la toute première connexion.
+ *
+ * Fonctionne identiquement sur PWA, Tauri desktop et Tauri Android : `WebSocket`
+ * est une API standard, aucune dépendance native n'est nécessaire côté Worker
+ * (contrairement au Master, qui doit écouter un socket — impossible depuis
+ * une page web/WebView, d'où le serveur Rust côté Master).
+ */
+// Dernier Maître auquel cet appareil s'est relié avec succès : gardé sur l'appareil pour
+// se reconnecter tout seul après un redémarrage ou une coupure (comme la langue ou le thème,
+// un réglage propre à l'appareil, jamais répliqué).
+const PAIRING_STORAGE_KEY = "waribox-worker-pairing";
+const RECONNECT_DELAY_MS = 15000;
+
+function loadStoredPairing(): MasterPairingPayload | null {
+  try {
+    const raw = localStorage.getItem(PAIRING_STORAGE_KEY);
+    return raw ? MasterPairingPayload.tryDecode(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+// `enabled` : faux quand l'appareil n'est pas un Appareil relié (Solo ou Maître) — aucun
+// événement local ne doit alors être mis en file pour un Maître qui n'existe pas.
+export function useWorkerConnection(db: Database, deviceId: string, deviceName: string, enabled = true) {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<WorkerConnectionStatus>("idle");
+  const [masterName, setMasterName] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [lastPayload, setLastPayload] = useState<MasterPairingPayload | null>(() => loadStoredPairing());
+  // Refus définitif (jeton invalide) : inutile de réessayer tout seul.
+  const fatalRef = useRef(false);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  // Événements que le Maître a refusés (et pourquoi) : ils ne sont plus renvoyés
+  // tout seuls mais restent visibles jusqu'à ce que l'utilisateur les traite.
+  const [rejected, setRejected] = useState<RejectedOutboxEntry[]>([]);
+  // Un événement reçu du Maître qu'on n'a pas pu appliquer ici.
+  const [applyError, setApplyError] = useState<string | null>(null);
+
+  const socketRef = useRef<WebSocket | null>(null);
+  // Requêtes vers le Maître (vérifier un PIN, trancher une demande) : le PIN
+  // saisi ne quitte jamais l'appareil, seule une preuve liée à un défi part.
+  const rpc = useMemo(
+    () =>
+      createWorkerRpc({
+        send: (message) => {
+          const socket = socketRef.current;
+          if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+          socket.send(message.encode());
+          return true;
+        },
+      }),
+    [],
+  );
+
+  const refreshRejected = useCallback(async () => {
+    setRejected(await listRejectedOutbox(db));
+  }, [db]);
+  useEffect(() => {
+    if (enabled) void refreshRejected();
+  }, [enabled, refreshRejected]);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // correlationId du message `sync` envoyé → id de la ligne __sync_outbox
+  // correspondante, le temps d'en recevoir le `syncAck` (voir handleSyncAck).
+  const pendingAcksRef = useRef<Map<string, number>>(new Map());
+  const unsubscribeLocalSyncRef = useRef<(() => void) | null>(null);
+
+  const clearHandshakeTimeout = () => {
+    if (timeoutRef.current !== null) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  };
+
+  // Envoie tout ce qui est resté en file (créé hors ligne, ou jamais confirmé
+  // par un syncAck avant la dernière coupure) — appelé juste après un
+  // helloAck accepté.
+  const flushOutbox = useCallback(
+    async (socket: WebSocket) => {
+      const pending = await listPendingOutbox(db);
+      for (const { id, event } of pending) {
+        const message = new WsMessage({ type: WsMessageTypes.sync, payload: { event } });
+        pendingAcksRef.current.set(message.correlationId, id);
+        socket.send(message.encode());
+      }
+    },
+    [db],
+  );
+
+  const autoConnectedRef = useRef(false);
+  const connect = useCallback(
+    (payload: MasterPairingPayload) => {
+      autoConnectedRef.current = true;
+      socketRef.current?.close();
+      clearHandshakeTimeout();
+
+      setError(null);
+      setMasterName(null);
+      setLastPayload(payload);
+      fatalRef.current = false;
+      setStatus("connecting");
+
+      let socket: WebSocket;
+      try {
+        socket = new WebSocket(`ws://${payload.host}:${payload.port}`);
+      } catch {
+        setStatus("error");
+        setError(t("network.worker.errors.connectionFailed"));
+        return;
+      }
+      socketRef.current = socket;
+
+      timeoutRef.current = setTimeout(() => {
+        setStatus("error");
+        setError(t("network.worker.errors.timeout"));
+        socket.close();
+      }, HANDSHAKE_TIMEOUT_MS);
+
+      socket.onopen = () => {
+        void (async () => {
+          const lastSyncSeq = await getLastAppliedSeq(db);
+          socket.send(
+            new WsMessage({
+              type: WsMessageTypes.hello,
+              payload: {
+                deviceId,
+                deviceName,
+                role: "worker",
+                protocolVersion: 1,
+                token: payload.token,
+                // `undefined` (jamais synchronisé) déclenche l'instantané
+                // initial côté Master plutôt qu'un rattrapage — voir
+                // CLAUDE.md, mode réseau Phase 2.
+                ...(lastSyncSeq != null ? { lastSyncSeq } : {}),
+              },
+            }).encode(),
+          );
+        })();
+      };
+
+      socket.onmessage = (event) => {
+        if (typeof event.data !== "string") return;
+        let message: WsMessage;
+        try {
+          message = WsMessage.decode(event.data);
+        } catch {
+          return;
+        }
+
+        // Réponse à une requête en cours (défi de PIN, décision d'approbation...).
+        if (rpc.handle(message)) return;
+
+        if (message.type === WsMessageTypes.helloAck) {
+          clearHandshakeTimeout();
+          if (message.payload.accepted === true) {
+            setMasterName(typeof message.payload.masterName === "string" ? message.payload.masterName : null);
+            setStatus("connected");
+            try {
+              localStorage.setItem(PAIRING_STORAGE_KEY, payload.encode());
+            } catch {
+              // stockage indisponible : la reconnexion automatique après redémarrage sera simplement absente
+            }
+            void flushOutbox(socket);
+          } else {
+            fatalRef.current = true;
+            setStatus("error");
+            setError(
+              typeof message.payload.reason === "string"
+                ? message.payload.reason
+                : t("network.worker.errors.rejected"),
+            );
+            socket.close();
+          }
+        } else if (message.type === WsMessageTypes.ping) {
+          socket.send(new WsMessage({ type: WsMessageTypes.pong, correlationId: message.correlationId }).encode());
+        } else if (message.type === WsMessageTypes.error) {
+          clearHandshakeTimeout();
+          fatalRef.current = true;
+          setStatus("error");
+          setError(
+            typeof message.payload.message === "string"
+              ? message.payload.message
+              : t("network.worker.errors.rejected"),
+          );
+        } else if (message.type === WsMessageTypes.sync) {
+          void (async () => {
+            const remoteEvent = message.payload.event as SyncEvent | undefined;
+            const seq = message.payload.seq as number | undefined;
+            if (!remoteEvent) return;
+            try {
+              await withTransaction(() => applyRemoteSyncEvent(db, remoteEvent));
+              if (typeof seq === "number") await setLastAppliedSeq(db, seq);
+              setApplyError(null);
+            } catch (err) {
+              // Ne plus rester silencieux : l'événement du Maître n'a pas pu être appliqué ici.
+              setApplyError(err instanceof Error ? err.message : String(err));
+            }
+          })();
+        } else if (message.type === WsMessageTypes.syncRejected) {
+          const outboxId = pendingAcksRef.current.get(message.correlationId);
+          if (outboxId != null) {
+            pendingAcksRef.current.delete(message.correlationId);
+            const reason = typeof message.payload.reason === "string" ? message.payload.reason : t("network.worker.errors.rejected");
+            void markOutboxRejected(db, outboxId, reason).then(refreshRejected);
+          }
+        } else if (message.type === WsMessageTypes.syncAck) {
+          const outboxId = pendingAcksRef.current.get(message.correlationId);
+          if (outboxId != null) {
+            pendingAcksRef.current.delete(message.correlationId);
+            void markOutboxSent(db, outboxId);
+          }
+        } else if (message.type === WsMessageTypes.snapshotResponse) {
+          void (async () => {
+            const snapshot = message.payload.snapshot as CatalogSnapshot | undefined;
+            const asOfSeq = message.payload.asOfSeq as number | undefined;
+            if (!snapshot) return;
+            await withTransaction(() => applyCatalogSnapshot(db, snapshot));
+            await setLastAppliedSeq(db, asOfSeq ?? 0);
+          })();
+        }
+      };
+
+      socket.onclose = () => {
+        // Un ancien socket fermé par une reconnexion ne doit ni effacer le nouveau ni
+        // changer l'état affiché : seul le socket courant compte.
+        if (socketRef.current !== socket) return;
+        // Le délai d'attente n'a pas encore expiré (`timeoutRef.current` toujours
+        // posé) : aucun des chemins qui le désamorcent (accepté, refusé, timeout)
+        // n'est encore passé — le socket lui-même vient de se fermer avant tout
+        // échange, donc jamais réellement ouvert (adresse injoignable, connexion
+        // activement refusée par le réseau/pare-feu). Sans ce cas traité à part,
+        // l'écran affichait juste "Erreur" sans aucune explication (bug signalé le
+        // 2026-09-29 : seul le cas "délai expiré" avait un message).
+        const closedBeforeResolution = timeoutRef.current !== null;
+        clearHandshakeTimeout();
+        socketRef.current = null;
+        rpc.rejectAll(t("network.worker.errors.connectionClosed"));
+        if (closedBeforeResolution) {
+          setError(t("network.worker.errors.connectionClosed"));
+          setStatus("error");
+        } else {
+          // Une connexion déjà établie qui tombe devient "disconnected" (l'appareil
+          // garde le payload pour se reconnecter) ; sinon le statut a déjà été
+          // positionné par le chemin qui a désamorcé le délai (accepté/refusé/timeout).
+          setStatus((current) => (current === "connected" ? "disconnected" : current));
+        }
+      };
+    },
+    [db, deviceId, deviceName, flushOutbox, refreshRejected, rpc, t],
+  );
+
+  // Toute vente/mouvement/dépense créé localement (hors ligne ou non) part
+  // d'abord dans la file d'attente persistée — envoyé tout de suite si déjà
+  // connecté, sinon repris au prochain flushOutbox (voir connect ci-dessus).
+  useEffect(() => {
+    if (!enabled) return;
+    unsubscribeLocalSyncRef.current = onSyncEvent((event) => {
+      void (async () => {
+        // L'autorisation du Maître pour le responsable qui a approuvé (si besoin) part avec l'événement.
+        const outboxId = await enqueueOutbox(db, attachApprovalGrant(event));
+        const socket = socketRef.current;
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          const message = new WsMessage({ type: WsMessageTypes.sync, payload: { event } });
+          pendingAcksRef.current.set(message.correlationId, outboxId);
+          socket.send(message.encode());
+        }
+      })();
+    });
+    return () => {
+      unsubscribeLocalSyncRef.current?.();
+    };
+  }, [db, enabled]);
+
+  const reconnect = useCallback(() => {
+    if (lastPayload) connect(lastPayload);
+  }, [connect, lastPayload]);
+
+  // Au démarrage (Appareil relié déjà apparié) : se reconnecte tout seul.
+  useEffect(() => {
+    if (!enabled || autoConnectedRef.current || !lastPayload) return;
+    autoConnectedRef.current = true;
+    connect(lastPayload);
+  }, [enabled, lastPayload, connect]);
+
+  // Coupure (réseau, Maître redémarré) : nouvelle tentative périodique, sauf refus définitif.
+  useEffect(() => {
+    if (!enabled || !lastPayload || fatalRef.current) return;
+    if (status !== "disconnected" && status !== "error") return;
+    const timer = setTimeout(() => connect(lastPayload), RECONNECT_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [enabled, lastPayload, status, connect]);
+
+  const disconnect = useCallback(() => {
+    clearHandshakeTimeout();
+    socketRef.current?.close();
+    socketRef.current = null;
+    try {
+      localStorage.removeItem(PAIRING_STORAGE_KEY);
+    } catch {
+      // ignoré
+    }
+    setStatus("idle");
+    setMasterName(null);
+    setLastPayload(null);
+  }, []);
+
+  /**
+   * Retrouve automatiquement le Master déjà apparié (`lastPayload`) dont
+   * l'adresse IP a changé — jamais utilisable pour un premier appairage
+   * (pas de jeton à réutiliser sans avoir déjà scanné un QR une première
+   * fois). Lance mDNS (Tauri uniquement) et le balayage réseau (toutes
+   * plateformes) en parallèle ; le premier des deux qui trouve un candidat
+   * validé (via le handshake hello/helloAck de `connect`, jamais la seule
+   * présence détectée) gagne — voir CLAUDE.md, mode réseau Phase 1b.
+   */
+  const searchForMaster = useCallback(async () => {
+    if (!lastPayload) return;
+    setSearching(true);
+    setSearchError(null);
+
+    let settled = false;
+    let unlistenDiscovery: UnlistenFn | null = null;
+
+    const stopDiscovery = () => {
+      unlistenDiscovery?.();
+      unlistenDiscovery = null;
+      if (isTauriRuntime()) void invoke("network_stop_discovery").catch(() => undefined);
+    };
+
+    const tryConnect = (host: string) => {
+      if (settled) return;
+      settled = true;
+      stopDiscovery();
+      connect(new MasterPairingPayload({ ...lastPayload, host }));
+    };
+
+    if (isTauriRuntime()) {
+      try {
+        unlistenDiscovery = await listen<DiscoveryEvent>("network:discovery-event", (event) => {
+          if (event.payload.kind === "found" && event.payload.masterId === lastPayload.masterId) {
+            tryConnect(event.payload.host);
+          }
+        });
+        await invoke("network_start_discovery", { targetMasterId: lastPayload.masterId });
+      } catch {
+        // mDNS indisponible sur cet appareil/réseau — le balayage réseau
+        // ci-dessous reste la voie de secours, universelle.
+      }
+    }
+
+    const scanResult = await scanForMaster(lastPayload, deviceId, deviceName, () => settled);
+    if (!settled) {
+      if (scanResult) {
+        tryConnect(scanResult);
+      } else {
+        settled = true;
+        stopDiscovery();
+        setSearchError(t("network.worker.errors.searchFailed"));
+      }
+    }
+    setSearching(false);
+  }, [connect, deviceId, deviceName, lastPayload, t]);
+
+  // Tant qu'on est relié au Maître, les PIN de ses responsables (dont le hash
+  // n'est jamais copié ici) se vérifient chez lui ; hors connexion, plus de
+  // vérification possible et le message le dit.
+  useEffect(() => {
+    if (!enabled || status !== "connected") {
+      setRemotePinVerifier(null);
+      return;
+    }
+    setRemotePinVerifier(rpc.verifyPin);
+    return () => setRemotePinVerifier(null);
+  }, [enabled, status, rpc]);
+
+  const retryRejected = useCallback(
+    async (id?: number) => {
+      await retryRejectedOutbox(db, id);
+      await refreshRejected();
+      const socket = socketRef.current;
+      if (socket && socket.readyState === WebSocket.OPEN) await flushOutbox(socket);
+    },
+    [db, flushOutbox, refreshRejected],
+  );
+  const discardRejected = useCallback(
+    async (id: number) => {
+      await discardRejectedOutbox(db, id);
+      await refreshRejected();
+    },
+    [db, refreshRejected],
+  );
+
+  return {
+    status,
+    masterName,
+    rejected,
+    applyError,
+    retryRejected,
+    discardRejected,
+    /** Tranche une demande d'approbation chez le Maître (preuve de PIN, jamais le PIN lui-même). */
+    decideApprovalRemotely: rpc.decide,
+    error,
+    lastPayload,
+    searching,
+    searchError,
+    connect,
+    reconnect,
+    disconnect,
+    searchForMaster,
+  };
+}

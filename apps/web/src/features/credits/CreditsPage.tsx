@@ -1,3 +1,4 @@
+import { formatAmount } from "../../lib/format";
 import {
   getSettings,
   isCreditOverdue,
@@ -23,7 +24,7 @@ import {
   thStyle,
 } from "../../components/sharedStyles";
 import { openExternalUrl } from "../../lib/openExternalUrl";
-import { buildWhatsAppLink } from "../../lib/whatsapp";
+import { openWhatsApp } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
 
 type Credit = typeof schema.customerCredits.$inferSelect;
@@ -59,6 +60,7 @@ export function CreditsPage() {
 
   const [payingId, setPayingId] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
+  const [payMethod, setPayMethod] = useState("cash");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -138,7 +140,7 @@ export function CreditsPage() {
       business: businessSettings?.businessName ?? t("whatsapp.defaultBusinessName"),
       reference: referenceNumber(credit),
     });
-    void openExternalUrl(buildWhatsAppLink(phone, businessSettings?.whatsappCountryCode, message));
+    void openWhatsApp(phone, businessSettings?.whatsappCountryCode, message);
   };
 
   const startPayment = (credit: Credit) => {
@@ -158,7 +160,7 @@ export function CreditsPage() {
 
     setSaving(true);
     try {
-      await recordCreditRepayment(db, { creditId: credit.id, amount: value, userId: user.id }, user.permissions);
+      await recordCreditRepayment(db, { creditId: credit.id, amount: value, method: payMethod, userId: user.id }, user.permissions);
       setPayingId(null);
       setAmount("");
       await refresh();
@@ -177,7 +179,7 @@ export function CreditsPage() {
           style={{
             ...primaryButtonStyle,
             background: showSettled ? "var(--gradient-accent)" : "transparent",
-            color: showSettled ? "#0f172a" : "var(--color-text)",
+            color: showSettled ? "var(--color-on-accent)" : "var(--color-text)",
             border: showSettled ? "none" : "1px solid var(--color-border)",
           }}
           onClick={() => setShowSettled((v) => !v)}
@@ -211,8 +213,8 @@ export function CreditsPage() {
                   <td style={tdStyle}>{customerName(credit.customerId)}</td>
                   <td style={tdStyle}>{referenceNumber(credit)}</td>
                   <td style={tdStyle}>{articleSummary(credit)}</td>
-                  <td style={tdStyle}>{credit.originalAmount}</td>
-                  <td style={tdStyle}>{credit.remainingBalance}</td>
+                  <td style={tdStyle}>{formatAmount(credit.originalAmount)}</td>
+                  <td style={tdStyle}>{formatAmount(credit.remainingBalance)}</td>
                   <td style={tdStyle}>{credit.dueDate ?? "—"}</td>
                   <td style={tdStyle}>
                     <span style={badgeStyle(credit.status === "settled" ? "ok" : overdue ? "danger" : "warning")}>
@@ -225,11 +227,21 @@ export function CreditsPage() {
                         (payingId === credit.id ? (
                           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                             <input
-                              type="number"
+                              type="number" step="any"
                               style={{ ...inputStyle, width: 90, marginTop: 0 }}
                               value={amount}
                               onChange={(e) => setAmount(e.target.value)}
                             />
+                            <select
+                              aria-label={t("creditsControls.method")}
+                              style={{ ...inputStyle, width: 130, marginTop: 0 }}
+                              value={payMethod}
+                              onChange={(e) => setPayMethod(e.target.value)}
+                            >
+                              <option value="cash">{t("creditsControls.cash")}</option>
+                              <option value="card">{t("creditsControls.card")}</option>
+                              <option value="mobile_money">{t("creditsControls.mobile")}</option>
+                            </select>
                             <button
                               style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
                               onClick={() => handleSubmit(credit)}

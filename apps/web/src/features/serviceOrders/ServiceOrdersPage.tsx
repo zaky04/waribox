@@ -1,4 +1,7 @@
+import { useApproval } from "../approval/ApprovalProvider";
+import { formatAmount } from "../../lib/format";
 import {
+  cancelServiceOrder,
   createServiceOrder,
   deriveOrderStatus,
   getSettings,
@@ -6,8 +9,11 @@ import {
   listCustomerCredits,
   listCustomers,
   listServiceOrderItems,
+  listServiceTariffs,
   listServiceOrders,
   recordCreditRepayment,
+  recordServiceOrderPayment,
+  listServiceOrderBalancesDue,
   updateServiceOrder,
   updateServiceOrderItem,
   updateServiceOrderItemStatus,
@@ -24,7 +30,7 @@ import {
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
-import { buildWhatsAppLink } from "../../lib/whatsapp";
+import { openWhatsApp } from "../../lib/whatsapp";
 import { openExternalUrl } from "../../lib/openExternalUrl";
 import { saveGeneratedFile } from "../../lib/saveFile";
 import { SearchableSelect } from "../../components/SearchableSelect";
@@ -38,6 +44,7 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { IconX } from "../../components/icons";
 import { useAuth } from "../auth/useAuth";
 import { PrinterPanel } from "../printer/PrinterPanel";
 import { usePrinter } from "../printer/usePrinter";
@@ -46,9 +53,12 @@ type Customer = typeof schema.customers.$inferSelect;
 type ServiceOrder = typeof schema.serviceOrders.$inferSelect;
 type ServiceOrderItem = typeof schema.serviceOrderItems.$inferSelect;
 type Credit = typeof schema.customerCredits.$inferSelect;
+type ServiceTariff = typeof schema.serviceTariffs.$inferSelect;
 
 interface OrderLine {
   key: number;
+  // Tarif choisi (facultatif) — le prix de référence est relu côté serveur.
+  tariffId?: number;
   description: string;
   unitPrice: number;
   quantity: number;
@@ -77,13 +87,14 @@ export function ServiceOrdersPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
   const { t } = useTranslation();
+  const approval = useApproval();
   const printer = usePrinter();
 
   const PAYMENT_METHODS: { value: ServiceOrderPaymentMethod; label: string }[] = [
     { value: "cash", label: t("sales.paymentMethods.cash") },
     { value: "card", label: t("sales.paymentMethods.card") },
     { value: "mobile_money", label: t("sales.paymentMethods.mobile_money") },
-    { value: "credit", label: t("sales.paymentMethods.credit") },
+    { value: "credit", label: t("serviceOrders.payLater") },
   ];
 
   const ITEM_STATUS_LABELS: Record<ServiceOrderItemStatus, string> = {
@@ -103,12 +114,14 @@ export function ServiceOrdersPage() {
     paid: t("serviceOrders.paymentStatus.paid"),
     partial: t("serviceOrders.paymentStatus.partial"),
     credit: t("serviceOrders.paymentStatus.credit"),
+    unpaid: t("serviceOrders.paymentStatus.unpaid"),
   };
 
   const [view, setView] = useState<"new" | "track" | "history">("new");
   const [showPrinterPanel, setShowPrinterPanel] = useState(false);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [tariffs, setTariffs] = useState<ServiceTariff[]>([]);
   const [businessSettings, setBusinessSettings] = useState<Awaited<ReturnType<typeof getSettings>> | null>(
     null,
   );
@@ -130,6 +143,9 @@ export function ServiceOrdersPage() {
 
   const [orders, setOrders] = useState<ServiceOrder[]>([]);
   const [credits, setCredits] = useState<Credit[]>([]);
+  // Soldes « à payer » (ni encaissés ni encore transformés en créance), par ticket.
+  const [dueByOrder, setDueByOrder] = useState<Map<number, number>>(new Map());
+  const [payMethod, setPayMethod] = useState<ServiceOrderPaymentMethod>("cash");
   const [itemsByOrder, setItemsByOrder] = useState<Record<number, ServiceOrderItem[]>>({});
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
   const [repayAmount, setRepayAmount] = useState("");
@@ -144,8 +160,9 @@ export function ServiceOrdersPage() {
   const [historyError, setHistoryError] = useState<string | null>(null);
 
   const refreshCatalog = useCallback(async () => {
-    const [customersRows, settings] = await Promise.all([listCustomers(db), getSettings(db)]);
+    const [customersRows, settings, tariffRows] = await Promise.all([listCustomers(db), getSettings(db), listServiceTariffs(db, { activeOnly: true })]);
     setCustomers(customersRows);
+    setTariffs(tariffRows);
     setBusinessSettings(settings);
   }, [db]);
 
@@ -161,6 +178,7 @@ export function ServiceOrdersPage() {
     ]);
     setOrders(orderRows);
     setCredits(creditRows);
+    setDueByOrder(await listServiceOrderBalancesDue(db));
   }, [db, currentStoreId]);
 
   useEffect(() => {
@@ -174,6 +192,21 @@ export function ServiceOrdersPage() {
         key: nextLineKey,
         description: "",
         unitPrice: 0,
+        quantity: 1,
+        taxRate: businessSettings?.taxEnabled ? (businessSettings.defaultTaxRate ?? 0) : 0,
+      },
+    ]);
+    setNextLineKey((k) => k + 1);
+  };
+
+  const addTariffLine = (tariff: ServiceTariff) => {
+    setLines((prev) => [
+      ...prev,
+      {
+        key: nextLineKey,
+        tariffId: tariff.id,
+        description: tariff.name,
+        unitPrice: tariff.price,
         quantity: 1,
         taxRate: businessSettings?.taxEnabled ? (businessSettings.defaultTaxRate ?? 0) : 0,
       },
@@ -203,13 +236,18 @@ export function ServiceOrdersPage() {
   const total = subtotal;
 
   const paidValuePreview = amountPaid === "" ? total : Number(amountPaid);
-  const needsCustomerIdentification = paymentMethod === "credit" || paidValuePreview < total;
+  // Jamais de dépôt anonyme : le nom du client est toujours requis (traçabilité).
+  const needsCustomerIdentification = true;
 
   const handleSubmit = async () => {
     setCheckoutError(null);
     if (!user) return;
     if (lines.length === 0) {
       setCheckoutError(t("serviceOrders.errors.itemRequired"));
+      return;
+    }
+    if (!customerId && !newCustomerName.trim()) {
+      setCheckoutError(t("serviceOrders.errors.customerRequired"));
       return;
     }
     if (lines.some((l) => !l.description.trim())) {
@@ -221,7 +259,8 @@ export function ServiceOrdersPage() {
     try {
       const paidValue = amountPaid === "" ? total : Number(amountPaid);
 
-      const order = await createServiceOrder(db, {
+      const order = await approval.run((a) => createServiceOrder(db, {
+        approval: a,
         userId: user.id,
         customerId: customerId ? Number(customerId) : null,
         newCustomerName: customerId ? undefined : newCustomerName.trim() || undefined,
@@ -231,13 +270,14 @@ export function ServiceOrdersPage() {
           quantity: l.quantity,
           unitPrice: l.unitPrice,
           taxRate: l.taxRate,
+          tariffId: l.tariffId,
         })),
         promisedDate: promisedDate || undefined,
         notes: notes.trim() || undefined,
         paymentMethod,
         amountPaid: paidValue,
         storeId: currentStoreId ?? undefined,
-      }, user.permissions);
+      }, user.permissions));
 
       const selectedCustomer = customers.find((c) => c.id === Number(customerId));
       const customerName = selectedCustomer?.fullName || newCustomerName.trim() || undefined;
@@ -299,9 +339,17 @@ export function ServiceOrdersPage() {
     }
   };
 
+  const [trackError, setTrackError] = useState<string | null>(null);
+
   const handleStatusChange = async (item: ServiceOrderItem, status: ServiceOrderItemStatus) => {
     if (!user) return;
-    await updateServiceOrderItemStatus(db, { itemId: item.id, status, userId: user.id }, user.permissions);
+    setTrackError(null);
+    try {
+      // Retrait avec un solde dû, ou retour arrière d'un retrait : approbation d'un responsable.
+      await approval.run((a) => updateServiceOrderItemStatus(db, { itemId: item.id, status, userId: user.id, approval: a }, user.permissions));
+    } catch (err) {
+      setTrackError(err instanceof Error ? err.message : t("serviceOrders.errors.saveFailed"));
+    }
     const items = await listServiceOrderItems(db, item.serviceOrderId);
     setItemsByOrder((prev) => ({ ...prev, [item.serviceOrderId]: items }));
     await refreshTrack();
@@ -354,18 +402,23 @@ export function ServiceOrdersPage() {
         user.id,
         user.permissions,
       );
-      for (const item of editItems) {
-        await updateServiceOrderItem(
-          db,
-          item.id,
-          {
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            taxRate: item.taxRate,
-          },
-          user.id,
-          user.permissions,
+      // Seules les lignes réellement modifiées sont envoyées ; baisser le total
+      // d'un ticket déjà encaissé exige l'approbation d'un responsable.
+      const original = itemsByOrder[orderId] ?? [];
+      const changed = editItems.filter((item) => {
+        const o = original.find((x) => x.id === item.id);
+        return !o || o.description !== item.description || o.quantity !== item.quantity || o.unitPrice !== item.unitPrice || o.taxRate !== item.taxRate;
+      });
+      for (const item of changed) {
+        await approval.run((a) =>
+          updateServiceOrderItem(
+            db,
+            item.id,
+            { description: item.description, quantity: item.quantity, unitPrice: item.unitPrice, taxRate: item.taxRate },
+            user.id,
+            user.permissions,
+            a,
+          ),
         );
       }
       const items = await listServiceOrderItems(db, orderId);
@@ -379,10 +432,48 @@ export function ServiceOrdersPage() {
     }
   };
 
+  const [cancelOrderId, setCancelOrderId] = useState<number | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  const handleCancel = async (orderId: number) => {
+    if (!user) return;
+    setCancelError(null);
+    try {
+      await approval.run((a) => cancelServiceOrder(db, { orderId, userId: user.id, reason: cancelReason, approval: a }, user.permissions));
+      setCancelOrderId(null);
+      setCancelReason("");
+      setExpandedOrderId(null);
+      await refreshTrack();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : t("serviceOrders.errors.saveFailed"));
+    }
+  };
+
   const customerName = (id: number | null) => customers.find((c) => c.id === id)?.fullName ?? "—";
   const customerPhone = (id: number | null) => customers.find((c) => c.id === id)?.phone ?? null;
   const creditForOrder = (orderId: number) =>
     credits.find((c) => c.serviceOrderId === orderId && c.status !== "settled");
+
+  const handlePayDue = async (orderId: number, due: number) => {
+    if (!user) return;
+    setRepayError(null);
+    const value = repayAmount === "" ? due : Number(repayAmount);
+    if (!value || value <= 0) {
+      setRepayError(t("serviceOrders.errors.repayAmountPositive"));
+      return;
+    }
+    setRepaying(true);
+    try {
+      await recordServiceOrderPayment(db, { orderId, amount: value, method: payMethod, userId: user.id }, user.permissions);
+      setRepayAmount("");
+      await refreshTrack();
+    } catch (err) {
+      setRepayError(err instanceof Error ? err.message : t("serviceOrders.errors.repayFailed"));
+    } finally {
+      setRepaying(false);
+    }
+  };
 
   const handleRepay = async (credit: Credit) => {
     if (!user) return;
@@ -414,7 +505,7 @@ export function ServiceOrdersPage() {
             style={{
               ...primaryButtonStyle,
               background: view === "new" ? "var(--gradient-accent)" : "transparent",
-              color: view === "new" ? "#0f172a" : "var(--color-text)",
+              color: view === "new" ? "var(--color-on-accent)" : "var(--color-text)",
               border: view === "new" ? "none" : "1px solid var(--color-border)",
             }}
           >
@@ -425,7 +516,7 @@ export function ServiceOrdersPage() {
             style={{
               ...primaryButtonStyle,
               background: view === "track" ? "var(--gradient-accent)" : "transparent",
-              color: view === "track" ? "#0f172a" : "var(--color-text)",
+              color: view === "track" ? "var(--color-on-accent)" : "var(--color-text)",
               border: view === "track" ? "none" : "1px solid var(--color-border)",
             }}
           >
@@ -437,7 +528,7 @@ export function ServiceOrdersPage() {
               style={{
                 ...primaryButtonStyle,
                 background: view === "history" ? "var(--gradient-accent)" : "transparent",
-                color: view === "history" ? "#0f172a" : "var(--color-text)",
+                color: view === "history" ? "var(--color-on-accent)" : "var(--color-text)",
                 border: view === "history" ? "none" : "1px solid var(--color-border)",
               }}
             >
@@ -531,6 +622,26 @@ export function ServiceOrdersPage() {
               <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
                 {t("serviceOrders.freeEntryHint")}
               </p>
+              {tariffs.length > 0 && (
+                <label>
+                  {t("serviceOrders.tariff.choose")}
+                  <select
+                    style={inputStyle}
+                    value=""
+                    onChange={(e) => {
+                      const tariff = tariffs.find((x) => String(x.id) === e.target.value);
+                      if (tariff) addTariffLine(tariff);
+                    }}
+                  >
+                    <option value="">{t("serviceOrders.tariff.manual")}</option>
+                    {tariffs.map((tf) => (
+                      <option key={tf.id} value={tf.id}>
+                        {tf.name} — {formatAmount(tf.price)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               {lines.length === 0 ? (
                 <p style={{ color: "var(--color-text-muted)" }}>{t("serviceOrders.emptyItems")}</p>
@@ -567,20 +678,20 @@ export function ServiceOrdersPage() {
                           </td>
                           <td style={tdStyle}>
                             <input
-                              type="number"
+                              type="number" step="any"
                               min={0}
                               value={line.unitPrice}
                               onChange={(e) => updateLine(line.key, { unitPrice: Number(e.target.value) })}
                               style={{ ...inputStyle, width: 90, marginTop: 0 }}
                             />
                           </td>
-                          <td style={tdStyle}>{(line.quantity * line.unitPrice).toFixed(0)}</td>
+                          <td style={tdStyle}>{formatAmount(line.quantity * line.unitPrice)}</td>
                           <td style={tdStyle}>
                             <button
                               onClick={() => removeLine(line.key)}
-                              style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
+                              style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer", display: "flex" }}
                             >
-                              ✕
+                              <IconX size={16} />
                             </button>
                           </td>
                         </tr>
@@ -612,9 +723,9 @@ export function ServiceOrdersPage() {
             <div style={cardStyle}>
               <strong>{t("serviceOrders.customerAndPayment")}</strong>
               <div>
-                <div>{t("serviceOrders.subtotal")} {subtotal.toFixed(0)}</div>
-                <div>{t("serviceOrders.tax")} {taxTotal.toFixed(0)}</div>
-                <div style={{ fontWeight: 700, fontSize: 18 }}>{t("serviceOrders.totalLabel")} {total.toFixed(0)}</div>
+                <div>{t("serviceOrders.subtotal")} {formatAmount(subtotal)}</div>
+                <div>{t("serviceOrders.tax")} {formatAmount(taxTotal)}</div>
+                <div style={{ fontWeight: 700, fontSize: 18 }}>{t("serviceOrders.totalLabel")} {formatAmount(total)}</div>
               </div>
 
               <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
@@ -680,7 +791,7 @@ export function ServiceOrdersPage() {
                 {t("serviceOrders.amountPaid")}
                 <input
                   style={inputStyle}
-                  type="number"
+                  type="number" step="any"
                   value={amountPaid}
                   onChange={(e) => setAmountPaid(e.target.value)}
                   placeholder={total.toFixed(0)}
@@ -699,6 +810,7 @@ export function ServiceOrdersPage() {
 
       {view === "track" && (
         <div style={cardStyle}>
+          {trackError && <p style={{ color: "var(--color-danger)", margin: 0 }}>{trackError}</p>}
           <div className="table-scroll">
             <table style={tableStyle}>
               <thead>
@@ -711,10 +823,11 @@ export function ServiceOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {orders.map((order) => {
+                {orders.filter((o) => !o.cancelledAt).map((order) => {
                   const items = itemsByOrder[order.id] ?? [];
                   const summary = deriveOrderStatus(items);
                   const credit = creditForOrder(order.id);
+                  const due = dueByOrder.get(order.id) ?? 0;
                   const expanded = expandedOrderId === order.id;
 
                   return (
@@ -781,9 +894,7 @@ export function ServiceOrdersPage() {
                                       orderNumber: order.number,
                                       business: businessSettings?.businessName ?? t("whatsapp.defaultBusinessName"),
                                     });
-                                    void openExternalUrl(
-                                      buildWhatsAppLink(phone, businessSettings?.whatsappCountryCode, message),
-                                    );
+                                    void openWhatsApp(phone, businessSettings?.whatsappCountryCode, message);
                                   }}
                                 >
                                   {t("serviceOrders.notifyWhatsapp")}
@@ -799,6 +910,41 @@ export function ServiceOrdersPage() {
                                 </p>
                               )}
 
+                              {due > 0.01 && (
+                                <div
+                                  style={{
+                                    borderTop: "1px solid var(--color-border)",
+                                    paddingTop: 12,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    flexWrap: "wrap",
+                                  }}
+                                >
+                                  <span>{t("serviceOrders.balanceDue")} {formatAmount(due)}</span>
+                                  <input
+                                    type="number" step="any"
+                                    style={{ ...inputStyle, width: 90, marginTop: 0 }}
+                                    value={repayAmount}
+                                    onChange={(e) => setRepayAmount(e.target.value)}
+                                    placeholder={String(due)}
+                                  />
+                                  <select style={{ ...inputStyle, width: "auto", marginTop: 0 }} value={payMethod} onChange={(e) => setPayMethod(e.target.value as ServiceOrderPaymentMethod)}>
+                                    {PAYMENT_METHODS.filter((m) => m.value !== "credit").map((m) => (
+                                      <option key={m.value} value={m.value}>{m.label}</option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                                    onClick={() => handlePayDue(order.id, due)}
+                                    disabled={repaying}
+                                  >
+                                    {t("serviceOrders.collectDue")}
+                                  </button>
+                                  <span style={{ flexBasis: "100%", fontSize: 12.5, color: "var(--color-text-muted)" }}>{t("serviceOrders.dueHint")}</span>
+                                </div>
+                              )}
+
                               {credit && (
                                 <div
                                   style={{
@@ -810,9 +956,9 @@ export function ServiceOrdersPage() {
                                     flexWrap: "wrap",
                                   }}
                                 >
-                                  <span>{t("serviceOrders.remainingBalance")} {credit.remainingBalance.toFixed(0)}</span>
+                                  <span>{t("serviceOrders.remainingBalance")} {formatAmount(credit.remainingBalance)}</span>
                                   <input
-                                    type="number"
+                                    type="number" step="any"
                                     style={{ ...inputStyle, width: 90, marginTop: 0 }}
                                     value={repayAmount}
                                     onChange={(e) => setRepayAmount(e.target.value)}
@@ -871,9 +1017,12 @@ export function ServiceOrdersPage() {
                   return (
                     <Fragment key={order.id}>
                       <tr>
-                        <td style={tdStyle}>{order.number}</td>
+                        <td style={tdStyle}>
+                          {order.number}{" "}
+                          {order.cancelledAt && <span style={badgeStyle("danger")}>{t("serviceOrders.cancel.tag")}</span>}
+                        </td>
                         <td style={tdStyle}>{customerName(order.customerId)}</td>
-                        <td style={tdStyle}>{order.total.toFixed(0)}</td>
+                        <td style={tdStyle}>{formatAmount(order.total)}</td>
                         <td style={tdStyle}>
                           <span style={badgeStyle(order.paymentStatus === "paid" ? "ok" : "warning")}>
                             {PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus}
@@ -882,6 +1031,7 @@ export function ServiceOrdersPage() {
                         <td style={tdStyle}>
                           <button
                             style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                            disabled={!!order.cancelledAt}
                             onClick={() => historyToggleExpand(order)}
                           >
                             {expanded ? t("serviceOrders.close") : t("serviceOrders.correct")}
@@ -955,7 +1105,7 @@ export function ServiceOrdersPage() {
                                         </td>
                                         <td style={tdStyle}>
                                           <input
-                                            type="number"
+                                            type="number" step="any"
                                             min={0}
                                             value={item.unitPrice}
                                             onChange={(e) =>
@@ -966,7 +1116,7 @@ export function ServiceOrdersPage() {
                                         </td>
                                         <td style={tdStyle}>
                                           <input
-                                            type="number"
+                                            type="number" step="any"
                                             min={0}
                                             value={item.taxRate}
                                             onChange={(e) =>
@@ -990,6 +1140,42 @@ export function ServiceOrdersPage() {
                               >
                                 {savingHistory ? t("serviceOrders.saving") : t("serviceOrders.save")}
                               </button>
+
+                              {cancelOrderId === order.id ? (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px dashed var(--color-rule-strong)", paddingTop: 12 }}>
+                                  <label>
+                                    {t("serviceOrders.cancel.reason")}
+                                    <input style={inputStyle} value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+                                  </label>
+                                  {cancelError && <p style={{ color: "var(--color-danger)", margin: 0 }}>{cancelError}</p>}
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                                    <button
+                                      style={{ ...primaryButtonStyle, background: "var(--color-danger)" }}
+                                      disabled={!cancelReason.trim()}
+                                      onClick={() => handleCancel(order.id)}
+                                    >
+                                      {t("serviceOrders.cancel.confirm")}
+                                    </button>
+                                    <button
+                                      style={{ ...primaryButtonStyle, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)" }}
+                                      onClick={() => setCancelOrderId(null)}
+                                    >
+                                      {t("serviceOrders.close")}
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  style={{ ...primaryButtonStyle, background: "transparent", border: "1px solid var(--color-danger)", color: "var(--color-danger)", alignSelf: "flex-start" }}
+                                  onClick={() => {
+                                    setCancelOrderId(order.id);
+                                    setCancelReason("");
+                                    setCancelError(null);
+                                  }}
+                                >
+                                  {t("serviceOrders.cancel.button")}
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

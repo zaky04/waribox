@@ -1,4 +1,4 @@
-import { t } from "@gestion-boutique/i18n";
+import { t, formatMoneyPlain, formatAmountPlain } from "@gestion-boutique/i18n";
 import { jsPDF } from "jspdf";
 import { padLine, type ReceiptData } from "./receipt";
 import type { ServiceOrderTicketData } from "./serviceTicket";
@@ -165,11 +165,21 @@ export function buildReceiptPdf(data: ReceiptData): Blob {
       align: "center",
     });
   }
+  if (data.prescriptionRef) {
+    pushWrapped(lines, measure, t("documents.receipt.prescription", { reference: data.prescriptionRef }), maxWidthMm, { align: "center" });
+  }
+  if (data.fneStatus === "certified" && data.fneReference) {
+    pushWrapped(lines, measure, t("documents.receipt.fneCertified", { reference: data.fneReference }), maxWidthMm, { align: "center" });
+  } else if (data.fneStatus === "pending") {
+    pushWrapped(lines, measure, t("documents.receipt.fnePending"), maxWidthMm, { align: "center" });
+  } else if (data.fneStatus === "failed") {
+    pushWrapped(lines, measure, t("documents.receipt.fneFailed"), maxWidthMm, { align: "center" });
+  }
 
   lines.push({ text: separator });
   for (const line of data.lines) {
     const left = `${line.quantity} x ${line.label}`;
-    const right = line.total.toFixed(0);
+    const right = formatAmountPlain(line.total);
     const combined = padLine(left, right, columns);
     if (combined) {
       lines.push({ text: combined });
@@ -180,16 +190,16 @@ export function buildReceiptPdf(data: ReceiptData): Blob {
   }
   lines.push({ text: separator });
 
-  lines.push({ text: t("documents.common.subtotal", { amount: data.subtotal.toFixed(0) }) });
-  if (data.discount > 0) lines.push({ text: t("documents.common.discount", { amount: data.discount.toFixed(0) }) });
-  if (data.tax > 0) lines.push({ text: t("documents.common.tax", { amount: data.tax.toFixed(0) }) });
-  lines.push({ text: t("documents.common.total", { amount: data.total.toFixed(0) }), bold: true });
+  lines.push({ text: t("documents.common.subtotal", { amount: formatAmountPlain(data.subtotal) }) });
+  if (data.discount > 0) lines.push({ text: t("documents.common.discount", { amount: formatAmountPlain(data.discount) }) });
+  if (data.tax > 0) lines.push({ text: t("documents.common.tax", { amount: formatAmountPlain(data.tax) }) });
+  lines.push({ text: t("documents.common.total", { amount: formatMoneyPlain(data.total) }), bold: true });
   pushWrapped(
     lines,
     measure,
     t("documents.receipt.payment", {
       method: t(`sales.paymentMethods.${data.paymentMethod}`, { defaultValue: data.paymentMethod }),
-      amount: data.amountPaid.toFixed(0),
+      amount: formatAmountPlain(data.amountPaid),
     }),
     maxWidthMm,
   );
@@ -243,7 +253,7 @@ export function buildServiceOrderTicketPdf(data: ServiceOrderTicketData): Blob {
   lines.push({ text: separator });
   for (const line of data.lines) {
     const left = `${line.quantity} x ${line.description}`;
-    const right = line.total.toFixed(0);
+    const right = formatAmountPlain(line.total);
     const combined = padLine(left, right, columns);
     if (combined) {
       lines.push({ text: combined });
@@ -254,13 +264,13 @@ export function buildServiceOrderTicketPdf(data: ServiceOrderTicketData): Blob {
   }
   lines.push({ text: separator });
 
-  lines.push({ text: t("documents.common.subtotal", { amount: data.subtotal.toFixed(0) }) });
-  if (data.tax > 0) lines.push({ text: t("documents.common.tax", { amount: data.tax.toFixed(0) }) });
-  lines.push({ text: t("documents.common.total", { amount: data.total.toFixed(0) }), bold: true });
-  lines.push({ text: t("documents.serviceTicket.paid", { amount: data.amountPaid.toFixed(0) }) });
+  lines.push({ text: t("documents.common.subtotal", { amount: formatAmountPlain(data.subtotal) }) });
+  if (data.tax > 0) lines.push({ text: t("documents.common.tax", { amount: formatAmountPlain(data.tax) }) });
+  lines.push({ text: t("documents.common.total", { amount: formatMoneyPlain(data.total) }), bold: true });
+  lines.push({ text: t("documents.serviceTicket.paid", { amount: formatAmountPlain(data.amountPaid) }) });
   const balance = data.total - data.amountPaid;
   if (balance > 0) {
-    lines.push({ text: t("documents.serviceTicket.balanceDue", { amount: balance.toFixed(0) }), bold: true });
+    lines.push({ text: t("documents.serviceTicket.balanceDue", { amount: formatAmountPlain(balance) }), bold: true });
   }
   lines.push({ text: "" });
   pushWrapped(lines, measure, t("documents.serviceTicket.keepTicket"), maxWidthMm, { align: "center" });

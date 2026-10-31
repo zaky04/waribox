@@ -1,6 +1,8 @@
+import { formatAmount } from "../../lib/format";
 import {
   createCategory,
   createProduct,
+  createVariant,
   ensureVariantBarcode,
   getSettings,
   getStockLevels,
@@ -28,6 +30,8 @@ import {
   thStyle,
 } from "../../components/sharedStyles";
 import { saveGeneratedFile } from "../../lib/saveFile";
+import { variantPresentation } from "../../lib/variantLabel";
+import { useApproval } from "../approval/ApprovalProvider";
 import { useAuth } from "../auth/useAuth";
 
 type Product = typeof schema.products.$inferSelect;
@@ -45,7 +49,9 @@ export function ProductsPage() {
   const { user } = useAuth();
   const { t } = useTranslation();
   const canManage = hasPermission(user?.permissions ?? {}, "manage_products");
-  const canViewMargins = hasPermission(user?.permissions ?? {}, "view_margins");
+  const canViewMargins = hasPermission(user?.permissions ?? {}, "view_costs");
+  const canEditPrices = hasPermission(user?.permissions ?? {}, "edit_product_prices");
+  const approval = useApproval();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -67,6 +73,17 @@ export function ProductsPage() {
   const [trackExpiry, setTrackExpiry] = useState(false);
   const [taxRate, setTaxRate] = useState("");
   const [barcode, setBarcode] = useState("");
+  // Fiche médicament (pack Pharmacie).
+  const [dci, setDci] = useState("");
+  const [dosage, setDosage] = useState("");
+  const [dosageForm, setDosageForm] = useState("");
+  const [laboratory, setLaboratory] = useState("");
+  const [requiresPrescription, setRequiresPrescription] = useState(false);
+  // Nouvelle présentation détaillée (ex. plaquette de 10) d'un produit en édition.
+  const [presName, setPresName] = useState("");
+  const [presUnits, setPresUnits] = useState("");
+  const [presPrice, setPresPrice] = useState("");
+  const [presError, setPresError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -115,8 +132,49 @@ export function ProductsPage() {
     setTrackExpiry(false);
     setTaxRate("");
     setBarcode("");
+    setDci("");
+    setDosage("");
+    setDosageForm("");
+    setLaboratory("");
+    setRequiresPrescription(false);
     setError(null);
     setShowForm(false);
+  };
+
+  const isPharmacy = businessSettings?.sectorType === "pharmacie";
+
+  const handleAddPresentation = async () => {
+    setPresError(null);
+    const base = variants.find((v) => v.productId === editingProductId && v.parentVariantId == null);
+    if (!base || !presName.trim() || !(Number(presUnits) > 0) || presPrice.trim() === "") {
+      setPresError(t("pharmacy.presentationInvalid"));
+      return;
+    }
+    try {
+      await createVariant(
+        db,
+        {
+          productId: base.productId,
+          attributes: { presentation: presName.trim() },
+          priceOverride: Number(presPrice),
+          parentVariantId: base.id,
+          unitsPerParent: Number(presUnits),
+        },
+        user?.permissions ?? {},
+      );
+      setPresName("");
+      setPresUnits("");
+      setPresPrice("");
+      await refresh();
+    } catch (err) {
+      setPresError(err instanceof Error ? err.message : t("products.errors.saveFailed"));
+    }
+  };
+
+  // Un médicament est toujours suivi en péremption par défaut en pharmacie.
+  const openNewForm = () => {
+    setTrackExpiry(isPharmacy);
+    setShowForm(true);
   };
 
   const startEdit = (product: Product) => {
@@ -132,6 +190,11 @@ export function ProductsPage() {
     setTrackExpiry(product.trackExpiry);
     setTaxRate(product.taxRate === null ? "" : String(product.taxRate));
     setBarcode(variant?.barcode ?? "");
+    setDci(product.dci ?? "");
+    setDosage(product.dosage ?? "");
+    setDosageForm(product.dosageForm ?? "");
+    setLaboratory(product.laboratory ?? "");
+    setRequiresPrescription(product.requiresPrescription);
     setError(null);
     setShowForm(true);
   };
@@ -153,7 +216,7 @@ export function ProductsPage() {
       }
 
       if (editingProductId) {
-        await updateProduct(db, editingProductId, {
+        await approval.run((a) => updateProduct(db, editingProductId, {
           name: name.trim(),
           categoryId: finalCategoryId,
           unit,
@@ -162,8 +225,14 @@ export function ProductsPage() {
           lowStockThreshold: Number(lowStockThreshold) || 0,
           trackExpiry,
           taxRate: taxRate.trim() === "" ? null : Number(taxRate),
+          dci,
+          dosage,
+          dosageForm,
+          laboratory,
+          requiresPrescription,
           updatedBy: user?.id,
-        }, permissions);
+          approval: a,
+        }, permissions));
         const variant = variants.find((v) => v.productId === editingProductId);
         if (variant) {
           await updateVariantBarcode(db, variant.id, barcode.trim() || null, permissions);
@@ -179,6 +248,11 @@ export function ProductsPage() {
           trackExpiry,
           taxRate: taxRate.trim() === "" ? null : Number(taxRate),
           barcode: barcode.trim() || null,
+          dci,
+          dosage,
+          dosageForm,
+          laboratory,
+          requiresPrescription,
           createdBy: user?.id,
         }, permissions);
       }
@@ -232,7 +306,7 @@ export function ProductsPage() {
             {printingLabels ? t("products.printingLabels") : t("products.printLabels")}
           </button>
           {canManage && (
-            <button style={primaryButtonStyle} onClick={() => (showForm ? resetForm() : setShowForm(true))}>
+            <button style={primaryButtonStyle} onClick={() => (showForm ? resetForm() : openNewForm())}>
               {showForm ? t("products.cancel") : t("products.new")}
             </button>
           )}
@@ -280,8 +354,9 @@ export function ProductsPage() {
               {t("products.purchasePrice")}
               <input
                 style={inputStyle}
-                type="number"
+                type="number" step="any"
                 value={purchasePrice}
+                disabled={!!editingProductId && !canEditPrices}
                 onChange={(e) => setPurchasePrice(e.target.value)}
               />
             </label>
@@ -289,8 +364,9 @@ export function ProductsPage() {
               {t("products.salePrice")}
               <input
                 style={inputStyle}
-                type="number"
+                type="number" step="any"
                 value={salePrice}
+                disabled={!!editingProductId && !canEditPrices}
                 onChange={(e) => setSalePrice(e.target.value)}
               />
             </label>
@@ -315,12 +391,80 @@ export function ProductsPage() {
             {t("products.trackExpiry")}
           </label>
 
+          {isPharmacy && (
+            <fieldset style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: 12, display: "grid", gap: 12 }}>
+              <legend style={{ padding: "0 6px", fontWeight: 600 }}>{t("pharmacy.drugSheet")}</legend>
+              <label>
+                {t("pharmacy.dci")}
+                <input style={inputStyle} value={dci} onChange={(e) => setDci(e.target.value)} placeholder={t("pharmacy.dciPlaceholder")} />
+              </label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+                <label style={{ flex: 1, minWidth: 120 }}>
+                  {t("pharmacy.dosage")}
+                  <input style={inputStyle} value={dosage} onChange={(e) => setDosage(e.target.value)} placeholder="500 mg" />
+                </label>
+                <label style={{ flex: 1, minWidth: 120 }}>
+                  {t("pharmacy.dosageForm")}
+                  <input style={inputStyle} value={dosageForm} onChange={(e) => setDosageForm(e.target.value)} placeholder={t("pharmacy.dosageFormPlaceholder")} />
+                </label>
+              </div>
+              <label>
+                {t("pharmacy.laboratory")}
+                <input style={inputStyle} value={laboratory} onChange={(e) => setLaboratory(e.target.value)} />
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input type="checkbox" checked={requiresPrescription} onChange={(e) => setRequiresPrescription(e.target.checked)} />
+                {t("pharmacy.requiresPrescription")}
+              </label>
+            </fieldset>
+          )}
+
+          {isPharmacy && editingProductId && (
+            <fieldset style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: 12, display: "grid", gap: 10 }}>
+              <legend style={{ padding: "0 6px", fontWeight: 600 }}>{t("pharmacy.presentationsTitle")}</legend>
+              <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("pharmacy.presentationsHint")}</p>
+              {variants.filter((v) => v.productId === editingProductId && v.parentVariantId != null).length === 0 ? (
+                <p style={{ margin: 0, fontSize: 13 }}>{t("pharmacy.presentationNone")}</p>
+              ) : (
+                variants
+                  .filter((v) => v.productId === editingProductId && v.parentVariantId != null)
+                  .map((v) => (
+                    <div key={v.id} style={{ fontSize: 13 }}>
+                      {t("pharmacy.presentationLine", {
+                        name: variantPresentation(v) || "—",
+                        units: v.unitsPerParent ?? 0,
+                        price: formatAmount(v.priceOverride ?? 0),
+                      })}
+                    </div>
+                  ))
+              )}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+                <label style={{ flex: 2, minWidth: 130 }}>
+                  {t("pharmacy.presentationName")}
+                  <input style={inputStyle} value={presName} onChange={(e) => setPresName(e.target.value)} />
+                </label>
+                <label style={{ flex: 1, minWidth: 100 }}>
+                  {t("pharmacy.unitsPerBoxLabel")}
+                  <input style={inputStyle} type="number" step="any" min={1} value={presUnits} onChange={(e) => setPresUnits(e.target.value)} />
+                </label>
+                <label style={{ flex: 1, minWidth: 110 }}>
+                  {t("pharmacy.presentationPrice")}
+                  <input style={inputStyle} type="number" step="any" min={0} value={presPrice} onChange={(e) => setPresPrice(e.target.value)} />
+                </label>
+                <button type="button" style={primaryButtonStyle} onClick={() => void handleAddPresentation()}>
+                  {t("pharmacy.presentationAdd")}
+                </button>
+              </div>
+              {presError && <p style={{ color: "var(--color-danger)", fontSize: 13, margin: 0 }}>{presError}</p>}
+            </fieldset>
+          )}
+
           {businessSettings?.taxEnabled && (
             <label>
               {t("products.taxRate", { rate: businessSettings.defaultTaxRate })}
               <input
                 style={inputStyle}
-                type="number"
+                type="number" step="any"
                 min={0}
                 max={99}
                 value={taxRate}
@@ -368,10 +512,20 @@ export function ProductsPage() {
               const category = categories.find((c) => c.id === product.categoryId);
               return (
                 <tr key={product.id}>
-                  <td style={tdStyle}>{product.name}</td>
+                  <td style={tdStyle}>
+                    {product.name}
+                    {(product.dci || product.dosage) && (
+                      <div style={{ color: "var(--color-text-muted)", fontSize: 12 }}>
+                        {[product.dci, product.dosage, product.dosageForm].filter(Boolean).join(" · ")}
+                      </div>
+                    )}
+                    {product.requiresPrescription && (
+                      <span style={{ ...badgeStyle("warning"), marginTop: 2, display: "inline-block" }}>{t("pharmacy.prescriptionBadge")}</span>
+                    )}
+                  </td>
                   <td style={tdStyle}>{category?.name ?? "—"}</td>
-                  {canViewMargins && <td style={tdStyle}>{product.purchasePrice}</td>}
-                  <td style={tdStyle}>{product.salePrice}</td>
+                  {canViewMargins && <td style={tdStyle}>{formatAmount(product.purchasePrice)}</td>}
+                  <td style={tdStyle}>{formatAmount(product.salePrice)}</td>
                   <td style={tdStyle}>
                     <span style={badgeStyle(isLow ? "warning" : "ok")}>{stock}</span>
                   </td>

@@ -1,3 +1,5 @@
+import { useApproval } from "../approval/ApprovalProvider";
+import { formatAmount } from "../../lib/format";
 import { createRefund, getRefundedQuantities, listSaleItems, type RefundMethod } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useEffect, useState } from "react";
@@ -28,6 +30,7 @@ export function RefundModal({
   const db = useDatabase();
   const { user } = useAuth();
   const { t } = useTranslation();
+  const approval = useApproval();
 
   const METHOD_LABELS: Record<RefundMethod, string> = {
     cash: t("journals.refundMethods.cash"),
@@ -82,12 +85,19 @@ export function RefundModal({
       return;
     }
 
+    if (!reason.trim()) {
+      setError(t("journals.refundModal.errorReasonRequired"));
+      return;
+    }
+
     setSaving(true);
     try {
-      await createRefund(
-        db,
-        { saleId: sale.id, items: selected, reason: reason.trim() || undefined, method, userId: user.id },
-        user.permissions,
+      await approval.run((a) =>
+        createRefund(
+          db,
+          { saleId: sale.id, items: selected, reason: reason.trim(), method, userId: user.id, approval: a },
+          user.permissions,
+        ),
       );
       onDone();
       onClose();
@@ -190,7 +200,7 @@ export function RefundModal({
             </label>
 
             <p style={{ marginTop: 12, fontWeight: 600 }}>
-              {t("journals.refundModal.totalToRefund")} {previewTotal.toFixed(2)}
+              {t("journals.refundModal.totalToRefund")} {formatAmount(previewTotal)}
             </p>
 
             {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}

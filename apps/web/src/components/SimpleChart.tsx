@@ -1,3 +1,4 @@
+import { formatAmount } from "../lib/format";
 import { useTranslation } from "react-i18next";
 
 export interface ChartPoint {
@@ -21,7 +22,7 @@ function labelStep(count: number): number {
   return Math.max(1, Math.ceil(count / 12));
 }
 
-export function BarChart({ data, height = 220, positiveColor = "#38bdf8", negativeColor = "#f87171" }: ChartProps) {
+export function BarChart({ data, height = 220, positiveColor = "var(--color-accent)", negativeColor = "#f87171" }: ChartProps) {
   const { t } = useTranslation();
   const width = 720;
   const paddingLeft = 48;
@@ -47,10 +48,10 @@ export function BarChart({ data, height = 220, positiveColor = "#38bdf8", negati
       <line x1={paddingLeft} y1={zeroY} x2={width - 12} y2={zeroY} stroke={AXIS_COLOR} strokeWidth={1} />
       <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={height - paddingBottom} stroke={AXIS_COLOR} strokeWidth={1} />
       <text x={4} y={paddingTop + 4} fill={TEXT_COLOR} fontSize={10}>
-        {maxValue.toFixed(0)}
+        {formatAmount(maxValue)}
       </text>
       <text x={4} y={height - paddingBottom} fill={TEXT_COLOR} fontSize={10}>
-        {minValue.toFixed(0)}
+        {formatAmount(minValue)}
       </text>
       {data.map((point, i) => {
         const barHeight = (Math.abs(point.value) / range) * plotHeight;
@@ -84,7 +85,7 @@ export function BarChart({ data, height = 220, positiveColor = "#38bdf8", negati
   );
 }
 
-export function LineChart({ data, height = 220, positiveColor = "#38bdf8", negativeColor = "#f87171" }: ChartProps) {
+export function LineChart({ data, height = 220, positiveColor = "var(--color-accent)", negativeColor = "#f87171" }: ChartProps) {
   const { t } = useTranslation();
   const width = 720;
   const paddingLeft = 48;
@@ -118,10 +119,10 @@ export function LineChart({ data, height = 220, positiveColor = "#38bdf8", negat
       <line x1={paddingLeft} y1={zeroY} x2={width - 12} y2={zeroY} stroke={AXIS_COLOR} strokeWidth={1} />
       <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={height - paddingBottom} stroke={AXIS_COLOR} strokeWidth={1} />
       <text x={4} y={paddingTop + 4} fill={TEXT_COLOR} fontSize={10}>
-        {maxValue.toFixed(0)}
+        {formatAmount(maxValue)}
       </text>
       <text x={4} y={height - paddingBottom} fill={TEXT_COLOR} fontSize={10}>
-        {minValue.toFixed(0)}
+        {formatAmount(minValue)}
       </text>
       <path d={linePath} fill="none" stroke={overallTrend ? positiveColor : negativeColor} strokeWidth={2} />
       {points.map(({ x, y, point }, i) => (

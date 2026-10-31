@@ -1,18 +1,17 @@
+import { assertValidLines } from "../domain/validation";
+import { nextDocumentNumber } from "./documentNumber";
+import type { ApprovalInput } from "./ApprovalService";
+import { roundMoney } from "../domain/money";
 import type { Database } from "@gestion-boutique/database";
-import { schema } from "@gestion-boutique/database";
+import { schema, withTransaction } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, sql, and, ne } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { createSale, type PaymentMethod } from "./SalesService";
 import { findOrCreateCustomerByName } from "./CustomersService";
 
-async function nextQuoteNumber(db: Database): Promise<string> {
-  const row = await db.select({ count: sql<number>`COUNT(*)` }).from(schema.quotes).get();
-  const year = new Date().getFullYear();
-  const seq = ((row?.count as unknown as number) ?? 0) + 1;
-  return `DEV-${year}-${String(seq).padStart(6, "0")}`;
-}
+const nextQuoteNumber = (db: Database) => nextDocumentNumber(db, schema.quotes, "DEV");
 
 export interface QuoteItemInput {
   variantId: number;
@@ -25,7 +24,7 @@ export interface QuoteItemInput {
 // Prix TTC, comme SalesService.computeItemTotal — voir ce fichier pour le
 // détail du modèle (le taux extrait la TVA, il ne l'ajoute pas).
 function computeItemTotal(item: QuoteItemInput): number {
-  return item.quantity * item.unitPrice - (item.discount ?? 0);
+  return roundMoney(item.quantity * item.unitPrice - (item.discount ?? 0));
 }
 
 export interface CreateQuoteInput {
@@ -37,11 +36,12 @@ export interface CreateQuoteInput {
   storeId?: number;
 }
 
-export async function createQuote(db: Database, input: CreateQuoteInput, actingPermissions: PermissionSet) {
+async function createQuoteUnsafe(db: Database, input: CreateQuoteInput, actingPermissions: PermissionSet) {
   requirePermission(actingPermissions, "manage_quotes");
   if (input.items.length === 0) {
     throw new Error(t("coreErrors.quotes.itemRequired"));
   }
+  assertValidLines(input.items);
 
   const trimmedName = input.newCustomerName?.trim();
   let customerId = input.customerId ?? null;
@@ -50,7 +50,7 @@ export async function createQuote(db: Database, input: CreateQuoteInput, actingP
     customerId = customer.id;
   }
 
-  const total = input.items.reduce((sum, item) => sum + computeItemTotal(item), 0);
+  const total = roundMoney(input.items.reduce((sum, item) => sum + computeItemTotal(item), 0));
   const number = await nextQuoteNumber(db);
 
   const quote = await db
@@ -125,6 +125,7 @@ export interface ConvertQuoteToSaleInput {
   amountPaid?: number;
   userId: number;
   storeId: number;
+  approval?: ApprovalInput;
 }
 
 export async function convertQuoteToSale(
@@ -147,7 +148,24 @@ export async function convertQuoteToSale(
     throw new Error(t("coreErrors.quotes.noItems"));
   }
 
-  const sale = await createSale(
+  // Le devis est « réservé » par une seule instruction atomique AVANT de créer la
+  // vente : un double clic ou deux postes lisaient tous deux « pas encore converti »
+  // et créaient chacun une vente (stock décrémenté et argent encaissé deux fois).
+  // Si la vente échoue, le statut d'origine est rétabli.
+  const previousStatus = quote.status;
+  const claimed = await db
+    .update(schema.quotes)
+    .set({ status: "converted" })
+    .where(and(eq(schema.quotes.id, quoteId), ne(schema.quotes.status, "converted")))
+    .returning({ id: schema.quotes.id })
+    .get();
+  if (!claimed) {
+    throw new Error(t("coreErrors.quotes.alreadyConverted"));
+  }
+
+  let sale;
+  try {
+    sale = await createSale(
     db,
     {
       userId: input.userId,
@@ -164,9 +182,14 @@ export async function convertQuoteToSale(
       amountPaid: input.amountPaid,
       surfaceLocationId: input.surfaceLocationId,
       storeId: input.storeId,
+      approval: input.approval,
     },
     actingPermissions,
   );
+  } catch (err) {
+    await db.update(schema.quotes).set({ status: previousStatus }).where(eq(schema.quotes.id, quoteId)).run();
+    throw err;
+  }
 
   await db
     .update(schema.quotes)
@@ -175,4 +198,9 @@ export async function convertQuoteToSale(
     .run();
 
   return sale;
+}
+
+// Devis + lignes + trace d'audit : tout ou rien.
+export function createQuote(db: Database, input: CreateQuoteInput, actingPermissions: PermissionSet) {
+  return withTransaction(() => createQuoteUnsafe(db, input, actingPermissions));
 }

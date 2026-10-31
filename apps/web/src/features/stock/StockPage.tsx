@@ -19,6 +19,7 @@ import { schema } from "@gestion-boutique/database";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
+import { useApproval } from "../approval/ApprovalProvider";
 import { FilterBar } from "../../components/FilterBar";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
@@ -32,8 +33,12 @@ import {
   thStyle,
 } from "../../components/sharedStyles";
 import { openExternalUrl } from "../../lib/openExternalUrl";
-import { buildWhatsAppLink } from "../../lib/whatsapp";
+import { variantFullName } from "../../lib/variantLabel";
+import { openWhatsApp } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
+import { ExpiryPanel } from "./ExpiryPanel";
+import { LotTracePanel } from "./LotTracePanel";
+import { PackPanel } from "./PackPanel";
 
 type Product = typeof schema.products.$inferSelect;
 type Variant = typeof schema.productVariants.$inferSelect;
@@ -46,6 +51,8 @@ export function StockPage() {
   const { user, currentStoreId } = useAuth();
   const { t } = useTranslation();
   const canManage = hasPermission(user?.permissions ?? {}, "manage_stock");
+  const canTransfer = hasPermission(user?.permissions ?? {}, "transfer_stock");
+  const canLoss = hasPermission(user?.permissions ?? {}, "record_stock_losses");
 
   const LOSS_REASONS: { value: string; label: string }[] = [
     { value: "expiry", label: t("journals.lossReasons.expiry") },
@@ -67,6 +74,7 @@ export function StockPage() {
   const [entryQuantity, setEntryQuantity] = useState("0");
   const [lotNumber, setLotNumber] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
+  const [entryNote, setEntryNote] = useState("");
   const [entryError, setEntryError] = useState<string | null>(null);
   const [entrySaving, setEntrySaving] = useState(false);
 
@@ -81,9 +89,11 @@ export function StockPage() {
   const [lossLocationId, setLossLocationId] = useState<string>("");
   const [lossQuantity, setLossQuantity] = useState("0");
   const [lossReason, setLossReason] = useState(LOSS_REASONS[0]!.value);
+  const [lossNote, setLossNote] = useState("");
   const [lossError, setLossError] = useState<string | null>(null);
   const [lossSaving, setLossSaving] = useState(false);
 
+  const approval = useApproval();
   const [search, setSearch] = useState("");
   const [filterLocationId, setFilterLocationId] = useState("");
   const [lowStockOnly, setLowStockOnly] = useState(false);
@@ -117,8 +127,7 @@ export function StockPage() {
 
   const variantLabel = (variant: Variant) => {
     const product = products.find((p) => p.id === variant.productId);
-    const attrs = variant.attributes && variant.attributes !== "{}" ? ` (${variant.attributes})` : "";
-    return `${product?.name ?? "?"}${attrs}`;
+    return variantFullName(variant, product?.name ?? "?");
   };
 
   const quantityFor = (vId: number, lId: number) =>
@@ -160,6 +169,10 @@ export function StockPage() {
       setEntryError(t("stock.errors.entryRequired"));
       return;
     }
+    if (!entryNote.trim()) {
+      setEntryError(t("stock.errors.entryNoteRequired"));
+      return;
+    }
     if (selectedProductTracksExpiry && !expiryDate) {
       setEntryError(t("stock.errors.entryExpiryRequired"));
       return;
@@ -167,22 +180,27 @@ export function StockPage() {
 
     setEntrySaving(true);
     try {
-      await addManualStockEntry(
-        db,
-        {
-          variantId: vId,
-          locationId: lId,
-          quantity: qty,
-          lotNumber: lotNumber || undefined,
-          expiryDate: selectedProductTracksExpiry ? expiryDate : undefined,
-          userId: user?.id,
-        },
-        user?.permissions ?? {},
+      await approval.run((a) =>
+        addManualStockEntry(
+          db,
+          {
+            variantId: vId,
+            locationId: lId,
+            quantity: qty,
+            lotNumber: lotNumber || undefined,
+            expiryDate: selectedProductTracksExpiry ? expiryDate : undefined,
+            userId: user?.id,
+            note: entryNote,
+            approval: a,
+          },
+          user?.permissions ?? {},
+        ),
       );
 
       setVariantId("");
       setEntryLocationId("");
       setEntryQuantity("0");
+      setEntryNote("");
       setLotNumber("");
       setExpiryDate("");
       await refresh();
@@ -253,20 +271,25 @@ export function StockPage() {
 
     setLossSaving(true);
     try {
-      await recordStockLoss(
-        db,
-        {
-          variantId: vId,
-          locationId: lId,
-          quantity: qty,
-          reason: lossReason,
-          userId: user?.id,
-        },
-        user?.permissions ?? {},
+      await approval.run((a) =>
+        recordStockLoss(
+          db,
+          {
+            variantId: vId,
+            locationId: lId,
+            quantity: qty,
+            reason: lossReason,
+            note: lossNote,
+            userId: user?.id,
+            approval: a,
+          },
+          user?.permissions ?? {},
+        ),
       );
       setLossVariantId("");
       setLossLocationId("");
       setLossQuantity("0");
+      setLossNote("");
       setLossReason(LOSS_REASONS[0]!.value);
       await refresh();
     } catch (err) {
@@ -293,7 +316,7 @@ export function StockPage() {
       );
     if (lowStock.length > MAX_LISTED) lines.push(t("whatsapp.moreItems", { count: lowStock.length - MAX_LISTED }));
     const message = t("whatsapp.lowStockAlert", { count: lowStock.length, business, lines: lines.join("\n") });
-    void openExternalUrl(buildWhatsAppLink(lowStockAlertPhone, businessSettings?.whatsappCountryCode, message));
+    void openWhatsApp(lowStockAlertPhone, businessSettings?.whatsappCountryCode, message);
   };
 
   // Même numéro que l'alerte stock bas (business_settings.lowStockAlertPhone)
@@ -319,7 +342,7 @@ export function StockPage() {
       business,
       lines: lines.join("\n"),
     });
-    void openExternalUrl(buildWhatsAppLink(lowStockAlertPhone, businessSettings?.whatsappCountryCode, message));
+    void openWhatsApp(lowStockAlertPhone, businessSettings?.whatsappCountryCode, message);
   };
 
   return (
@@ -356,31 +379,29 @@ export function StockPage() {
         </div>
       )}
 
-      {expiring.length > 0 && (
-        <div style={{ ...cardStyle, borderLeft: "4px solid var(--color-caution)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-            <strong>{t("stock.expiringSoon", { days: EXPIRY_WARNING_DAYS })}</strong>
-            {lowStockAlertPhone && (
-              <button
-                style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 13, whiteSpace: "nowrap" }}
-                onClick={handleNotifyExpiring}
-              >
-                {t("stock.notifyWhatsapp")}
-              </button>
-            )}
-          </div>
-          <ul style={{ margin: 0, paddingLeft: 20 }}>
-            {expiring.map((e) => (
-              <li key={e.batch.id}>
-                {t("stock.expiringLine", {
-                  product: productName(e.variant.productId),
-                  lot: e.batch.lotNumber || "—",
-                  date: e.batch.expiryDate,
-                })}
-              </li>
-            ))}
-          </ul>
-        </div>
+      <ExpiryPanel
+        products={products}
+        storeId={currentStoreId ?? undefined}
+        canWriteOff={canLoss}
+        onChanged={refresh}
+        onNotify={expiring.length > 0 && lowStockAlertPhone ? handleNotifyExpiring : undefined}
+      />
+
+      {canTransfer && (
+        <PackPanel
+          products={products}
+          variants={variants}
+          locations={locations}
+          levels={levels}
+          onChanged={refresh}
+        />
+      )}
+
+      {businessSettings?.sectorType === "pharmacie" && (
+        <LotTracePanel
+          businessName={businessSettings.businessName ?? undefined}
+          countryCode={businessSettings.whatsappCountryCode}
+        />
       )}
 
       <FilterBar
@@ -496,6 +517,16 @@ export function StockPage() {
               />
             </label>
 
+            <label>
+              {t("stock.entry.note")}
+              <input
+                style={inputStyle}
+                value={entryNote}
+                onChange={(e) => setEntryNote(e.target.value)}
+                placeholder={t("stock.entry.notePlaceholder")}
+              />
+            </label>
+
             {selectedProductTracksExpiry && (
               <>
                 <label>
@@ -521,6 +552,7 @@ export function StockPage() {
             </button>
           </div>
 
+          {canTransfer && (
           <div style={cardStyle}>
             <strong>{t("stock.transfer.heading")}</strong>
             <label>
@@ -581,7 +613,9 @@ export function StockPage() {
               {transferSaving ? t("stock.transfer.transferring") : t("stock.transfer.submit")}
             </button>
           </div>
+          )}
 
+          {canLoss && (
           <div style={{ ...cardStyle, borderLeft: "4px solid var(--color-danger)" }}>
             <strong>{t("stock.loss.heading")}</strong>
             <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("stock.loss.hint")}</p>
@@ -629,6 +663,15 @@ export function StockPage() {
                 onChange={(e) => setLossQuantity(e.target.value)}
               />
             </label>
+            <label>
+              {t("stock.loss.note")}
+              <input
+                style={inputStyle}
+                value={lossNote}
+                onChange={(e) => setLossNote(e.target.value)}
+                placeholder={t("stock.loss.notePlaceholder")}
+              />
+            </label>
 
             {lossError && <p style={{ color: "var(--color-danger)" }}>{lossError}</p>}
 
@@ -640,6 +683,7 @@ export function StockPage() {
               {lossSaving ? t("stock.loss.saving") : t("stock.loss.submit")}
             </button>
           </div>
+          )}
         </>
       )}
     </main>

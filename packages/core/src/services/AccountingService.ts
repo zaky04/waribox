@@ -43,7 +43,7 @@ export async function getIncomeStatement(db: Database, range: DateRange): Promis
   // volontaire assumée, documentée plutôt que masquée (comme
   // getMarginsSummary le fait déjà pour purchasePrice).
   const serviceRevenue = serviceOrders
-    .filter((so) => so.createdAt.slice(0, 10) >= from10 && so.createdAt.slice(0, 10) <= to10)
+    .filter((so) => !so.cancelledAt && so.createdAt.slice(0, 10) >= from10 && so.createdAt.slice(0, 10) <= to10)
     .reduce((sum, so) => sum + (so.total - so.taxTotal), 0);
 
   const salesRevenue = margins.revenue;

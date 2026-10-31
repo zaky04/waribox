@@ -1,3 +1,4 @@
+import { formatAmount } from "../../lib/format";
 import {
   buildCashFlowReportExcel,
   buildCashFlowReportPdf,
@@ -97,6 +98,7 @@ export function ReportsPage() {
   const { user, currentStoreId } = useAuth();
   const { t } = useTranslation();
   const canViewMargins = user ? hasPermission(user.permissions, "view_margins") : false;
+  const canExport = user ? hasPermission(user.permissions, "export_reports") : false;
 
   const PAYMENT_STATUS_LABELS: Record<string, string> = {
     paid: t("common.paymentStatus.paid"),
@@ -182,7 +184,7 @@ export function ReportsPage() {
     setServiceOrdersEnabled(settings?.enableServiceOrders ?? false);
     setBusinessSettings(settings ?? null);
     setCustomers(customerRows);
-    setServiceOrders(orderRows);
+    setServiceOrders(orderRows.filter((o) => !o.cancelledAt));
     setTaxSummary(tax);
     setCashSessions(sessions);
     setUsers(userRows);
@@ -336,7 +338,7 @@ export function ReportsPage() {
               style={{
                 ...primaryButtonStyle,
                 background: subTab === tab.key ? "var(--gradient-accent)" : "transparent",
-                color: subTab === tab.key ? "#0f172a" : "var(--color-text)",
+                color: subTab === tab.key ? "var(--color-on-accent)" : "var(--color-text)",
                 border: subTab === tab.key ? "none" : "1px solid var(--color-border)",
               }}
             >
@@ -386,7 +388,7 @@ export function ReportsPage() {
           <div style={{ display: "flex", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("reports.revenue")}</span>
-              <strong style={{ fontSize: 22 }}>{salesSummary.totalRevenue.toFixed(0)}</strong>
+              <strong style={{ fontSize: 22 }}>{formatAmount(salesSummary.totalRevenue)}</strong>
             </div>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("reports.saleCount")}</span>
@@ -394,7 +396,7 @@ export function ReportsPage() {
             </div>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("reports.averageBasket")}</span>
-              <strong style={{ fontSize: 22 }}>{salesSummary.averageBasket.toFixed(0)}</strong>
+              <strong style={{ fontSize: 22 }}>{formatAmount(salesSummary.averageBasket)}</strong>
             </div>
           </div>
 
@@ -406,10 +408,10 @@ export function ReportsPage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24, flexWrap: "wrap", gap: 8 }}>
             <strong>{t("reports.topProducts")}</strong>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              <button style={secondaryButtonStyle} onClick={exportSalesPdf}>
+              <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportSalesPdf}>
                 {t("reports.exportPdf")}
               </button>
-              <button style={secondaryButtonStyle} onClick={exportSalesExcel}>
+              <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportSalesExcel}>
                 {t("reports.exportExcel")}
               </button>
             </div>
@@ -428,7 +430,7 @@ export function ReportsPage() {
                   <tr key={p.productId}>
                     <td style={tdStyle}>{p.name}</td>
                     <td style={tdStyle}>{p.quantity}</td>
-                    <td style={tdStyle}>{p.revenue.toFixed(0)}</td>
+                    <td style={tdStyle}>{formatAmount(p.revenue)}</td>
                   </tr>
                 ))}
                 {topProducts.length === 0 && (
@@ -449,16 +451,16 @@ export function ReportsPage() {
           <div style={{ display: "flex", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("reports.marginRevenue")}</span>
-              <strong style={{ fontSize: 22 }}>{marginsSummary.revenue.toFixed(0)}</strong>
+              <strong style={{ fontSize: 22 }}>{formatAmount(marginsSummary.revenue)}</strong>
             </div>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("reports.marginCost")}</span>
-              <strong style={{ fontSize: 22 }}>{marginsSummary.cost.toFixed(0)}</strong>
+              <strong style={{ fontSize: 22 }}>{formatAmount(marginsSummary.cost)}</strong>
             </div>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("reports.margin")}</span>
               <strong style={{ fontSize: 22, color: marginsSummary.margin >= 0 ? "var(--color-success)" : "var(--color-danger)" }}>
-                {marginsSummary.margin.toFixed(0)} ({marginsSummary.marginRate.toFixed(1)}%)
+                {formatAmount(marginsSummary.margin)} ({marginsSummary.marginRate.toFixed(1)}%)
               </strong>
             </div>
           </div>
@@ -469,10 +471,10 @@ export function ReportsPage() {
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-            <button style={secondaryButtonStyle} onClick={exportMarginsPdf}>
+            <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportMarginsPdf}>
               {t("reports.exportPdf")}
             </button>
-            <button style={secondaryButtonStyle} onClick={exportMarginsExcel}>
+            <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportMarginsExcel}>
               {t("reports.exportExcel")}
             </button>
           </div>
@@ -501,7 +503,7 @@ export function ReportsPage() {
                     <td style={tdStyle}>{p.name}</td>
                     <td style={tdStyle}>{p.quantity}</td>
                     <td style={{ ...tdStyle, color: p.margin >= 0 ? "var(--color-success)" : "var(--color-danger)" }}>
-                      {p.margin.toFixed(0)}
+                      {formatAmount(p.margin)}
                     </td>
                     <td style={tdStyle}>{p.marginRate.toFixed(1)}%</td>
                     <td style={tdStyle}>{p.cumulativeShare.toFixed(1)}%</td>
@@ -562,10 +564,10 @@ export function ReportsPage() {
               </div>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-                <button style={secondaryButtonStyle} onClick={exportCashFlowPdf}>
+                <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportCashFlowPdf}>
                   {t("reports.exportPdf")}
                 </button>
-                <button style={secondaryButtonStyle} onClick={exportCashFlowExcel}>
+                <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportCashFlowExcel}>
                   {t("reports.exportExcel")}
                 </button>
               </div>
@@ -585,12 +587,12 @@ export function ReportsPage() {
                     {projection.byYear.map((y) => (
                       <tr key={y.year}>
                         <td style={tdStyle}>{y.year}</td>
-                        <td style={tdStyle}>{y.projectedIn.toFixed(0)}</td>
-                        <td style={tdStyle}>{y.projectedOut.toFixed(0)}</td>
+                        <td style={tdStyle}>{formatAmount(y.projectedIn)}</td>
+                        <td style={tdStyle}>{formatAmount(y.projectedOut)}</td>
                         <td style={{ ...tdStyle, color: y.projectedNet >= 0 ? "var(--color-success)" : "var(--color-danger)" }}>
-                          {y.projectedNet.toFixed(0)}
+                          {formatAmount(y.projectedNet)}
                         </td>
-                        <td style={tdStyle}>{y.cumulative.toFixed(0)}</td>
+                        <td style={tdStyle}>{formatAmount(y.cumulative)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -606,19 +608,19 @@ export function ReportsPage() {
           <div style={{ display: "flex", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("reports.netTaxCollected")}</span>
-              <strong style={{ fontSize: 22 }}>{taxSummary.totalTaxCollected.toFixed(0)}</strong>
+              <strong style={{ fontSize: 22 }}>{formatAmount(taxSummary.totalTaxCollected)}</strong>
             </div>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("reports.salesTax")}</span>
-              <strong style={{ fontSize: 22 }}>{taxSummary.salesTaxTotal.toFixed(0)}</strong>
+              <strong style={{ fontSize: 22 }}>{formatAmount(taxSummary.salesTaxTotal)}</strong>
             </div>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("reports.refundedTax")}</span>
-              <strong style={{ fontSize: 22 }}>{taxSummary.refundsTaxTotal.toFixed(0)}</strong>
+              <strong style={{ fontSize: 22 }}>{formatAmount(taxSummary.refundsTaxTotal)}</strong>
             </div>
             <div style={cardStyle}>
               <span style={{ color: "var(--color-text-muted)" }}>{t("reports.taxableRevenue")}</span>
-              <strong style={{ fontSize: 22 }}>{taxSummary.taxableRevenue.toFixed(0)}</strong>
+              <strong style={{ fontSize: 22 }}>{formatAmount(taxSummary.taxableRevenue)}</strong>
             </div>
           </div>
 
@@ -628,10 +630,10 @@ export function ReportsPage() {
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-            <button style={secondaryButtonStyle} onClick={exportTaxPdf}>
+            <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportTaxPdf}>
               {t("reports.exportPdf")}
             </button>
-            <button style={secondaryButtonStyle} onClick={exportTaxExcel}>
+            <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportTaxExcel}>
               {t("reports.exportExcel")}
             </button>
           </div>
@@ -641,10 +643,10 @@ export function ReportsPage() {
       {subTab === "cash" && (
         <>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 24 }}>
-            <button style={secondaryButtonStyle} onClick={exportCashSessionsPdf}>
+            <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportCashSessionsPdf}>
               {t("reports.exportPdf")}
             </button>
-            <button style={secondaryButtonStyle} onClick={exportCashSessionsExcel}>
+            <button disabled={!canExport} style={secondaryButtonStyle} onClick={exportCashSessionsExcel}>
               {t("reports.exportExcel")}
             </button>
           </div>
@@ -666,17 +668,17 @@ export function ReportsPage() {
                   <tr key={i}>
                     <td style={tdStyle}>{r.openedAt}</td>
                     <td style={tdStyle}>{r.userName}</td>
-                    <td style={tdStyle}>{r.openingAmount.toFixed(0)}</td>
+                    <td style={tdStyle}>{formatAmount(r.openingAmount)}</td>
                     <td style={tdStyle}>{r.closedAt ?? t("reports.inProgress")}</td>
-                    <td style={tdStyle}>{r.closingAmount != null ? r.closingAmount.toFixed(0) : "—"}</td>
-                    <td style={tdStyle}>{r.expectedAmount != null ? r.expectedAmount.toFixed(0) : "—"}</td>
+                    <td style={tdStyle}>{r.closingAmount != null ? formatAmount(r.closingAmount) : "—"}</td>
+                    <td style={tdStyle}>{r.expectedAmount != null ? formatAmount(r.expectedAmount) : "—"}</td>
                     <td
                       style={{
                         ...tdStyle,
                         color: r.difference == null ? undefined : r.difference === 0 ? "var(--color-success)" : "var(--color-danger)",
                       }}
                     >
-                      {r.difference != null ? r.difference.toFixed(0) : "—"}
+                      {r.difference != null ? formatAmount(r.difference) : "—"}
                     </td>
                   </tr>
                 ))}
@@ -714,7 +716,7 @@ export function ReportsPage() {
                     <td style={tdStyle}>{order.number}</td>
                     <td style={tdStyle}>{order.createdAt}</td>
                     <td style={tdStyle}>{customerName(order.customerId) ?? "—"}</td>
-                    <td style={tdStyle}>{order.total.toFixed(0)}</td>
+                    <td style={tdStyle}>{formatAmount(order.total)}</td>
                     <td style={tdStyle}>{PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus}</td>
                     <td style={tdStyle}>
                       <button

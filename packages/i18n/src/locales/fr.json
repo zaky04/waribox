@@ -3,7 +3,8 @@
     "paymentStatus": {
       "paid": "Payée",
       "partial": "Partielle",
-      "credit": "Crédit"
+      "credit": "Crédit",
+      "unpaid": "À payer"
     },
     "filterBar": {
       "from": "Du",
@@ -27,6 +28,9 @@
     "service_orders": "Tickets de service",
     "promotions": "Promotions",
     "products": "Produits",
+    "productsPharmacie": "Médicaments",
+    "productsRestaurant": "Plats & boissons",
+    "productsPressing": "Services",
     "stock": "Stock",
     "customers": "Clients",
     "suppliers": "Fournisseurs",
@@ -36,17 +40,28 @@
     "reports": "Rapports",
     "expenses": "Dépenses",
     "accounting": "Comptabilité",
-    "settings": "Paramètres",
+    "settings": "Configuration",
     "users": "Utilisateurs",
-    "journals": "Journaux"
+    "journals": "Journaux",
+    "groups": {
+      "sales": "Vente",
+      "relations": "Relations",
+      "finance": "Finances",
+      "system": "Système"
+    },
+    "appearance": "Apparence",
+    "advanced": "Configuration avancée",
+    "inventory": "Inventaire",
+    "controls": "Contrôles",
+    "approvals": "Demandes"
   },
   "topbar": {
     "impersonatingPrefix": "Connecté en tant que",
     "impersonatingSuffix": "— session ouverte par",
     "returnToSelf": "Revenir à mon compte",
     "myPassword": "Mon mot de passe",
-    "themeDark": "🌙 Sombre",
-    "themeLight": "☀️ Clair",
+    "themeDark": "Sombre",
+    "themeLight": "Clair",
     "lock": "Verrouiller",
     "logout": "Déconnexion",
     "language": "Langue"
@@ -72,7 +87,28 @@
     "backup": "Sauvegarde",
     "backupNever": "Jamais",
     "backupOverdue": "En retard — à faire dans Paramètres",
-    "backupUpToDate": "À jour"
+    "backupUpToDate": "À jour",
+    "vsYesterday": "par rapport à hier ({{amount}})",
+    "avgBasket": "Panier moyen",
+    "salesLabel": "Ventes",
+    "peakHour": "{{hour}} h : le coup de feu",
+    "todoTitle": "À faire aujourd'hui",
+    "todoEmpty": "rien à signaler",
+    "todoLowStockDetail": "{{count}} produit(s) sous leur seuil d'alerte",
+    "todoExpiringDetail": "{{count}} lot(s) à écouler ou retirer d'ici {{days}} jours",
+    "todoReadyDetail": "{{count}} ticket(s) prêts à retirer",
+    "todoCreditsDetail": "{{count}} créance(s) en retard à relancer",
+    "todoBackupDetail": "Dernière sauvegarde : {{date}}",
+    "open": "Ouvrir",
+    "recentSales": "Dernières ventes",
+    "noSalesYet": "aucune vente pour l'instant",
+    "chartLabel": "Ventes par heure aujourd'hui",
+    "controlAlerts": "Alertes de contrôle",
+    "controlAlertsDetail": "{{count}} signal(s) à vérifier sur 30 jours ({{danger}} grave(s))",
+    "pendingApprovals": "Demandes à approuver",
+    "pendingApprovalsDetail": "{{count}} demande(s) attendent votre décision",
+    "decisionsToSee": "Décisions sur vos demandes",
+    "decisionsToSeeDetail": "{{count}} de vos demandes ont été tranchées."
   },
   "sales": {
     "title": "Ventes",
@@ -89,7 +125,7 @@
     "sendWhatsapp": "Envoyer par WhatsApp",
     "searchProductPlaceholder": "Rechercher un produit...",
     "scanHint": "Scanne un code-barres à tout moment pour ajouter directement au panier.",
-    "scanCamera": "📷 Scanner (caméra)",
+    "scanCamera": "Scanner (caméra)",
     "scanner": {
       "permissionDenied": "Accès à la caméra refusé — autorise la caméra dans les paramètres du navigateur/de l'application.",
       "accessFailed": "Impossible d'accéder à la caméra sur cet appareil.",
@@ -149,14 +185,25 @@
       "difference": "Écart :",
       "closing": "Fermeture...",
       "confirm": "Confirmer la fermeture",
-      "cancel": "Annuler"
+      "cancel": "Annuler",
+      "blindHint": "Compte les espèces du tiroir et saisis le total. Le montant attendu ne s'affiche qu'après la clôture.",
+      "resultTitle": "Caisse fermée — résultat du comptage",
+      "expectedLabel": "Montant attendu",
+      "countedLabel": "Montant compté",
+      "alertHint": "Cet écart dépasse le seuil : il est signalé au responsable dans « Contrôles ».",
+      "dismiss": "OK",
+      "error": "La clôture a échoué."
     },
     "paymentMethods": {
       "cash": "Espèces",
       "card": "Carte",
       "mobile_money": "Mobile Money",
       "credit": "Crédit"
-    }
+    },
+    "stampPaid": "PAYÉ",
+    "exactAmount": "Exact",
+    "removeOne": "Retirer un exemplaire",
+    "addOne": "Ajouter un exemplaire"
   },
   "salesHistory": {
     "title": "Historique des ventes",
@@ -176,13 +223,21 @@
     "status": "Statut",
     "report": "Rapport",
     "generating": "Génération...",
-    "noSales": "Aucune vente pour cette sélection."
+    "noSales": "Aucune vente pour cette sélection.",
+    "loadMore": "Afficher plus de ventes"
   },
   "settings": {
-    "title": "Paramètres",
+    "title": "Configuration",
     "business": {
       "heading": "Entreprise",
       "name": "Nom de l'entreprise",
+      "sectorType": "Secteur d'activité",
+      "sectorTypeHint": "Adapte l'icône et le libellé de l'onglet \"Produits\" à ton activité (ex : \"Médicaments\" pour une pharmacie) — n'affecte aucune donnée.",
+      "sectorNone": "Aucun (thème par défaut)",
+      "sectorBoutique": "Boutique / commerce général",
+      "sectorPharmacie": "Pharmacie",
+      "sectorRestaurant": "Restaurant / maquis",
+      "sectorPressing": "Pressing / service",
       "address": "Adresse",
       "phone": "Téléphone",
       "email": "Email",
@@ -200,7 +255,49 @@
       "receipt58mm": "58 mm (32 caractères)",
       "receipt80mm": "80 mm (48 caractères)",
       "receiptCustom": "Personnalisé (nombre de caractères)",
-      "receiptCharsPerLine": "Caractères par ligne"
+      "receiptCharsPerLine": "Caractères par ligne",
+      "currency": "Devise",
+      "currencyHint": "Change l'affichage des montants (symbole, décimales) partout : écrans, tickets, rapports. Les montants déjà enregistrés ne sont pas convertis.",
+      "currencyVatHint": "TVA courante dans ce pays : environ {{rate}} % (à vérifier avec ton comptable).",
+      "currencyNames": {
+        "XOF": "Franc CFA (UEMOA)",
+        "XAF": "Franc CFA (CEMAC)",
+        "NGN": "Naira nigérian",
+        "GHS": "Cedi ghanéen",
+        "EUR": "Euro",
+        "USD": "Dollar américain",
+        "GBP": "Livre sterling"
+      },
+      "country": "Pays du commerce (indicatif ajouté aux numéros de téléphone)",
+      "countryNone": "— Choisir un pays —"
+    },
+    "appearance": {
+      "heading": "Apparence",
+      "hint": "Personnalise la couleur et la forme de toute l'app (boutons, onglets actifs, cartes...) — visible immédiatement sur cette page, appliqué partout après Enregistrer.",
+      "accentColor": "Couleur d'accent",
+      "default": "Par défaut",
+      "custom": "Personnalisé",
+      "shape": "Forme des coins",
+      "shapeRounded": "Arrondi",
+      "shapeSquare": "Carré",
+      "presets": {
+        "ochre": "Ocre",
+        "teal": "Sarcelle",
+        "ink": "Bleu encre",
+        "plum": "Prune",
+        "forest": "Vert forêt",
+        "rose": "Rose",
+        "slate": "Ardoise"
+      },
+      "shapeStandard": "Standard",
+      "background": "Fond de page (thème clair)",
+      "bgPaper": "Papier",
+      "bgWhite": "Blanc",
+      "bgGrey": "Gris clair",
+      "font": "Police",
+      "fontDefault": "Familjen Grotesk",
+      "fontSystem": "Système",
+      "fontSerif": "Classique (serif)"
     },
     "modules": {
       "heading": "Modules actifs",
@@ -282,6 +379,20 @@
       "errors": {
         "noFolderChosen": "Aucun dossier de sauvegarde choisi.",
         "writePermissionDenied": "Permission d'écriture refusée pour le dossier de sauvegarde."
+      },
+      "encryption": {
+        "heading": "Chiffrement des sauvegardes",
+        "hint": "Protège le fichier de sauvegarde par un mot de passe : sans lui, impossible de l'ouvrir (Google Drive, clé USB, téléphone partagé...).",
+        "passphrase": "Mot de passe de chiffrement (8 caractères minimum)",
+        "enable": "Activer le chiffrement",
+        "disable": "Désactiver le chiffrement",
+        "disableConfirm": "Les prochaines sauvegardes ne seront plus chiffrées. Continuer ?",
+        "active": "Chiffrement actif : les sauvegardes sont protégées par votre mot de passe.",
+        "warning": "Notez ce mot de passe en lieu sûr : sans lui, une sauvegarde chiffrée est définitivement illisible (personne ne peut le retrouver).",
+        "tooShort": "Le mot de passe doit faire au moins 8 caractères.",
+        "importPassphrase": "Cette sauvegarde est chiffrée. Mot de passe",
+        "decryptAndRestore": "Déchiffrer et restaurer",
+        "wrongPassphrase": "Mot de passe incorrect, ou fichier abîmé."
       }
     },
     "maintenance": {
@@ -305,6 +416,29 @@
       "launchInstaller": "Lancer l'installeur",
       "closeNow": "L'installeur est ouvert — fermer WariBox maintenant",
       "defineCodeFirst": "Définis d'abord un code de maintenance"
+    },
+    "fne": {
+      "heading": "Facturation électronique (FNE)",
+      "hint": "Côte d'Ivoire — obligatoire depuis le 1er décembre 2025. Coquille activable : reste sans effet tant qu'aucune clé API DGI n'est saisie ci-dessous. Une vente se termine toujours immédiatement, même si la certification échoue ou est hors ligne.",
+      "enable": "Activer la FNE",
+      "environment": "Environnement",
+      "environmentTest": "Test (bac à sable DGI)",
+      "environmentProd": "Production",
+      "baseUrl": "URL de production (fournie par la DGI)",
+      "apiKey": "Clé API",
+      "establishment": "Établissement (identifiant DGI)",
+      "pointOfSale": "Point de vente (identifiant DGI)",
+      "testUrlHint": "URL de test utilisée automatiquement :",
+      "prodUrlHint": "Saisis l'URL de production fournie par la DGI ci-dessus.",
+      "testConnection": "Tester la connexion",
+      "testing": "Test en cours...",
+      "testClientName": "Client test",
+      "testItemDescription": "Article test",
+      "testSuccess": "Connexion réussie — facture de test certifiée.",
+      "testFailure": "Connexion impossible.",
+      "testServerReached": "Le serveur FNE a répondu (bon signe) :",
+      "retryNow_one": "{{count}} vente en attente de certification — réessayer maintenant",
+      "retryNow_other": "{{count}} ventes en attente de certification — réessayer maintenant"
     },
     "saved": "Enregistré.",
     "saving": "Enregistrement...",
@@ -330,13 +464,89 @@
       "updateNoCode": "Saisis le code de maintenance.",
       "updateWrongCode": "Code de maintenance incorrect.",
       "updateFailed": "Mise à jour impossible.",
-      "backupSkippedUnknown": "erreur inconnue"
+      "backupSkippedUnknown": "erreur inconnue",
+      "fneMissingBaseUrl": "Saisis l'URL de production fournie par la DGI."
     },
     "updateStep": {
       "backingUp": "Sauvegarde locale en cours...",
       "backupSkipped": "Sauvegarde non effectuée ({{error}}) — poursuite de l'installation.",
       "launching": "Lancement de l'installeur...",
       "readyMessage": "Une fenêtre d'installation devrait s'ouvrir. Si Windows affiche « Windows a protégé votre PC », c'est normal pour un installeur non signé : clique sur « Informations complémentaires » puis « Exécuter quand même ». Une fois l'assistant d'installation visible, clique ci-dessous pour fermer WariBox et laisser l'installation continuer."
+    },
+    "modulesGate": {
+      "title": "Accès réservé",
+      "hint": "Modules activés, multi-boutique, mode réseau, facturation électronique, export SYSCOHADA et maintenance : ces réglages définissent ce que le logiciel permet. Saisis le code de maintenance pour les modifier.",
+      "codeLabel": "Code de maintenance",
+      "unlock": "Déverrouiller",
+      "wrong": "Code incorrect.",
+      "noCodeBanner": "Aucun code défini : cet écran est ouvert à tous. Définis un code plus bas, dans la section Maintenance, pour le protéger."
+    },
+    "promotionsCard": {
+      "heading": "Remises programmées"
+    }
+  },
+  "network": {
+    "heading": "Mode réseau",
+    "description": "Partagez cette base avec d'autres appareils sur le même réseau local (Maître/Appareil relié), ou restez en mode Solo — un seul appareil, comme aujourd'hui.",
+    "intro": "Choisissez un rôle pour cet appareil : Maître (héberge le réseau) ou Appareil relié (rejoint un Maître déjà démarré). Les ventes, mouvements de stock, dépenses et demandes d'approbation sont partagés entre les appareils reliés ; un appareil relié continue de fonctionner hors connexion et se resynchronise ensuite.",
+    "deviceName": "Nom de cet appareil",
+    "deviceNamePlaceholder": "Ex. : Téléphone du gérant",
+    "defaultMasterName": "Maître WariBox",
+    "defaultWorkerName": "Appareil WariBox",
+    "becomeMaster": "Devenir Maître (héberger)",
+    "joinNetwork": "Rejoindre un réseau",
+    "masterDesktopOnly": "Le rôle Maître n'est disponible que sur l'application de bureau (PC).",
+    "leaveRole": "Quitter ce rôle (revenir en Solo)",
+    "master": {
+      "start": "Démarrer le serveur",
+      "starting": "Démarrage...",
+      "stop": "Arrêter le serveur",
+      "qrAlt": "QR code de pairage",
+      "connectedWorkers": "Appareils connectés ({{count}})",
+      "workerName": "Appareil",
+      "noWorkers": "Aucun appareil connecté pour le moment.",
+      "errors": {
+        "startFailed": "Impossible de démarrer le serveur réseau local."
+      },
+      "manualHeading": "Saisie manuelle (pas de caméra sur l'autre appareil)",
+      "manualHint": "Si le scan du QR ne fonctionne pas, recopie ces 3 valeurs dans le formulaire « Connexion manuelle » de l'appareil relié.",
+      "copyManualInfo": "Copier ces informations",
+      "copied": "Copié !"
+    },
+    "worker": {
+      "status": "État",
+      "statusLabels": {
+        "idle": "Non connecté",
+        "connecting": "Connexion en cours...",
+        "connected": "Connecté",
+        "error": "Erreur",
+        "disconnected": "Déconnecté"
+      },
+      "connecting": "Connexion au Maître en cours...",
+      "scanQr": "Scanner le QR du Maître",
+      "reconnect": "Se reconnecter",
+      "searchOnNetwork": "Rechercher le Maître sur le réseau",
+      "searching": "Recherche en cours...",
+      "host": "Adresse IP du Maître",
+      "port": "Port",
+      "token": "Jeton de pairage",
+      "connect": "Se connecter",
+      "manualEntryError": "Adresse, port et jeton sont requis.",
+      "manualMasterName": "Maître (saisi manuellement)",
+      "errors": {
+        "connectionFailed": "Impossible d'ouvrir la connexion réseau.",
+        "timeout": "Le Maître n'a pas répondu à temps.",
+        "rejected": "Connexion refusée par le Maître.",
+        "searchFailed": "Maître introuvable sur ce réseau — rescannez son QR ou saisissez son adresse manuellement.",
+        "connectionClosed": "La connexion s'est fermée avant même d'atteindre le Maître — probablement l'adresse/le port, un pare-feu, ou le fait que les deux appareils ne sont pas sur le même réseau Wi-Fi."
+      },
+      "manualEntryHint": "Trouve ces 3 valeurs sur l'écran du Maître (Configuration avancée → Mode réseau), sous le QR code — bouton « Copier ces informations ».",
+      "rejectedTitle": "Événements refusés par le Maître",
+      "rejectedHint": "Le Maître n'a pas accepté ces opérations faites sur cet appareil (elles ne sont donc PAS dans sa comptabilité). Corrige la cause, puis réessaie, ou abandonne-les.",
+      "retry": "Réessayer",
+      "retryAll": "Tout réessayer",
+      "discard": "Abandonner",
+      "applyError": "Un événement reçu du Maître n'a pas pu être appliqué ici : {{message}}"
     }
   },
   "storesSection": {
@@ -447,7 +657,28 @@
       "change_maintenance_code": "Code de maintenance changé",
       "create_expense": "Dépense enregistrée",
       "update_expense": "Dépense modifiée",
-      "delete_expense": "Dépense supprimée"
+      "delete_expense": "Dépense supprimée",
+      "stock_entry": "Entrée de stock manuelle",
+      "stock_loss": "Perte de stock",
+      "stock_transfer": "Transfert de stock",
+      "stock_expired_writeoff": "Rebut de lots périmés",
+      "stock_break_pack": "Boîtes détaillées",
+      "stock_count_start": "Inventaire démarré",
+      "stock_count_close": "Inventaire clôturé",
+      "receive_purchase": "Achat réceptionné",
+      "approval_failed": "Code d'approbation incorrect",
+      "create_role": "Rôle créé",
+      "update_role": "Rôle modifié",
+      "approval_rejected": "Demande refusée par un responsable",
+      "cancel_service_order": "Ticket de service annulé",
+      "create_service_tariff": "Tarif de service créé",
+      "update_service_tariff": "Tarif de service modifié",
+      "approval_request_created": "Demande d'approbation créée",
+      "approval_request_approved": "Demande approuvée",
+      "approval_request_rejected": "Demande refusée",
+      "controls_reviewed": "Contrôle effectué",
+      "set_focus_code": "Code du mode focus défini",
+      "change_focus_code": "Code du mode focus changé"
     },
     "sales": {
       "searchPlaceholder": "Numéro de vente...",
@@ -508,14 +739,15 @@
       "remaining": "Restant",
       "quantityToRefund": "Qté à rembourser",
       "restock": "Remettre en stock",
-      "reason": "Motif (optionnel)",
+      "reason": "Motif",
       "method": "Méthode de remboursement",
       "totalToRefund": "Total à rembourser :",
       "errorQuantityRequired": "Indique une quantité à rembourser pour au moins un article.",
       "errorGeneric": "Impossible d'enregistrer le remboursement.",
       "saving": "Enregistrement...",
       "submit": "Rembourser",
-      "cancel": "Annuler"
+      "cancel": "Annuler",
+      "errorReasonRequired": "Le motif du remboursement est obligatoire."
     },
     "refundHistoryModal": {
       "title": "Remboursements — vente {{number}}",
@@ -524,6 +756,102 @@
       "restocked": " (remis en stock)",
       "close": "Fermer"
     }
+  },
+  "pharmacy": {
+    "lotAndExpiry": "Lot et péremption",
+    "lotNumber": "N° de lot",
+    "expiryDate": "Péremption",
+    "sellExpiredConfirm": "Stock vendable insuffisant : il reste {{available}} unité(s) hors lots périmés, et {{expired}} unité(s) périmée(s). Vendre aussi des produits périmés ? Un responsable devra confirmer avec son code.",
+    "expiryTitle": "Péremptions",
+    "tiers": {
+      "expired": "Périmés",
+      "within30": "≤ 30 jours",
+      "within60": "≤ 60 jours",
+      "within90": "≤ 90 jours",
+      "later": "Plus tard"
+    },
+    "expiredNotSellable": "Les lots périmés ne sont plus vendables. Mets-les au rebut pour nettoyer le stock.",
+    "product": "Produit",
+    "quantity": "Quantité",
+    "status": "État",
+    "writeOff": "Mettre au rebut les périmés",
+    "writeOffConfirm": "Mettre au rebut {{count}} lot(s) périmé(s) (valeur perdue : {{value}}) ? Cette action est tracée et ne peut pas être annulée.",
+    "writeOffDone": "{{batches}} lot(s) mis au rebut : {{units}} unité(s), valeur {{value}}.",
+    "writeOffFailed": "Le rebut a échoué.",
+    "dashboardExpired": "Lots périmés à retirer",
+    "dashboardExpiredDetail": "{{count}} lot(s) périmé(s) encore en stock : non vendables, à mettre au rebut",
+    "drugSheet": "Fiche médicament",
+    "dci": "DCI (principe actif)",
+    "dciPlaceholder": "ex : paracétamol",
+    "dosage": "Dosage",
+    "dosageForm": "Forme",
+    "dosageFormPlaceholder": "comprimé, sirop…",
+    "laboratory": "Laboratoire",
+    "requiresPrescription": "Délivré sur ordonnance uniquement",
+    "prescriptionBadge": "Sur ordonnance",
+    "prescriptionTitle": "Ordonnance requise",
+    "prescriptionRef": "Référence de l'ordonnance",
+    "prescriber": "Prescripteur (médecin)",
+    "prescriptionRequiredHint": "Cette vente contient un produit sur ordonnance : indique la référence de l'ordonnance.",
+    "equivalents": "Voir les équivalents (même DCI et même dosage)",
+    "equivalentsShort": "Équiv.",
+    "equivalentsFor": "Équivalents de « {{name}} »",
+    "noEquivalent": "Aucun équivalent trouvé (renseigne la DCI et le dosage des produits).",
+    "inStock": "{{count}} en stock",
+    "outOfStock": "Rupture",
+    "addEquivalent": "Ajouter",
+    "breakTitle": "Détailler des boîtes",
+    "breakHint": "Ouvre des boîtes en plaquettes (ou autre présentation) : le lot, la péremption et le coût suivent. Les lots périmés ne s'ouvrent pas.",
+    "breakBox": "Boîte à ouvrir",
+    "breakInto": "Détailler en",
+    "unitsPerBox": "{{count}} par boîte",
+    "breakQuantity": "Nombre de boîtes à ouvrir",
+    "boxesInStock": "{{count}} en stock ici",
+    "breakRequired": "Choisis la boîte, la présentation, l'emplacement et un nombre de boîtes supérieur à zéro.",
+    "breakDone": "{{boxes}} boîte(s) ouverte(s) → {{units}} unité(s) détaillée(s).",
+    "breakFailed": "Le détail a échoué.",
+    "breaking": "Ouverture…",
+    "breakSubmit": "Détailler",
+    "presentationsTitle": "Présentations détaillées",
+    "presentationsHint": "Vends aussi à l'unité : une plaquette, un comprimé… Chaque présentation a son propre stock, alimenté en ouvrant des boîtes (Stock → Détailler).",
+    "presentationName": "Nom (ex : Plaquette)",
+    "unitsPerBoxLabel": "Unités par boîte",
+    "presentationPrice": "Prix de vente d'une unité",
+    "presentationAdd": "Ajouter la présentation",
+    "presentationNone": "Aucune présentation détaillée.",
+    "presentationLine": "{{name}} — {{units}} par boîte — {{price}}",
+    "presentationInvalid": "Indique un nom, un nombre d'unités par boîte supérieur à zéro et un prix de vente.",
+    "traceTitle": "Traçabilité de lot",
+    "traceHint": "Retrouve où se trouve un lot et à qui il a été vendu, pour prévenir les clients en cas de rappel.",
+    "traceSearch": "Rechercher",
+    "traceNotFound": "Aucun lot « {{lot}} » trouvé.",
+    "traceFailed": "La recherche a échoué.",
+    "traceRemaining": "Reste en stock",
+    "traceOrigin": "Origine (fournisseur · achat)",
+    "traceSold": "Vendu : {{count}} unité(s) dans {{sales}} vente(s)",
+    "traceSale": "Vente",
+    "traceDate": "Date",
+    "traceCustomer": "Client",
+    "traceAnonymous": "Client de passage",
+    "traceWarn": "Prévenir (WhatsApp)",
+    "traceReachable": "{{reachable}} vente(s) sur {{total}} ont un client joignable par WhatsApp ; les autres sont des clients de passage sans numéro.",
+    "packTitle": "Pack Pharmacie",
+    "packHint": "Fiche médicament (DCI, dosage, ordonnance), péremption obligatoire, lots périmés non vendables, équivalents, détail des boîtes et traçabilité de lot sont actifs. Tu peux ajouter des catégories de départ (jamais de doublon).",
+    "starterInstall": "Installer les catégories de départ",
+    "starterCategories": [
+      "Antalgiques et fièvre",
+      "Antibiotiques",
+      "Antipaludiques",
+      "Anti-inflammatoires",
+      "Vitamines et compléments",
+      "Digestion",
+      "Toux et rhume",
+      "Hygiène et soins",
+      "Matériel médical"
+    ],
+    "starterDone": "{{count}} catégorie(s) ajoutée(s).",
+    "starterNone": "Les catégories de départ existent déjà.",
+    "starterFailed": "L'ajout des catégories a échoué."
   },
   "stock": {
     "title": "Stock",
@@ -548,7 +876,9 @@
       "lotNumber": "Numéro de lot (optionnel)",
       "expiryDate": "Date de péremption",
       "saving": "Enregistrement...",
-      "submit": "Ajouter au stock"
+      "submit": "Ajouter au stock",
+      "note": "Motif",
+      "notePlaceholder": "Ex. : stock initial, retour fournisseur…"
     },
     "transfer": {
       "heading": "Transfert Réserve ↔ Surface de vente",
@@ -562,7 +892,9 @@
       "hint": "Retire du stock un produit périmé, cassé, volé ou détruit — sans passer par une vente. Le mouvement reste tracé dans les Journaux avec son motif.",
       "reason": "Motif",
       "saving": "Enregistrement...",
-      "submit": "Retirer du stock"
+      "submit": "Retirer du stock",
+      "note": "Détail (optionnel)",
+      "notePlaceholder": "Ex. : carton tombé du camion"
     },
     "errors": {
       "entryRequired": "Sélectionne un produit, un emplacement et une quantité positive.",
@@ -573,7 +905,8 @@
       "transferFailed": "Impossible de transférer le stock.",
       "lossRequired": "Sélectionne un produit, un emplacement et une quantité positive.",
       "lossInsufficient": "Stock insuffisant dans cet emplacement (disponible : {{available}}).",
-      "lossFailed": "Impossible d'enregistrer le retrait."
+      "lossFailed": "Impossible d'enregistrer le retrait.",
+      "entryNoteRequired": "Motif obligatoire pour une entrée de stock manuelle."
     }
   },
   "expenses": {
@@ -837,7 +1170,7 @@
     "emailColumn": "Email",
     "newPassword": "Nouveau mot de passe (laisser vide = inchangé)",
     "password": "Mot de passe",
-    "pin": "Code PIN (4 chiffres, optionnel)",
+    "pin": "PIN de déverrouillage (6 à 8 chiffres, optionnel)",
     "role": "Rôle",
     "chooseOption": "— Choisir —",
     "storeLabel": "Boutique (ce rôle ne peut pas en changer lui-même)",
@@ -859,11 +1192,14 @@
       "requiredFields": "Nom, pseudo et rôle sont requis.",
       "passwordLength": "Le mot de passe doit contenir au moins 8 caractères.",
       "newPasswordLength": "Le nouveau mot de passe doit contenir au moins 8 caractères.",
-      "pinFormat": "Le code PIN doit contenir exactement 4 chiffres.",
+      "pinFormat": "Le code PIN doit contenir entre 6 et 8 chiffres.",
       "storeRequired": "Ce rôle doit être rattaché à une boutique (il ne peut pas en changer lui-même).",
       "emailInUse": "Cet email est déjà utilisé.",
-      "impersonateFailed": "Impossible d'ouvrir une session pour ce compte."
-    }
+      "impersonateFailed": "Impossible d'ouvrir une session pour ce compte.",
+      "limitFormat": "Un plafond doit être vide ou un nombre positif.",
+      "pinsDiffer": "Le PIN de déverrouillage et le PIN d'approbation doivent être différents."
+    },
+    "approvalPin": "PIN d'approbation (6 à 8 chiffres, différent du précédent, optionnel)"
   },
   "quotes": {
     "title": "Devis",
@@ -1107,7 +1443,8 @@
     "paymentStatus": {
       "paid": "Payé",
       "partial": "Partiel",
-      "credit": "Crédit"
+      "credit": "Crédit",
+      "unpaid": "À payer"
     },
     "errors": {
       "itemRequired": "Le ticket doit contenir au moins un article.",
@@ -1116,8 +1453,24 @@
       "repayAmountPositive": "Le montant doit être supérieur à zéro.",
       "repayFailed": "Impossible d'enregistrer le remboursement.",
       "historyDescriptionRequired": "Chaque article doit avoir une description.",
-      "historySaveFailed": "Impossible d'enregistrer les modifications."
-    }
+      "historySaveFailed": "Impossible d'enregistrer les modifications.",
+      "customerRequired": "Le nom du client est obligatoire pour déposer un article."
+    },
+    "tariff": {
+      "choose": "Tarif (facultatif)",
+      "manual": "— Saisie manuelle —"
+    },
+    "cancel": {
+      "button": "Annuler le ticket",
+      "reason": "Motif de l'annulation",
+      "confirm": "Confirmer l'annulation",
+      "tag": "Annulé",
+      "done": "Ticket annulé."
+    },
+    "payLater": "Payer plus tard (au retrait)",
+    "balanceDue": "Solde à payer :",
+    "collectDue": "Encaisser",
+    "dueHint": "Le client n'est pas obligé de payer au dépôt. S'il repart sans avoir payé, ce solde devient une créance au retrait (client identifié, approbation d'un responsable)."
   },
   "auth": {
     "loading": "Chargement...",
@@ -1140,19 +1493,21 @@
       "username": "Pseudo",
       "email": "Email (optionnel)",
       "password": "Mot de passe",
-      "pin": "Code PIN (4 chiffres) — pour le verrouillage rapide",
+      "pin": "PIN de déverrouillage (6 à 8 chiffres) — pour rouvrir rapidement la session verrouillée",
       "creating": "Création...",
       "submit": "Créer le compte administrateur",
       "errors": {
         "usernameRequired": "Le pseudo est requis.",
         "passwordLength": "Le mot de passe doit contenir au moins 8 caractères.",
-        "pinFormat": "Le code PIN doit contenir exactement 4 chiffres.",
-        "emailInUse": "Cet email est déjà utilisé."
-      }
+        "pinFormat": "Le code PIN doit contenir entre 6 et 8 chiffres.",
+        "emailInUse": "Cet email est déjà utilisé.",
+        "pinsDiffer": "Les deux PIN doivent être différents."
+      },
+      "approvalPin": "PIN d'approbation (6 à 8 chiffres, différent du précédent) — pour valider remises, remboursements, dépenses…"
     },
     "moduleSetup": {
       "title": "Modules à activer",
-      "hint": "Choisis les fonctionnalités utiles à ton commerce — modifiable à tout moment ensuite dans Paramètres.",
+      "hint": "Choisis les fonctionnalités utiles à ton commerce — modifiable à tout moment ensuite dans Configuration avancée.",
       "saving": "Enregistrement...",
       "continue": "Continuer"
     },
@@ -1183,17 +1538,28 @@
   },
   "coreErrors": {
     "common": {
+      "invalidQuantity": "Quantité invalide : elle doit être un nombre supérieur à 0.",
+      "invalidPrice": "Prix invalide : il doit être un nombre positif ou nul.",
+      "invalidDiscount": "Remise invalide : elle doit être positive et ne pas dépasser le montant de la ligne.",
+      "invalidAmount": "Montant invalide : il doit être un nombre supérieur à 0.",
+      "invalidTaxRate": "Taux de TVA invalide : il doit être compris entre 0 et 100.",
       "tooManyAttempts": "Trop de tentatives. Réessaie dans {{seconds}} seconde(s).",
       "amountExceedsBalance": "Le montant dépasse le solde restant ({{balance}}).",
       "insufficientLoyaltyPoints": "Le client ne dispose que de {{points}} points."
     },
     "auth": {
       "usernameTaken": "Ce pseudo est déjà utilisé.",
+      "pinInvalid": "Le code PIN doit contenir entre 6 et 8 chiffres.",
+      "pinRemoteOnly": "Ce code PIN ne peut être vérifié que par le Maître : connecte-toi au Maître, ou déconnecte-toi et reconnecte-toi avec ton mot de passe.",
+      "pinChallengeInvalid": "Vérification du code PIN expirée ou invalide : recommence.",
+      "syncEventNotAllowed": "Ce type d'événement n'est pas accepté d'un appareil relié.",
+      "syncEventUnknown": "Type d'événement de synchronisation inconnu.",
       "accountNotFound": "Compte introuvable.",
       "wrongCurrentPassword": "Mot de passe actuel incorrect.",
       "userNotFound": "Utilisateur introuvable.",
       "accountDisabled": "Ce compte est désactivé.",
-      "permissionDenied": "Action non autorisée pour ce rôle."
+      "permissionDenied": "Action non autorisée pour ce rôle.",
+      "pinsMustDiffer": "Le PIN de déverrouillage et le PIN d'approbation doivent être différents."
     },
     "backup": {
       "fileTooSmall": "Ce fichier est trop petit pour être une sauvegarde valide.",
@@ -1232,7 +1598,11 @@
     "purchases": {
       "itemRequired": "L'achat doit contenir au moins un article.",
       "quantityPositive": "La quantité de chaque article doit être supérieure à zéro.",
-      "reserveLocationNotFound": "Emplacement de réserve introuvable pour cette boutique."
+      "reserveLocationNotFound": "Emplacement de réserve introuvable pour cette boutique.",
+      "duplicateInvoice": "La facture « {{reference}} » de ce fournisseur est déjà enregistrée.",
+      "notFound": "Achat introuvable.",
+      "notAwaitingReceipt": "Cet achat n'attend pas de réception.",
+      "receiptQuantityRequired": "Saisis la quantité reçue de chaque article."
     },
     "quotes": {
       "itemRequired": "Le devis doit contenir au moins un article.",
@@ -1246,7 +1616,8 @@
       "saleItemNotFound": "Article de vente introuvable pour cette vente.",
       "quantityExceeded": "Quantité remboursable dépassée pour cet article (restant : {{remaining}}, demandé : {{requested}}).",
       "noValidQuantity": "Aucune quantité valide à rembourser.",
-      "cannotFindOriginalLocation": "Impossible de retrouver l'emplacement d'origine de cet article pour la remise en stock."
+      "cannotFindOriginalLocation": "Impossible de retrouver l'emplacement d'origine de cet article pour la remise en stock.",
+      "reasonRequired": "Un motif est obligatoire pour rembourser une vente."
     },
     "sales": {
       "itemRequired": "La vente doit contenir au moins un article.",
@@ -1258,10 +1629,74 @@
     "serviceOrders": {
       "itemRequired": "Le ticket doit contenir au moins un article.",
       "customerIdRequiredCredit": "Indique au moins le nom du client pour un ticket à crédit ou un paiement partiel (pas besoin d'un compte client existant).",
-      "itemNotFound": "Article introuvable."
+      "itemNotFound": "Article introuvable.",
+      "cancelled": "Ce ticket est annulé : il ne peut plus être modifié.",
+      "cancelReasonRequired": "Le motif d'annulation est obligatoire.",
+      "cancelPickedUp": "Impossible d'annuler : au moins un article a déjà été retiré.",
+      "notFound": "Ticket de service introuvable.",
+      "customerRequiredAtPickup": "Ce ticket n'est pas soldé : indique le client (Historique → corriger le ticket) pour que le solde devienne une créance, ou encaisse-le avant le retrait.",
+      "customerRequired": "Le nom du client est obligatoire : pas de dépôt anonyme (traçabilité)."
     },
     "stores": {
       "noStoreExists": "Aucune boutique n'existe — la migration de la base a dû échouer."
+    },
+    "settings": {
+      "advancedCodeRequired": "Le code de maintenance est requis pour modifier ces réglages.",
+      "advancedCodeWrong": "Code de maintenance incorrect."
+    },
+    "approval": {
+      "required": "Cette action ({{kind}} de {{amount}}) dépasse le plafond de {{threshold}} : l'approbation d'un responsable est requise.",
+      "invalidApprover": "Ce responsable ne peut pas approuver cette action.",
+      "wrongPin": "PIN d'approbation du responsable incorrect.",
+      "requiredPoints": "Cette action ({{kind}} de {{amount}} points) dépasse le plafond de {{threshold}} points : l'approbation d'un responsable est requise.",
+      "overApproverLimit": "Ce montant dépasse le plafond d'approbation de ce responsable : il faut un responsable de niveau supérieur."
+    },
+    "stock": {
+      "quantityPositive": "La quantité doit être supérieure à zéro.",
+      "sameLocation": "L'emplacement de départ et d'arrivée doivent être différents.",
+      "insufficient": "Stock insuffisant à cet emplacement ({{available}} disponible).",
+      "noteRequired": "Un motif est obligatoire pour une entrée de stock manuelle."
+    },
+    "pharmacy": {
+      "expiredStock": "Stock vendable insuffisant : {{available}} disponible, {{expired}} en lots périmés (non vendables).",
+      "expiryRequired": "Date de péremption obligatoire pour « {{product}} » (produit suivi en péremption).",
+      "receivedExpired": "« {{product}} » est déjà périmé : refuse-le ou retourne-le au fournisseur.",
+      "nothingExpired": "Aucun lot périmé à mettre au rebut.",
+      "prescriptionRequired": "Cette vente contient un produit délivré sur ordonnance : indique la référence de l'ordonnance.",
+      "packInvalid": "Présentation invalide : choisis une variante « boîte » du même produit et un nombre d'unités supérieur à zéro.",
+      "breakQuantityPositive": "Indique le nombre de boîtes à détailler (supérieur à zéro).",
+      "noPackLink": "Ce produit n'a pas de présentation détaillée (ex. plaquette) : ajoute-la d'abord dans Produits.",
+      "notEnoughToBreak": "Pas assez de boîtes sellables à détailler ({{available}} disponible)."
+    },
+    "cashSession": {
+      "notFound": "Session de caisse introuvable.",
+      "alreadyClosed": "Cette session de caisse est déjà fermée."
+    },
+    "inventory": {
+      "alreadyOpen": "Un inventaire est déjà en cours à cet emplacement.",
+      "notOpen": "Cet inventaire n'est pas ouvert.",
+      "negative": "La quantité comptée ne peut pas être négative.",
+      "notFound": "Inventaire introuvable.",
+      "nothingCounted": "Aucun produit n'a été compté : saisis au moins une quantité avant de clôturer."
+    },
+    "roles": {
+      "nameRequired": "Le nom du rôle est obligatoire.",
+      "nameTaken": "Un rôle porte déjà ce nom.",
+      "notFound": "Rôle introuvable.",
+      "adminLocked": "Le rôle Admin ne peut pas être modifié.",
+      "sensitiveDenied": "Tu ne peux pas accorder ou retirer un droit sensible (gestion des utilisateurs, paramètres, approbation, journal, contrôles) que tu ne détiens pas toi-même."
+    },
+    "serviceTariffs": {
+      "nameRequired": "Le nom du service est obligatoire.",
+      "priceInvalid": "Le prix doit être un nombre positif ou nul.",
+      "notFound": "Ce tarif de service est introuvable."
+    },
+    "focus": {
+      "codeTooShort": "Le code du mode focus doit contenir au moins {{min}} caractères.",
+      "settingsMissing": "Paramètres introuvables.",
+      "currentCodeRequired": "Saisis le code actuel du mode focus (ou le code de maintenance s'il est oublié) pour le modifier.",
+      "wrongCurrentCode": "Code actuel du mode focus incorrect.",
+      "wrongMaintenanceCode": "Code de maintenance incorrect."
     }
   },
   "whatsapp": {
@@ -1275,12 +1710,15 @@
       "thanks": "Merci de votre visite !"
     },
     "lowStockAlert": "Alerte stock bas — {{count}} produit(s) à réapprovisionner chez {{business}} :\n{{lines}}",
+    "lotRecall": "Bonjour, {{business}} vous informe d'un rappel de lot : le produit « {{product}} » (lot {{lot}}) que vous avez acheté chez nous est concerné. Merci de ne pas l'utiliser et de nous le rapporter. Nous vous remercions de votre compréhension.",
     "lowStockLine": "- {{name}} : {{stock}}/{{threshold}}",
     "moreItems": "... et {{count}} autre(s).",
     "expiringAlert": "Péremptions proches (≤ {{days}} jours) — {{count}} lot(s) chez {{business}} :\n{{lines}}",
     "expiringLine": "- {{name}} (lot {{lot}}) : expire le {{date}}",
     "overdueDebt": "Bonjour {{customerName}}, vous avez une créance de {{amount}} en retard depuis le {{dueDate}} chez {{business}} (réf. {{reference}}). Merci de bien vouloir régulariser dès que possible.",
-    "serviceOrderReady": "Bonjour {{customerName}}, votre ticket {{orderNumber}} est prêt à récupérer chez {{business}}."
+    "serviceOrderReady": "Bonjour {{customerName}}, votre ticket {{orderNumber}} est prêt à récupérer chez {{business}}.",
+    "verifyMessage": "Bonjour {{name}}, pouvez-vous confirmer votre {{kind}} n°{{number}} du {{date}} d'un montant de {{amount}} ? Merci !",
+    "countryRequired": "Impossible de compléter ce numéro : choisis d'abord le pays du commerce dans Configuration → Entreprise, ou enregistre le numéro avec son indicatif (+225…)."
   },
   "documents": {
     "common": {
@@ -1295,7 +1733,11 @@
     "receipt": {
       "cashier": "Caissier : {{name}}",
       "payment": "Paiement ({{method}}) : {{amount}}",
-      "thanks": "Merci de votre visite !"
+      "thanks": "Merci de votre visite !",
+      "fneCertified": "Facture certifiée FNE : {{reference}}",
+      "prescription": "Ordonnance n° {{reference}}",
+      "fnePending": "En attente de certification FNE",
+      "fneFailed": "Certification FNE en attente (nouvelle tentative automatique)"
     },
     "serviceTicket": {
       "title": "BON DE DEPOT",
@@ -1532,9 +1974,20 @@
     "reserve": "Réserve",
     "surface_vente": "Surface de vente"
   },
+  "app": {
+    "pageLoading": "Chargement…"
+  },
+  "errorBoundary": {
+    "title": "Cet écran a rencontré une erreur.",
+    "hint": "Tes données ne sont pas perdues. Essaie de réafficher la page ; si cela se reproduit, recharge l'application et préviens le support avec le message ci-dessous.",
+    "retry": "Réessayer",
+    "reload": "Recharger l'application"
+  },
   "database": {
     "initError": "Impossible d'initialiser la base de données locale : {{error}}",
-    "initializing": "Initialisation de la base locale..."
+    "initializing": "Initialisation de la base locale...",
+    "reload": "Recharger",
+    "initErrorHint": "Tes données restent sur cet appareil. Ne désinstalle pas l'application : recharge, et si le problème persiste contacte le support avant toute autre action."
   },
   "updateBanner": {
     "message": "Une nouvelle version de l'application est disponible.",
@@ -1574,6 +2027,532 @@
       "listFilesFailed": "Impossible de lister les fichiers Google Drive.",
       "updateFileFailed": "Échec de la mise à jour du fichier sur Google Drive.",
       "uploadFileFailed": "Échec de l'envoi du fichier vers Google Drive."
+    }
+  },
+  "approval": {
+    "kinds": {
+      "refund": "remboursement",
+      "stock": "mouvement de stock",
+      "credit": "vente à crédit",
+      "discount": "remise hors promotion",
+      "expense": "dépense",
+      "points": "ajustement de points",
+      "ticket": "modification ou annulation de ticket",
+      "price": "changement de prix",
+      "payment": "paiement fournisseur"
+    },
+    "title": "Approbation requise",
+    "approver": "Responsable",
+    "pin": "PIN d'approbation du responsable",
+    "approve": "Approuver",
+    "cancel": "Annuler",
+    "cancelled": "Action annulée : approbation non donnée.",
+    "noApprover": "Aucun responsable n'a de PIN d'approbation. Définis-en un pour un Propriétaire ou un Admin (Utilisateurs).",
+    "reject": "Refuser",
+    "rejected": "Demande refusée par le responsable."
+  },
+  "inventory": {
+    "movementNote": "Inventaire n°{{id}}",
+    "title": "Inventaire physique",
+    "hint": "Compte le stock réel à un emplacement. Les quantités du système restent cachées pendant le comptage ; à la clôture, l'écart est valorisé et le stock régularisé (avec l'approbation d'un responsable au-delà du plafond).",
+    "location": "Emplacement",
+    "start": "Démarrer un inventaire",
+    "inProgress": "Inventaire n°{{id}} en cours",
+    "progress": "{{counted}} / {{total}} produits comptés",
+    "blindHint": "quantités du système masquées",
+    "search": "Rechercher un produit…",
+    "product": "Produit",
+    "counted": "Compté",
+    "note": "Note (optionnelle)",
+    "close": "Clôturer et régulariser le stock",
+    "closing": "Clôture…",
+    "closeHint": "Les produits non comptés ne sont pas modifiés. Compte et clôture dans la même séance, sans vendre entre-temps.",
+    "reportTitle": "Résultat de l'inventaire n°{{id}}",
+    "missingValue": "Manquants (valeur au coût)",
+    "surplusValue": "Surplus (valeur au coût)",
+    "noVariance": "Aucun écart : le stock compté correspond au stock du système.",
+    "system": "Système",
+    "difference": "Écart",
+    "value": "Valeur",
+    "history": "Inventaires clôturés",
+    "number": "N°",
+    "closedAt": "Clôturé le",
+    "viewReport": "Voir le rapport",
+    "errors": {
+      "generic": "L'opération d'inventaire a échoué."
+    }
+  },
+  "controls": {
+    "title": "Contrôles de gestion",
+    "hint": "Signaux à vérifier par employé et par fournisseur. Ce ne sont pas des accusations : chaque signal est un point de départ (ticket, discussion, vérification sur place).",
+    "from": "Du",
+    "to": "Au",
+    "signalsTitle": "Signaux à vérifier ({{count}})",
+    "noSignal": "Aucun signal sur la période.",
+    "employees": "Par employé",
+    "thresholds": "Seuils de signalement : remboursements ≥ {{refund}} % des ventes de l'employé (2 minimum), pertes ≥ {{loss}} % de ses ventes, ≥ {{entries}} entrées de stock manuelles, tout écart de caisse au-delà du seuil réglé dans Configuration.",
+    "col": {
+      "employee": "Employé",
+      "sales": "Ventes",
+      "refundsProcessed": "Remboursements faits",
+      "refundRate": "Taux remboursé",
+      "credit": "Crédits accordés",
+      "losses": "Pertes de stock",
+      "manualEntries": "Entrées manuelles",
+      "cashVariance": "Écarts de caisse",
+      "other": "Autres",
+      "date": "Date",
+      "expected": "Attendu",
+      "counted": "Compté",
+      "difference": "Écart",
+      "missing": "Manquants",
+      "surplus": "Surplus",
+      "supplier": "Fournisseur",
+      "purchases": "Achats",
+      "priceAlerts": "Hausses de prix",
+      "shortfall": "Manquant à la réception",
+      "awaiting": "En attente de réception",
+      "debt": "Dette ouverte",
+      "product": "Produit",
+      "supplierPrices": "Prix par fournisseur (dernier prix)",
+      "kind": "Type",
+      "amount": "Montant",
+      "detail": "Détail",
+      "risk": "Risque",
+      "discount": "Remises hors promo",
+      "ticket": "Ticket",
+      "readyItems": "Articles prêts",
+      "value": "Valeur",
+      "age": "Âge (jours)",
+      "customer": "Client",
+      "remaining": "Solde dû"
+    },
+    "other": "prix modifiés : {{prices}} · dépenses corrigées : {{expenses}} · approbations refusées : {{failed}} · approbations données : {{approvals}}",
+    "empty": "Rien sur la période.",
+    "cashTitle": "Clôtures de caisse",
+    "stockCountsTitle": "Inventaires",
+    "suppliersTitle": "Fournisseurs",
+    "priceComparison": "Comparatif des prix d'achat (produits achetés chez plusieurs fournisseurs)",
+    "avg": "moy.",
+    "eventsTitle": "Événements sensibles récents",
+    "eventKinds": {
+      "refund": "Remboursement",
+      "loss": "Perte de stock",
+      "manual_entry": "Entrée de stock manuelle",
+      "cash_variance": "Écart de caisse",
+      "price_alert": "Hausse de prix d'achat",
+      "credit_approved": "Crédit approuvé",
+      "stock_count": "Inventaire",
+      "discount": "Remise hors promotion",
+      "expired_sale": "Vente de lot périmé (dérogation)",
+      "expired_writeoff": "Rebut de lots périmés"
+    },
+    "flags": {
+      "refund_rate": "{{value}} % de ses ventes ont été remboursées (seuil {{threshold}} %).",
+      "cash_variance": "écarts de caisse cumulés : {{amount}}.",
+      "loss_rate": "pertes déclarées élevées ({{value}} — seuil {{threshold}} % des ventes).",
+      "manual_entries": "{{value}} entrées de stock manuelles (seuil {{threshold}}).",
+      "failed_approvals": "{{value}} codes d'approbation refusés (seuil {{threshold}}).",
+      "price_changes": "{{value}} modifications de prix (seuil {{threshold}}).",
+      "expense_edits": "{{value}} dépenses corrigées ou supprimées (seuil {{threshold}}).",
+      "supplier_price_alert": "{{value}} hausse(s) de prix d'achat signalée(s).",
+      "supplier_shortfall": "manquant constaté à la réception : {{amount}} à réclamer.",
+      "supplier_same_user_receipt": "{{value}} réception(s) faite(s) par la personne qui a saisi la facture.",
+      "discount_rate": "remises hors promotion : {{value}} % de ses ventes (seuil {{threshold}} %).",
+      "rejected_approvals": "{{value}} demandes refusées par un responsable.",
+      "low_tickets": "{{value}} tickets à zéro ou très inférieurs à la moyenne.",
+      "ticket_cancels": "{{value}} tickets annulés.",
+      "stale_tickets": "{{value}} ticket(s) prêt(s) depuis plus de {{threshold}} jours, jamais retirés.",
+      "unpaid_pickups": "articles retirés avec un solde dû : {{amount}} à récupérer.",
+      "number_gaps": "{{value}} numéro(s) manquant(s) dans la suite des ventes ou tickets (ligne supprimée ou jamais saisie).",
+      "pending_approvals": "{{value}} demande(s) d'approbation en attente depuis plus de {{threshold}} h — à trancher pour ne pas bloquer l'activité."
+    },
+    "integrityTitle": "Intégrité du journal",
+    "integrityHint": "Chaque action est chaînée à la précédente par une empreinte : supprimer ou modifier une ligne du journal casse la chaîne. Note l'empreinte de tête de temps en temps : elle permet de détecter aussi un retour en arrière.",
+    "integrityCheck": "Vérifier l'intégrité du journal",
+    "integrityChecking": "Vérification…",
+    "integrityOk": "Journal intact : {{count}} action(s) chaînée(s) vérifiée(s) ({{legacy}} antérieure(s) à la protection).",
+    "integrityBroken": "Journal ALTÉRÉ à la ligne {{id}} — {{reason}}",
+    "integrityHead": "Empreinte de tête :",
+    "integrityReasons": {
+      "prev_mismatch": "une ligne a été supprimée ou déplacée",
+      "hash_mismatch": "le contenu d'une ligne a été modifié",
+      "unhashed_after_chain": "une ligne a été ajoutée hors de l'application"
+    },
+    "alertsTitle": "Alertes à traiter en priorité ({{count}})",
+    "alertsNone": "Aucune alerte : rien d'anormal sur la période.",
+    "riskHint": "Le score de risque (0-100) combine remboursements, pertes, remises hors promotion, écarts de caisse, refus d'approbation, entrées manuelles et corrections. C'est un repère de lecture, pas une preuve.",
+    "riskLevels": {
+      "low": "faible",
+      "medium": "moyen",
+      "high": "élevé"
+    },
+    "extra": "points ajustés à la main : {{points}} · demandes refusées par un responsable : {{rejected}}",
+    "ticketsTitle": "Tickets de service à surveiller",
+    "staleTitle": "Prêts mais jamais retirés",
+    "unpaidTitle": "Retirés avec un solde dû",
+    "gapsTitle": "Numéros manquants",
+    "gapKinds": {
+      "sale": "Ventes",
+      "ticket": "Tickets"
+    },
+    "none": "Rien à signaler.",
+    "summary": {
+      "title": "Résumé du jour",
+      "hint": "Les chiffres de la journée et tout ce qui demande votre attention, en un message à envoyer par WhatsApp.",
+      "date": "Jour",
+      "generate": "Générer le résumé",
+      "send": "Envoyer sur WhatsApp",
+      "copy": "Copier",
+      "copied": "Copié.",
+      "noPhone": "Aucun téléphone à notifier : renseigne-le dans Configuration → Entreprise."
+    },
+    "verify": {
+      "title": "Vérification par appel",
+      "hint": "Tire au sort des opérations récentes et demande au client de les confirmer. Une opération qu'il ne reconnaît pas, ou à un autre montant, est un signal fort.",
+      "draw": "Tirer au sort",
+      "anonymous": "{{percent}} % des opérations de la période n'ont pas de client identifié : elles ne peuvent pas être vérifiées.",
+      "empty": "Aucune opération récente avec un client et un téléphone.",
+      "ask": "Demander confirmation",
+      "kinds": {
+        "sale": "vente",
+        "ticket": "ticket"
+      }
+    },
+    "review": {
+      "title": "Contrôle du propriétaire",
+      "last": "Dernier contrôle effectué : {{date}} par {{name}}.",
+      "never": "Aucun contrôle enregistré pour l'instant.",
+      "since": "Depuis : {{events}} action(s) au journal, {{pending}} demande(s) en attente.",
+      "note": "Note (facultative)",
+      "mark": "Contrôle effectué",
+      "showSince": "Afficher depuis le dernier contrôle"
+    }
+  },
+  "controlsSettings": {
+    "heading": "Contrôles de gestion",
+    "hint": "Seuils au-delà desquels une action exige l'approbation d'un responsable (son code PIN). Laisse vide pour ne pas contrôler ; 0 = tout contrôler. Les plafonds par personne se règlent dans Utilisateurs.",
+    "approvalRefund": "Remboursement au-delà de",
+    "approvalStock": "Perte ou entrée de stock manuelle au-delà de (valeur au coût) — 0 = toute entrée/sortie manuelle doit être approuvée par un Propriétaire/Admin",
+    "approvalCredit": "Vente à crédit au-delà de",
+    "cashVariance": "Écart de caisse signalé au-delà de (vide = tout écart)",
+    "priceAlert": "Alerte si le prix d'achat monte de plus de (%) — 0 pour désactiver",
+    "requireReceipt": "Achats en deux temps : la facture est saisie, le stock n'entre qu'à la réception contrôlée (quantités comptées)",
+    "defaultCreditLimit": "Plafond de crédit par défaut d'un client (vide = illimité)",
+    "approverHint": "Astuce : le Propriétaire et l'Admin peuvent approuver. Il faut leur définir un code PIN (Utilisateurs → Modifier).",
+    "invalid": "Un seuil de contrôle doit être vide ou un nombre positif.",
+    "approvalDiscount": "Remise ou prix inférieur au catalogue, hors promotion programmée, au-delà de — 0 = toute remise doit être approuvée par le propriétaire",
+    "approvalExpense": "Dépense au-delà de — 0 = toute dépense doit être approuvée",
+    "approvalPoints": "Ajustement manuel de points de fidélité au-delà de (points) — 0 = tout ajustement doit être approuvé",
+    "alertHeading": "Seuils d'alerte du tableau de bord Contrôles",
+    "alertRefund": "Alerte si les remboursements dépassent (% des ventes de l'employé)",
+    "alertLoss": "Alerte si les pertes déclarées dépassent (% des ventes de l'employé)",
+    "alertDiscount": "Alerte si les remises hors promotion dépassent (% des ventes de l'employé)",
+    "approvalTicket": "Ticket : baisse de prix après encaissement, annulation, retrait avec solde dû, retour arrière — au-delà de (0 = tout doit être approuvé)",
+    "staleTicketDays": "Signaler un ticket « prêt » non retiré depuis (jours)",
+    "modeHeading": "Comment approuver",
+    "modeHint": "« Code PIN » : le responsable saisit son code sur le moment. « Validation ultérieure » : l'action attend le propriétaire (écran Demandes) — le stock est appliqué tout de suite puis validé ou corrigé ; dépenses et points ne sont enregistrés qu'après accord.",
+    "modeStock": "Stock : entrées, sorties, achats, inventaire",
+    "modeExpense": "Dépenses",
+    "modePoints": "Ajustements de points de fidélité",
+    "modePin": "Code PIN du responsable, sur le moment",
+    "modeLater": "Validation ultérieure par le propriétaire",
+    "profilesHeading": "Profil de contrôle",
+    "profilesHint": "Choisis selon ta présence : un profil remplit les seuils, les modes et le délai d'alerte ci-dessous (à ajuster ensuite, puis Enregistrer). Les montants sont adaptés à ta devise.",
+    "profileApplied": "Réglages remplis ci-dessous — pense à Enregistrer.",
+    "profiles": {
+      "present": {
+        "name": "Présent en permanence",
+        "description": "tout passe par ton code, sur le moment ; une demande en attente est signalée après 4 h."
+      },
+      "evening": {
+        "name": "Passage chaque soir",
+        "description": "les petits montants sont libres, le reste attend ta validation du soir (stock appliqué tout de suite, dépenses et points après accord) ; alerte après 24 h."
+      },
+      "periodic": {
+        "name": "Hebdomadaire ou mensuel",
+        "description": "seuils élevés, tout est tracé pour ton contrôle après coup. Donne à ton gérant les droits d'approuver et un plafond d'approbation (Utilisateurs) pour qu'il débloque le quotidien ; alerte après 7 jours."
+      }
+    },
+    "pendingAlertHours": "Signaler une demande d'approbation en attente depuis (heures) — 0 pour désactiver",
+    "approvalPrice": "Changement de prix d'un produit au-delà de (écart de prix) — 0 = tout changement doit être approuvé",
+    "approvalPayment": "Paiement d'une dette fournisseur au-delà de — 0 = tout paiement doit être approuvé"
+  },
+  "approvalRoles": {
+    "title": "Rôles et permissions",
+    "hint": "Crée des rôles sur mesure (ex. « Magasinier ») et choisis précisément ce qu'ils peuvent faire. Le rôle Admin ne peut pas être modifié.",
+    "newRole": "Nouveau rôle",
+    "name": "Nom du rôle",
+    "create": "Créer le rôle",
+    "save": "Enregistrer les permissions",
+    "editRole": "Modifier le rôle",
+    "saved": "Rôle enregistré.",
+    "limits": "Plafonds personnels d'approbation (vide = seuil global)",
+    "limitRefund": "Remboursement max sans approbation",
+    "limitStock": "Mouvement de stock max sans approbation (valeur au coût)",
+    "limitCredit": "Vente à crédit max sans approbation",
+    "newPin": "Nouveau PIN de déverrouillage (6 à 8 chiffres)",
+    "pinSet": "PIN de déverrouillage défini",
+    "pinMissing": "Pas de PIN de déverrouillage",
+    "limitDiscount": "Remise hors promotion max sans approbation",
+    "limitExpense": "Dépense max sans approbation",
+    "limitPoints": "Ajustement de points max sans approbation",
+    "limitTicket": "Modification/annulation de ticket max sans approbation",
+    "limitApprove": "Plafond d'approbation : montant maximal que cette personne peut approuver (vide = illimité)",
+    "limitApproveHint": "Au-dessus de ce montant, la demande doit être tranchée par un responsable de niveau supérieur (propriétaire). Sans effet sur les points de fidélité.",
+    "template": "Partir d'un modèle",
+    "templateNone": "— Aucun (rôle vide) —",
+    "newApprovalPin": "Nouveau PIN d'approbation (6 à 8 chiffres)",
+    "approvalPinSet": "PIN d'approbation défini",
+    "approvalPinMissing": "Pas de PIN d'approbation (ne peut pas approuver)"
+  },
+  "permissions": {
+    "view_margins": "Voir les marges",
+    "manage_products": "Gérer les produits",
+    "manage_promotions": "Gérer les promotions",
+    "manage_stock": "Gérer le stock et les inventaires",
+    "manage_sales": "Vendre (caisse)",
+    "manage_refunds": "Rembourser",
+    "manage_service_orders": "Créer des tickets de service",
+    "edit_service_orders": "Corriger les tickets de service",
+    "manage_customers": "Créer des clients",
+    "edit_customers": "Modifier les clients (dont plafond de crédit)",
+    "manage_suppliers": "Gérer fournisseurs et achats",
+    "edit_suppliers": "Modifier les fournisseurs",
+    "manage_quotes": "Créer des devis",
+    "edit_quotes": "Modifier les devis",
+    "manage_credits": "Encaisser les créances",
+    "manage_debts": "Payer les dettes fournisseurs",
+    "manage_expenses": "Saisir des dépenses",
+    "edit_expenses": "Corriger des dépenses",
+    "view_reports": "Voir les rapports",
+    "view_accounting": "Voir la comptabilité",
+    "manage_settings": "Gérer les paramètres",
+    "manage_users": "Gérer utilisateurs et rôles",
+    "view_audit_logs": "Voir le journal des actions",
+    "switch_store": "Changer de boutique",
+    "view_controls": "Voir le tableau de bord Contrôles",
+    "approve_actions": "Tout approuver (tous les domaines)",
+    "categories": {
+      "sales": "Ventes et caisse",
+      "stock": "Produits et stock",
+      "people": "Clients, fournisseurs et achats",
+      "finance": "Argent : créances, dettes, dépenses, marges",
+      "reports": "Rapports, journal et contrôles",
+      "admin": "Administration",
+      "approvals": "Approbations (qui peut valider quoi)"
+    },
+    "checkAll": "Tout cocher",
+    "uncheckAll": "Tout décocher",
+    "sensitive": "droit sensible",
+    "delete_expenses": "Supprimer des dépenses",
+    "adjust_loyalty_points": "Ajuster à la main les points de fidélité",
+    "approve_refunds": "Approuver les remboursements",
+    "approve_stock": "Approuver les mouvements de stock",
+    "approve_credit": "Approuver les ventes à crédit",
+    "approve_discounts": "Approuver les remises hors promotion",
+    "approve_expenses": "Approuver les dépenses",
+    "approve_points": "Approuver les ajustements de points",
+    "approve_tickets": "Approuver les modifications de tickets",
+    "transfer_stock": "Transférer du stock entre emplacements",
+    "record_stock_losses": "Déclarer des pertes de stock (casse, péremption, vol)",
+    "manage_inventory": "Faire les inventaires",
+    "manage_purchases": "Saisir des achats",
+    "receive_purchases": "Réceptionner les achats",
+    "edit_product_prices": "Modifier les prix des produits",
+    "view_costs": "Voir les prix d'achat (coûts)",
+    "open_close_cash": "Ouvrir et fermer la caisse",
+    "sell_on_credit": "Vendre à crédit",
+    "export_reports": "Exporter les rapports (PDF, Excel)",
+    "manage_backups": "Sauvegarder et restaurer les données",
+    "approve_prices": "Approuver les changements de prix",
+    "approve_payments": "Approuver les paiements fournisseurs"
+  },
+  "purchasesControls": {
+    "invoiceReference": "N° de facture du fournisseur",
+    "priceAlert": "Prix en hausse de {{percent}} % par rapport au dernier ({{previous}}).",
+    "awaitingReceipt": "En attente de réception",
+    "receive": "Réceptionner",
+    "receiveTitle": "Réception de l'achat {{number}}",
+    "receiveHint": "Compte ce que tu reçois réellement, sans regarder la facture. Le stock n'entre que pour les quantités saisies.",
+    "receivedQty": "Quantité reçue",
+    "receiveSubmit": "Valider la réception",
+    "shortfallResult": "Manquant par rapport à la facture : {{amount}} — à réclamer au fournisseur.",
+    "receiptOk": "Réception conforme à la facture.",
+    "status": "Statut",
+    "statusReceived": "Reçu"
+  },
+  "creditsControls": {
+    "method": "Mode d'encaissement",
+    "cash": "Espèces",
+    "card": "Carte",
+    "mobile": "Mobile / virement"
+  },
+  "customersControls": {
+    "creditLimit": "Plafond de crédit (vide = plafond par défaut)",
+    "creditLimitInvalid": "Le plafond de crédit doit être vide ou un nombre positif."
+  },
+  "journalsControls": {
+    "verify": "Vérifier l'intégrité"
+  },
+  "userRights": {
+    "title": "Droits particuliers de cet utilisateur",
+    "hint": "Par-dessus son rôle : autorise ou interdit un droit précis pour cette personne seulement. « Selon le rôle » = aucun changement. Les droits sensibles (⚠) ne peuvent être accordés que par quelqu'un qui les détient.",
+    "inherit": "Selon le rôle",
+    "allow": "Autoriser",
+    "deny": "Interdire",
+    "roleHas": "le rôle l'accorde",
+    "roleLacks": "le rôle ne l'accorde pas",
+    "effective": "Droits effectifs : {{count}} sur {{total}}",
+    "reset": "Remettre tout « selon le rôle »"
+  },
+  "dailySummary": {
+    "title": "Résumé du {{date}} — {{business}}",
+    "sales": "Ventes : {{count}} pour {{total}}",
+    "tickets": "Tickets de service : {{count}} pour {{total}}",
+    "expenses": "Dépenses : {{count}} pour {{total}}",
+    "watchTitle": "À surveiller :",
+    "discounts": "Remises hors promotion : {{count}} ({{total}})",
+    "refunds": "Remboursements : {{count}} ({{total}})",
+    "losses": "Pertes de stock : {{count}} (valeur {{total}})",
+    "entries": "Entrées de stock manuelles : {{count}} (valeur {{total}})",
+    "cancelled": "Tickets annulés : {{count}}",
+    "cash": "Caisse : {{count}} clôture(s), écart cumulé {{variance}}",
+    "cashNone": "Caisse : aucune clôture aujourd'hui",
+    "approvals": "Approbations données : {{count}}",
+    "alerts": "Alertes de contrôle ouvertes : {{count}} dont {{danger}} grave(s)",
+    "titleNoName": "Résumé du {{date}}"
+  },
+  "serviceTariffs": {
+    "title": "Tarifs des services (facultatif)",
+    "hint": "Enregistre tes services courants pour que le prix soit contrôlé : un prix sous le tarif ou une remise exige ton approbation. Sans tarif, la saisie des tickets reste entièrement manuelle.",
+    "name": "Service",
+    "price": "Prix",
+    "add": "Ajouter le tarif",
+    "disable": "Désactiver",
+    "enable": "Réactiver",
+    "save": "Enregistrer",
+    "none": "Aucun tarif : la saisie est manuelle.",
+    "inactive": "désactivé"
+  },
+  "approvalRequests": {
+    "queued": "Demande envoyée au responsable pour validation : rien n'est enregistré tant qu'elle n'est pas approuvée.",
+    "reversalNote": "Refus de la demande n°{{id}}",
+    "errors": {
+      "notFound": "Demande introuvable.",
+      "alreadyDecided": "Cette demande a déjà été tranchée.",
+      "reasonRequired": "Le motif du refus est obligatoire.",
+      "selfDecision": "Tu ne peux pas trancher ta propre demande."
+    },
+    "summary": {
+      "stockEntry": "Entrée de stock : {{quantity}} × {{product}} (valeur {{value}}) — {{note}}",
+      "stockLoss": "Retrait de stock : {{quantity}} × {{product}} (valeur {{value}}) — motif : {{reason}}",
+      "purchase": "Achat {{number}} entré en stock ({{total}})",
+      "receipt": "Réception de l'achat {{number}} ({{total}})",
+      "inventory": "Inventaire n°{{id}} régularisé : manquants {{missing}}, surplus {{surplus}}",
+      "expense": "Dépense « {{category}} » de {{amount}} {{note}}",
+      "points": "Ajustement de {{points}} points pour {{customer}} {{reason}}"
+    },
+    "title": "Demandes d'approbation",
+    "hint": "Ce qui attend une décision, et le suivi de vos demandes. « Déjà appliqué » : le stock est déjà à jour, votre validation le confirme (un refus le corrige par un mouvement inverse). « En attente » : rien n'est enregistré tant que vous n'avez pas approuvé.",
+    "pendingTitle": "À valider ({{count}})",
+    "nonePending": "Rien à valider pour le moment.",
+    "myTitle": "Mes demandes",
+    "historyTitle": "Historique des décisions",
+    "none": "Aucune demande.",
+    "kinds": {
+      "stock": "Stock",
+      "expense": "Dépense",
+      "points": "Points",
+      "price": "Prix",
+      "payment": "Paiement"
+    },
+    "by": "Demandé par {{name}} le {{date}}",
+    "effectNow": "Déjà appliqué — à valider",
+    "blocked": "En attente — rien n'est enregistré",
+    "approve": "Approuver",
+    "reject": "Refuser",
+    "reason": "Motif du refus",
+    "confirmReject": "Confirmer le refus",
+    "cancel": "Annuler",
+    "status": {
+      "pending": "En attente",
+      "approved": "Approuvée",
+      "rejected": "Refusée"
+    },
+    "col": {
+      "date": "Date",
+      "detail": "Détail",
+      "amount": "Montant",
+      "status": "Statut",
+      "requestedBy": "Demandé par",
+      "decidedBy": "Décidé par"
+    },
+    "overLimit": "Ce montant dépasse ton plafond d'approbation : la demande doit être tranchée par un responsable de niveau supérieur.",
+    "batchDone": "{{count}} demande(s) approuvée(s).",
+    "selectAll": "Tout sélectionner",
+    "approveSelected": "Approuver la sélection ({{count}})",
+    "remotePinLabel": "Ton PIN d'approbation (vérifié par le Maître)",
+    "remotePinHint": "Cet appareil est relié à un Maître : ta décision est envoyée au Maître avec une preuve de ton PIN d'approbation (le PIN lui-même ne circule jamais). Il faut être connecté au Maître.",
+    "remotePinRequired": "Saisis ton code PIN pour trancher depuis cet appareil.",
+    "select": "Sélectionner",
+    "new": "Nouveau"
+  },
+  "roleTemplates": {
+    "storekeeper": {
+      "name": "Magasinier",
+      "description": "reçoit, range, transfère et compte le stock ; ne déclare pas de pertes"
+    },
+    "deputy_manager": {
+      "name": "Gérant adjoint",
+      "description": "comme un gérant, sans prix, points, dépenses supprimables ni exports"
+    },
+    "senior_cashier": {
+      "name": "Caissier confirmé",
+      "description": "vend, ouvre et ferme la caisse, encaisse les créances, gère les clients"
+    },
+    "accountant": {
+      "name": "Comptable",
+      "description": "lit et exporte les comptes, saisit les dépenses ; ne vend pas et ne touche pas au stock"
+    },
+    "supervisor": {
+      "name": "Superviseur",
+      "description": "lecture seule : rapports, marges, contrôles"
+    }
+  },
+  "focus": {
+    "enterButton": "Plein écran",
+    "exitButton": "Quitter le mode focus",
+    "exit": {
+      "title": "Quitter le mode focus",
+      "hint": "Saisis le code du mode focus pour revenir en mode fenêtre.",
+      "code": "Code du mode focus",
+      "wrongCode": "Code incorrect.",
+      "confirm": "Quitter le plein écran",
+      "cancel": "Rester en plein écran",
+      "forgotten": "Code oublié ? Utiliser le code de maintenance",
+      "useFocusCode": "Utiliser le code du mode focus",
+      "maintenanceHint": "Le code de maintenance du propriétaire permet aussi de quitter le plein écran.",
+      "maintenanceCode": "Code de maintenance",
+      "wrongMaintenanceCode": "Code de maintenance incorrect."
+    },
+    "settings": {
+      "heading": "Mode focus (plein écran)",
+      "hint": "Sur PC et tablette, l'appli se lance en plein écran pour que l'équipe reste concentrée dessus. Ce code est demandé pour revenir en mode fenêtre ; sans code défini, la sortie est libre. Ce n'est ni le code de maintenance ni un PIN de compte.",
+      "unavailableHere": "Le plein écran n'est pas disponible sur cet appareil (téléphone ou plateforme non compatible).",
+      "codeSet": "Un code du mode focus est défini.",
+      "codeMissing": "Aucun code défini : n'importe qui peut quitter le plein écran.",
+      "currentCode": "Code du mode focus actuel",
+      "maintenanceCode": "Code de maintenance",
+      "forgotten": "Code oublié ? Utiliser le code de maintenance",
+      "useFocusCode": "Utiliser le code du mode focus actuel",
+      "newCode": "Nouveau code du mode focus",
+      "setCode": "Définir le code du mode focus",
+      "codePlaceholder": "Au moins {{min}} caractères",
+      "saved": "Code enregistré.",
+      "saving": "Enregistrement...",
+      "save": "Enregistrer le code",
+      "saveFailed": "Impossible d'enregistrer le code."
     }
   }
 }

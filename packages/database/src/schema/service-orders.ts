@@ -26,6 +26,10 @@ export const serviceOrders = sqliteTable("service_orders", {
   promisedDate: text("promised_date"),
   notes: text("notes"),
   closedAt: text("closed_at"), // renseigné quand tous les articles sont retirés
+  // Annulation formelle (jamais de suppression) : motif obligatoire et responsable.
+  cancelledAt: text("cancelled_at"),
+  cancelReason: text("cancel_reason"),
+  cancelledBy: integer("cancelled_by"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -47,4 +51,18 @@ export const serviceOrderItems = sqliteTable("service_order_items", {
   total: real("total").notNull(),
   status: text("status").notNull().default("received"), // 'received' | 'in_progress' | 'ready' | 'picked_up'
   pickedUpAt: text("picked_up_at"),
+  // Prix de référence du tarif choisi à la saisie (NULL = saisie manuelle) :
+  // copié pour rester juste même si le tarif change ensuite.
+  tariffPrice: real("tariff_price"),
+});
+
+// Tarifs de services — FACULTATIF : le propriétaire y enregistre ses services
+// courants (repassage, cordonnerie, réparation...) pour que le prix soit
+// contrôlé ; sans tarif, la saisie reste entièrement manuelle.
+export const serviceTariffs = sqliteTable("service_tariffs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  price: real("price").notNull(),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

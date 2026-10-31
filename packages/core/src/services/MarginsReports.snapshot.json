@@ -1,0 +1,479 @@
+{
+ "mars": {
+  "margins": {
+   "revenue": 1380,
+   "cost": 420,
+   "margin": 960,
+   "marginRate": 69.56521739130434,
+   "byDay": [
+    {
+     "date": "2026-03-01",
+     "margin": 750
+    },
+    {
+     "date": "2026-03-02",
+     "margin": 200
+    },
+    {
+     "date": "2026-03-03",
+     "margin": -390
+    },
+    {
+     "date": "2026-03-04",
+     "margin": 200
+    },
+    {
+     "date": "2026-03-05",
+     "margin": 800
+    },
+    {
+     "date": "2026-03-06",
+     "margin": -420
+    },
+    {
+     "date": "2026-03-07",
+     "margin": -180
+    }
+   ]
+  },
+  "breakdown": [
+   {
+    "productId": 1,
+    "name": "Produit A",
+    "quantity": 2,
+    "revenue": 980,
+    "cost": 220,
+    "margin": 760,
+    "marginRate": 77.55102040816327,
+    "marginShare": 79.16666666666666,
+    "cumulativeShare": 79.16666666666666,
+    "abcClass": "A"
+   },
+   {
+    "productId": 3,
+    "name": "Produit C",
+    "quantity": 1,
+    "revenue": 200,
+    "cost": 0,
+    "margin": 200,
+    "marginRate": 100,
+    "marginShare": 20.833333333333336,
+    "cumulativeShare": 100,
+    "abcClass": "A"
+   },
+   {
+    "productId": 2,
+    "name": "Produit B",
+    "quantity": 2,
+    "revenue": 200,
+    "cost": 200,
+    "margin": 0,
+    "marginRate": 0,
+    "marginShare": 0,
+    "cumulativeShare": 100,
+    "abcClass": "C"
+   }
+  ],
+  "top": [
+   {
+    "productId": 1,
+    "name": "Produit A",
+    "quantity": 2,
+    "revenue": 980
+   },
+   {
+    "productId": 2,
+    "name": "Produit B",
+    "quantity": 2,
+    "revenue": 200
+   },
+   {
+    "productId": 3,
+    "name": "Produit C",
+    "quantity": 1,
+    "revenue": 200
+   }
+  ]
+ },
+ "mars boutique principale": {
+  "margins": {
+   "revenue": 1180,
+   "cost": 220,
+   "margin": 960,
+   "marginRate": 81.35593220338984,
+   "byDay": [
+    {
+     "date": "2026-03-01",
+     "margin": 750
+    },
+    {
+     "date": "2026-03-03",
+     "margin": -190
+    },
+    {
+     "date": "2026-03-04",
+     "margin": 200
+    },
+    {
+     "date": "2026-03-05",
+     "margin": 800
+    },
+    {
+     "date": "2026-03-06",
+     "margin": -420
+    },
+    {
+     "date": "2026-03-07",
+     "margin": -180
+    }
+   ]
+  },
+  "breakdown": [
+   {
+    "productId": 1,
+    "name": "Produit A",
+    "quantity": 2,
+    "revenue": 980,
+    "cost": 220,
+    "margin": 760,
+    "marginRate": 77.55102040816327,
+    "marginShare": 79.16666666666666,
+    "cumulativeShare": 79.16666666666666,
+    "abcClass": "A"
+   },
+   {
+    "productId": 3,
+    "name": "Produit C",
+    "quantity": 1,
+    "revenue": 200,
+    "cost": 0,
+    "margin": 200,
+    "marginRate": 100,
+    "marginShare": 20.833333333333336,
+    "cumulativeShare": 100,
+    "abcClass": "A"
+   }
+  ],
+  "top": [
+   {
+    "productId": 1,
+    "name": "Produit A",
+    "quantity": 2,
+    "revenue": 980
+   },
+   {
+    "productId": 3,
+    "name": "Produit C",
+    "quantity": 1,
+    "revenue": 200
+   }
+  ]
+ },
+ "mars autre boutique": {
+  "margins": {
+   "revenue": 200,
+   "cost": 200,
+   "margin": 0,
+   "marginRate": 0,
+   "byDay": [
+    {
+     "date": "2026-03-02",
+     "margin": 200
+    },
+    {
+     "date": "2026-03-03",
+     "margin": -200
+    }
+   ]
+  },
+  "breakdown": [
+   {
+    "productId": 2,
+    "name": "Produit B",
+    "quantity": 2,
+    "revenue": 200,
+    "cost": 200,
+    "margin": 0,
+    "marginRate": 0,
+    "marginShare": 0,
+    "cumulativeShare": 0,
+    "abcClass": "C"
+   }
+  ],
+  "top": [
+   {
+    "productId": 2,
+    "name": "Produit B",
+    "quantity": 2,
+    "revenue": 200
+   }
+  ]
+ },
+ "année": {
+  "margins": {
+   "revenue": 3880,
+   "cost": 1370,
+   "margin": 2510,
+   "marginRate": 64.69072164948454,
+   "byDay": [
+    {
+     "date": "2026-02-10",
+     "margin": 1050
+    },
+    {
+     "date": "2026-02-15",
+     "margin": 900
+    },
+    {
+     "date": "2026-03-01",
+     "margin": 750
+    },
+    {
+     "date": "2026-03-02",
+     "margin": 200
+    },
+    {
+     "date": "2026-03-03",
+     "margin": -390
+    },
+    {
+     "date": "2026-03-04",
+     "margin": 200
+    },
+    {
+     "date": "2026-03-05",
+     "margin": 800
+    },
+    {
+     "date": "2026-03-06",
+     "margin": -420
+    },
+    {
+     "date": "2026-03-07",
+     "margin": -180
+    },
+    {
+     "date": "2026-04-02",
+     "margin": -400
+    }
+   ]
+  },
+  "breakdown": [
+   {
+    "productId": 1,
+    "name": "Produit A",
+    "quantity": 11,
+    "revenue": 3480,
+    "cost": 1170,
+    "margin": 2310,
+    "marginRate": 66.37931034482759,
+    "marginShare": 92.03187250996015,
+    "cumulativeShare": 92.03187250996015,
+    "abcClass": "A"
+   },
+   {
+    "productId": 3,
+    "name": "Produit C",
+    "quantity": 1,
+    "revenue": 200,
+    "cost": 0,
+    "margin": 200,
+    "marginRate": 100,
+    "marginShare": 7.968127490039841,
+    "cumulativeShare": 100,
+    "abcClass": "B"
+   },
+   {
+    "productId": 2,
+    "name": "Produit B",
+    "quantity": 2,
+    "revenue": 200,
+    "cost": 200,
+    "margin": 0,
+    "marginRate": 0,
+    "marginShare": 0,
+    "cumulativeShare": 100,
+    "abcClass": "C"
+   }
+  ],
+  "top": [
+   {
+    "productId": 1,
+    "name": "Produit A",
+    "quantity": 11,
+    "revenue": 3480
+   },
+   {
+    "productId": 2,
+    "name": "Produit B",
+    "quantity": 2,
+    "revenue": 200
+   },
+   {
+    "productId": 3,
+    "name": "Produit C",
+    "quantity": 1,
+    "revenue": 200
+   }
+  ]
+ },
+ "février": {
+  "margins": {
+   "revenue": 3000,
+   "cost": 1050,
+   "margin": 1950,
+   "marginRate": 65,
+   "byDay": [
+    {
+     "date": "2026-02-10",
+     "margin": 1050
+    },
+    {
+     "date": "2026-02-15",
+     "margin": 900
+    }
+   ]
+  },
+  "breakdown": [
+   {
+    "productId": 1,
+    "name": "Produit A",
+    "quantity": 10,
+    "revenue": 3000,
+    "cost": 1050,
+    "margin": 1950,
+    "marginRate": 65,
+    "marginShare": 100,
+    "cumulativeShare": 100,
+    "abcClass": "A"
+   }
+  ],
+  "top": [
+   {
+    "productId": 1,
+    "name": "Produit A",
+    "quantity": 10,
+    "revenue": 3000
+   }
+  ]
+ },
+ "avril (remboursement seul)": {
+  "margins": {
+   "revenue": -500,
+   "cost": -100,
+   "margin": -400,
+   "marginRate": 0,
+   "byDay": [
+    {
+     "date": "2026-04-02",
+     "margin": -400
+    }
+   ]
+  },
+  "breakdown": [
+   {
+    "productId": 1,
+    "name": "Produit A",
+    "quantity": -1,
+    "revenue": -500,
+    "cost": -100,
+    "margin": -400,
+    "marginRate": 0,
+    "marginShare": 0,
+    "cumulativeShare": 0,
+    "abcClass": "C"
+   }
+  ],
+  "top": [
+   {
+    "productId": 1,
+    "name": "Produit A",
+    "quantity": -1,
+    "revenue": -500
+   }
+  ]
+ },
+ "jour de remboursement d'ancienne vente": {
+  "margins": {
+   "revenue": -600,
+   "cost": -180,
+   "margin": -420,
+   "marginRate": 0,
+   "byDay": [
+    {
+     "date": "2026-03-06",
+     "margin": -420
+    }
+   ]
+  },
+  "breakdown": [
+   {
+    "productId": 1,
+    "name": "Produit A",
+    "quantity": -2,
+    "revenue": -600,
+    "cost": -180,
+    "margin": -420,
+    "marginRate": 0,
+    "marginShare": 0,
+    "cumulativeShare": 0,
+    "abcClass": "C"
+   }
+  ],
+  "top": [
+   {
+    "productId": 1,
+    "name": "Produit A",
+    "quantity": -2,
+    "revenue": -600
+   }
+  ]
+ },
+ "remboursement d'une ancienne vente à deux lignes": {
+  "margins": {
+   "revenue": -300,
+   "cost": -120,
+   "margin": -180,
+   "marginRate": 0,
+   "byDay": [
+    {
+     "date": "2026-03-07",
+     "margin": -180
+    }
+   ]
+  },
+  "breakdown": [
+   {
+    "productId": 1,
+    "name": "Produit A",
+    "quantity": -1,
+    "revenue": -300,
+    "cost": -120,
+    "margin": -180,
+    "marginRate": 0,
+    "marginShare": 0,
+    "cumulativeShare": 0,
+    "abcClass": "C"
+   }
+  ],
+  "top": [
+   {
+    "productId": 1,
+    "name": "Produit A",
+    "quantity": -1,
+    "revenue": -300
+   }
+  ]
+ },
+ "vide": {
+  "margins": {
+   "revenue": 0,
+   "cost": 0,
+   "margin": 0,
+   "marginRate": 0,
+   "byDay": []
+  },
+  "breakdown": [],
+  "top": []
+ }
+}

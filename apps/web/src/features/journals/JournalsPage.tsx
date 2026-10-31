@@ -1,3 +1,4 @@
+import { formatAmount } from "../../lib/format";
 import {
   getLocationDisplayName,
   getRefundTotalsBySale,
@@ -298,7 +299,7 @@ export function JournalsPage() {
               style={{
                 ...primaryButtonStyle,
                 background: tab === key ? "var(--gradient-accent)" : "transparent",
-                color: tab === key ? "#0f172a" : "var(--color-text)",
+                color: tab === key ? "var(--color-on-accent)" : "var(--color-text)",
                 border: tab === key ? "none" : "1px solid var(--color-border)",
               }}
             >
@@ -401,7 +402,7 @@ export function JournalsPage() {
                     <td style={tdStyle}>{customerName(sale.customerId) ?? "—"}</td>
                     <td style={tdStyle}>{sale.saleMode === "pos" ? t("journals.sales.modePos") : t("journals.sales.modeForm")}</td>
                     {multiStoreEnabled && <td style={tdStyle}>{storeName(sale.storeId)}</td>}
-                    <td style={tdStyle}>{sale.total}</td>
+                    <td style={tdStyle}>{formatAmount(sale.total)}</td>
                     <td style={tdStyle}>{PAYMENT_STATUS_LABELS[sale.paymentStatus] ?? sale.paymentStatus}</td>
                     <td style={tdStyle}>{userName(sale.userId)}</td>
                     {canManageRefunds && (

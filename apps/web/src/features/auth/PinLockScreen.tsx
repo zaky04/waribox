@@ -3,7 +3,11 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "./useAuth";
 import { authPrimaryButtonStyle } from "./styles";
 
-const KEYPAD = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"];
+const KEYPAD = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "OK", "0", "⌫"];
+
+// Les anciens codes ont 4 chiffres, les nouveaux 6 à 8 : on valide avec OK.
+const PIN_MIN_TO_SUBMIT = 4;
+const PIN_MAX = 8;
 
 export function PinLockScreen() {
   const { user, unlockWithPin, logout } = useAuth();
@@ -31,13 +35,13 @@ export function PinLockScreen() {
       setPin((p) => p.slice(0, -1));
       return;
     }
+    if (key === "OK") {
+      if (pin.length >= PIN_MIN_TO_SUBMIT) void submitPin(pin);
+      return;
+    }
     if (key === "") return;
 
-    const next = (pin + key).slice(0, 4);
-    setPin(next);
-    if (next.length === 4) {
-      submitPin(next);
-    }
+    setPin((p) => (p + key).slice(0, PIN_MAX));
   };
 
   return (
@@ -46,7 +50,7 @@ export function PinLockScreen() {
       <p style={{ color: "var(--color-text-muted)" }}>{user?.fullName}</p>
 
       <div style={{ display: "flex", justifyContent: "center", gap: 12, margin: "24px 0" }}>
-        {[0, 1, 2, 3].map((i) => (
+        {Array.from({ length: Math.max(6, pin.length) }, (_, i) => i).map((i) => (
           <div
             key={i}
             style={{
@@ -67,7 +71,7 @@ export function PinLockScreen() {
           <button
             key={i}
             onClick={() => handleKey(key)}
-            disabled={key === "" || checking}
+            disabled={key === "" || checking || (key === "OK" && pin.length < PIN_MIN_TO_SUBMIT)}
             style={{
               padding: "18px 0",
               fontSize: 20,

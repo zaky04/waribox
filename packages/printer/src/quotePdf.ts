@@ -1,4 +1,4 @@
-import { t } from "@gestion-boutique/i18n";
+import { t, formatMoneyPlain, formatAmountPlain } from "@gestion-boutique/i18n";
 import { jsPDF } from "jspdf";
 
 export interface QuotePdfData {
@@ -81,20 +81,20 @@ export function buildQuotePdf(data: QuotePdfData): Blob {
     }
     doc.text(descriptionLines, marginX, y);
     doc.text(String(line.quantity), marginX + colWidth * 2, y);
-    doc.text(line.unitPrice.toFixed(0), marginX + colWidth * 2.7, y);
-    doc.text(line.total.toFixed(0), marginX + colWidth * 3.5, y);
+    doc.text(formatAmountPlain(line.unitPrice), marginX + colWidth * 2.7, y);
+    doc.text(formatAmountPlain(line.total), marginX + colWidth * 3.5, y);
     y += rowHeight;
   }
 
   y += 6;
-  doc.text(t("documents.common.subtotal", { amount: data.subtotal.toFixed(0) }), marginX + colWidth * 2.7, y);
+  doc.text(t("documents.common.subtotal", { amount: formatAmountPlain(data.subtotal) }), marginX + colWidth * 2.7, y);
   y += 6;
   if (data.tax > 0) {
-    doc.text(t("documents.common.tax", { amount: data.tax.toFixed(0) }), marginX + colWidth * 2.7, y);
+    doc.text(t("documents.common.tax", { amount: formatAmountPlain(data.tax) }), marginX + colWidth * 2.7, y);
     y += 6;
   }
   doc.setFont("helvetica", "bold");
-  doc.text(t("documents.common.total", { amount: data.total.toFixed(0) }), marginX + colWidth * 2.7, y);
+  doc.text(t("documents.common.total", { amount: formatMoneyPlain(data.total) }), marginX + colWidth * 2.7, y);
 
   return doc.output("blob");
 }

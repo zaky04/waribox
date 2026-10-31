@@ -1,3 +1,4 @@
+import { formatAmount } from "../../lib/format";
 import {
   createExpense,
   deleteExpense,
@@ -22,6 +23,7 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { useApproval } from "../approval/ApprovalProvider";
 import { useAuth } from "../auth/useAuth";
 
 type Expense = typeof schema.expenses.$inferSelect;
@@ -37,6 +39,8 @@ export function ExpensesPage() {
   const { t } = useTranslation();
   const canManage = user ? hasPermission(user.permissions, "manage_expenses") : false;
   const canEdit = user ? hasPermission(user.permissions, "edit_expenses") : false;
+  const canDelete = user ? hasPermission(user.permissions, "delete_expenses") : false;
+  const approval = useApproval();
 
   const PAYMENT_METHODS: { value: string; label: string }[] = [
     { value: "cash", label: t("expenses.paymentMethods.cash") },
@@ -119,24 +123,30 @@ export function ExpensesPage() {
     setSaving(true);
     try {
       if (editingId) {
-        await updateExpense(db, editingId, {
-          category: category.trim(),
-          amount: value,
-          expenseDate,
-          paymentMethod,
-          note: note.trim() || undefined,
-          userId: user?.id,
-        }, user?.permissions ?? {});
+        await approval.run((a) =>
+          updateExpense(db, editingId, {
+            category: category.trim(),
+            amount: value,
+            expenseDate,
+            paymentMethod,
+            note: note.trim() || undefined,
+            userId: user?.id,
+            approval: a,
+          }, user?.permissions ?? {}),
+        );
       } else {
-        await createExpense(db, {
-          category: category.trim(),
-          amount: value,
-          expenseDate,
-          paymentMethod,
-          note: note.trim() || undefined,
-          userId: user?.id,
-          storeId: currentStoreId ?? undefined,
-        }, user?.permissions ?? {});
+        await approval.run((a) =>
+          createExpense(db, {
+            category: category.trim(),
+            amount: value,
+            expenseDate,
+            paymentMethod,
+            note: note.trim() || undefined,
+            userId: user?.id,
+            storeId: currentStoreId ?? undefined,
+            approval: a,
+          }, user?.permissions ?? {}),
+        );
       }
       resetForm();
       await refresh();
@@ -151,7 +161,11 @@ export function ExpensesPage() {
     if (!window.confirm(t("expenses.confirmDelete", { category: expense.category, amount: expense.amount }))) {
       return;
     }
-    await deleteExpense(db, expense.id, user?.permissions ?? {}, user?.id);
+    try {
+      await approval.run((a) => deleteExpense(db, expense.id, user?.permissions ?? {}, user?.id, a));
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    }
     await refresh();
   };
 
@@ -187,7 +201,7 @@ export function ExpensesPage() {
             {t("expenses.amount")}
             <input
               style={inputStyle}
-              type="number"
+              type="number" step="any"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
             />
@@ -269,18 +283,21 @@ export function ExpensesPage() {
               <tr key={expense.id}>
                 <td style={tdStyle}>{expense.expenseDate}</td>
                 <td style={tdStyle}>{expense.category}</td>
-                <td style={tdStyle}>{expense.amount.toFixed(0)}</td>
+                <td style={tdStyle}>{formatAmount(expense.amount)}</td>
                 <td style={tdStyle}>{expense.note ?? "—"}</td>
                 <td style={tdStyle}>{userName(expense.userId)}</td>
                 <td style={tdStyle}>
-                  {canEdit && (
+                  {(canEdit || canDelete) && (
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      <button
-                        style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
-                        onClick={() => startEdit(expense)}
-                      >
-                        {t("expenses.edit")}
-                      </button>
+                      {canEdit && (
+                        <button
+                          style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 14 }}
+                          onClick={() => startEdit(expense)}
+                        >
+                          {t("expenses.edit")}
+                        </button>
+                      )}
+                      {canDelete && (
                       <button
                         style={{
                           background: "transparent",
@@ -295,6 +312,7 @@ export function ExpensesPage() {
                       >
                         {t("expenses.delete")}
                       </button>
+                      )}
                     </div>
                   )}
                 </td>

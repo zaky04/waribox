@@ -3,7 +3,8 @@
     "paymentStatus": {
       "paid": "Paid",
       "partial": "Partial",
-      "credit": "Credit"
+      "credit": "Credit",
+      "unpaid": "To pay"
     },
     "filterBar": {
       "from": "From",
@@ -27,6 +28,9 @@
     "service_orders": "Service Tickets",
     "promotions": "Promotions",
     "products": "Products",
+    "productsPharmacie": "Medicines",
+    "productsRestaurant": "Food & drinks",
+    "productsPressing": "Services",
     "stock": "Stock",
     "customers": "Customers",
     "suppliers": "Suppliers",
@@ -36,17 +40,28 @@
     "reports": "Reports",
     "expenses": "Expenses",
     "accounting": "Accounting",
-    "settings": "Settings",
+    "settings": "Configuration",
     "users": "Users",
-    "journals": "Logs"
+    "journals": "Logs",
+    "groups": {
+      "sales": "Sales",
+      "relations": "Relations",
+      "finance": "Finance",
+      "system": "System"
+    },
+    "appearance": "Appearance",
+    "advanced": "Advanced settings",
+    "inventory": "Stock count",
+    "controls": "Controls",
+    "approvals": "Requests"
   },
   "topbar": {
     "impersonatingPrefix": "Signed in as",
     "impersonatingSuffix": "— session opened by",
     "returnToSelf": "Return to my account",
     "myPassword": "My password",
-    "themeDark": "🌙 Dark",
-    "themeLight": "☀️ Light",
+    "themeDark": "Dark",
+    "themeLight": "Light",
     "lock": "Lock",
     "logout": "Log out",
     "language": "Language"
@@ -72,7 +87,28 @@
     "backup": "Backup",
     "backupNever": "Never",
     "backupOverdue": "Overdue — do it in Settings",
-    "backupUpToDate": "Up to date"
+    "backupUpToDate": "Up to date",
+    "vsYesterday": "vs yesterday ({{amount}})",
+    "avgBasket": "Average basket",
+    "salesLabel": "Sales",
+    "peakHour": "{{hour}}:00 — the rush",
+    "todoTitle": "To do today",
+    "todoEmpty": "nothing to report",
+    "todoLowStockDetail": "{{count}} product(s) below their alert threshold",
+    "todoExpiringDetail": "{{count}} batch(es) to sell or remove within {{days}} days",
+    "todoReadyDetail": "{{count}} ticket(s) ready for pickup",
+    "todoCreditsDetail": "{{count}} overdue credit(s) to chase",
+    "todoBackupDetail": "Last backup: {{date}}",
+    "open": "Open",
+    "recentSales": "Latest sales",
+    "noSalesYet": "no sales yet",
+    "chartLabel": "Sales by hour today",
+    "controlAlerts": "Control alerts",
+    "controlAlertsDetail": "{{count}} signal(s) to check over 30 days ({{danger}} serious)",
+    "pendingApprovals": "Requests to approve",
+    "pendingApprovalsDetail": "{{count}} request(s) await your decision",
+    "decisionsToSee": "Decisions on your requests",
+    "decisionsToSeeDetail": "{{count}} of your requests have been decided."
   },
   "sales": {
     "title": "Sales",
@@ -89,7 +125,7 @@
     "sendWhatsapp": "Send via WhatsApp",
     "searchProductPlaceholder": "Search a product...",
     "scanHint": "Scan a barcode at any time to add it directly to the cart.",
-    "scanCamera": "📷 Scan (camera)",
+    "scanCamera": "Scan (camera)",
     "scanner": {
       "permissionDenied": "Camera access denied — allow the camera in your browser/app settings.",
       "accessFailed": "Could not access the camera on this device.",
@@ -149,14 +185,25 @@
       "difference": "Difference:",
       "closing": "Closing...",
       "confirm": "Confirm closing",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "blindHint": "Count the cash in the drawer and enter the total. The expected amount is only shown after closing.",
+      "resultTitle": "Register closed — count result",
+      "expectedLabel": "Expected amount",
+      "countedLabel": "Counted amount",
+      "alertHint": "This difference exceeds the threshold: it is flagged to the manager in “Controls”.",
+      "dismiss": "OK",
+      "error": "Closing failed."
     },
     "paymentMethods": {
       "cash": "Cash",
       "card": "Card",
       "mobile_money": "Mobile Money",
       "credit": "Credit"
-    }
+    },
+    "stampPaid": "PAID",
+    "exactAmount": "Exact",
+    "removeOne": "Remove one",
+    "addOne": "Add one"
   },
   "salesHistory": {
     "title": "Sales History",
@@ -176,13 +223,21 @@
     "status": "Status",
     "report": "Report",
     "generating": "Generating...",
-    "noSales": "No sales for this selection."
+    "noSales": "No sales for this selection.",
+    "loadMore": "Show more sales"
   },
   "settings": {
-    "title": "Settings",
+    "title": "Configuration",
     "business": {
       "heading": "Business",
       "name": "Business name",
+      "sectorType": "Business type",
+      "sectorTypeHint": "Adapts the icon and label of the \"Products\" tab to your business (e.g. \"Medicines\" for a pharmacy) — doesn't affect any data.",
+      "sectorNone": "None (default theme)",
+      "sectorBoutique": "Shop / general store",
+      "sectorPharmacie": "Pharmacy",
+      "sectorRestaurant": "Restaurant",
+      "sectorPressing": "Dry cleaning / services",
       "address": "Address",
       "phone": "Phone",
       "email": "Email",
@@ -200,7 +255,49 @@
       "receipt58mm": "58 mm (32 characters)",
       "receipt80mm": "80 mm (48 characters)",
       "receiptCustom": "Custom (number of characters)",
-      "receiptCharsPerLine": "Characters per line"
+      "receiptCharsPerLine": "Characters per line",
+      "currency": "Currency",
+      "currencyHint": "Changes how amounts are displayed (symbol, decimals) everywhere: screens, receipts, reports. Amounts already recorded are not converted.",
+      "currencyVatHint": "Common VAT rate in this country: about {{rate}}% (check with your accountant).",
+      "currencyNames": {
+        "XOF": "CFA franc (WAEMU)",
+        "XAF": "CFA franc (CEMAC)",
+        "NGN": "Nigerian naira",
+        "GHS": "Ghanaian cedi",
+        "EUR": "Euro",
+        "USD": "US dollar",
+        "GBP": "Pound sterling"
+      },
+      "country": "Business country (dialling code added to phone numbers)",
+      "countryNone": "— Choose a country —"
+    },
+    "appearance": {
+      "heading": "Appearance",
+      "hint": "Customize the color and shape of the whole app (buttons, active tabs, cards...) — visible right away on this page, applied everywhere after Save.",
+      "accentColor": "Accent color",
+      "default": "Default",
+      "custom": "Custom",
+      "shape": "Corner shape",
+      "shapeRounded": "Rounded",
+      "shapeSquare": "Square",
+      "presets": {
+        "ochre": "Ochre",
+        "teal": "Teal",
+        "ink": "Ink blue",
+        "plum": "Plum",
+        "forest": "Forest green",
+        "rose": "Rose",
+        "slate": "Slate"
+      },
+      "shapeStandard": "Standard",
+      "background": "Page background (light theme)",
+      "bgPaper": "Paper",
+      "bgWhite": "White",
+      "bgGrey": "Light grey",
+      "font": "Font",
+      "fontDefault": "Familjen Grotesk",
+      "fontSystem": "System",
+      "fontSerif": "Classic (serif)"
     },
     "modules": {
       "heading": "Active modules",
@@ -282,6 +379,20 @@
       "errors": {
         "noFolderChosen": "No backup folder chosen.",
         "writePermissionDenied": "Write permission denied for the backup folder."
+      },
+      "encryption": {
+        "heading": "Backup encryption",
+        "hint": "Protects the backup file with a password: without it the file cannot be opened (Google Drive, USB stick, shared phone...).",
+        "passphrase": "Encryption password (8 characters minimum)",
+        "enable": "Turn on encryption",
+        "disable": "Turn off encryption",
+        "disableConfirm": "Future backups will no longer be encrypted. Continue?",
+        "active": "Encryption is on: backups are protected by your password.",
+        "warning": "Write this password down somewhere safe: without it an encrypted backup is permanently unreadable (nobody can recover it).",
+        "tooShort": "The password must be at least 8 characters.",
+        "importPassphrase": "This backup is encrypted. Password",
+        "decryptAndRestore": "Decrypt and restore",
+        "wrongPassphrase": "Wrong password, or the file is damaged."
       }
     },
     "maintenance": {
@@ -305,6 +416,29 @@
       "launchInstaller": "Launch installer",
       "closeNow": "Installer is open — close WariBox now",
       "defineCodeFirst": "Set a maintenance code first"
+    },
+    "fne": {
+      "heading": "Electronic invoicing (FNE)",
+      "hint": "Côte d'Ivoire — mandatory since December 1, 2025. Activatable shell: has no effect until a real DGI API key is entered below. A sale always completes immediately, even if certification fails or is offline.",
+      "enable": "Enable FNE",
+      "environment": "Environment",
+      "environmentTest": "Test (DGI sandbox)",
+      "environmentProd": "Production",
+      "baseUrl": "Production URL (provided by the DGI)",
+      "apiKey": "API key",
+      "establishment": "Establishment (DGI identifier)",
+      "pointOfSale": "Point of sale (DGI identifier)",
+      "testUrlHint": "Test URL used automatically:",
+      "prodUrlHint": "Enter the production URL provided by the DGI above.",
+      "testConnection": "Test connection",
+      "testing": "Testing...",
+      "testClientName": "Test client",
+      "testItemDescription": "Test item",
+      "testSuccess": "Connection successful — test invoice certified.",
+      "testFailure": "Connection failed.",
+      "testServerReached": "The FNE server responded (good sign):",
+      "retryNow_one": "{{count}} sale pending certification — retry now",
+      "retryNow_other": "{{count}} sales pending certification — retry now"
     },
     "saved": "Saved.",
     "saving": "Saving...",
@@ -330,13 +464,89 @@
       "updateNoCode": "Enter the maintenance code.",
       "updateWrongCode": "Incorrect maintenance code.",
       "updateFailed": "Update failed.",
-      "backupSkippedUnknown": "unknown error"
+      "backupSkippedUnknown": "unknown error",
+      "fneMissingBaseUrl": "Enter the production URL provided by the DGI."
     },
     "updateStep": {
       "backingUp": "Local backup in progress...",
       "backupSkipped": "Backup not performed ({{error}}) — continuing installation.",
       "launching": "Launching installer...",
       "readyMessage": "An installation window should open. If Windows shows \"Windows protected your PC\", that's normal for an unsigned installer: click \"More info\" then \"Run anyway\". Once the installation wizard is visible, click below to close WariBox and let the installation continue."
+    },
+    "modulesGate": {
+      "title": "Restricted access",
+      "hint": "Enabled modules, multi-store, network mode, e-invoicing, SYSCOHADA export and maintenance: these settings define what the software allows. Enter the maintenance code to change them.",
+      "codeLabel": "Maintenance code",
+      "unlock": "Unlock",
+      "wrong": "Incorrect code.",
+      "noCodeBanner": "No code set: this screen is open to everyone. Set a code below, in the Maintenance section, to protect it."
+    },
+    "promotionsCard": {
+      "heading": "Scheduled discounts"
+    }
+  },
+  "network": {
+    "heading": "Network mode",
+    "description": "Share this database with other devices on the same local network (Master/Worker), or stay in Solo mode — a single device, as today.",
+    "intro": "Choose a role for this device: Master (hosts the network) or Worker (joins a Master that's already running). Sales, stock movements, expenses and approval requests are shared between linked devices; a linked device keeps working offline and resyncs afterwards.",
+    "deviceName": "This device's name",
+    "deviceNamePlaceholder": "E.g.: Manager's phone",
+    "defaultMasterName": "WariBox Master",
+    "defaultWorkerName": "WariBox Worker",
+    "becomeMaster": "Become Master (host)",
+    "joinNetwork": "Join a network",
+    "masterDesktopOnly": "The Master role is only available on the desktop app (PC).",
+    "leaveRole": "Leave this role (back to Solo)",
+    "master": {
+      "start": "Start the server",
+      "starting": "Starting...",
+      "stop": "Stop the server",
+      "qrAlt": "Pairing QR code",
+      "connectedWorkers": "Connected devices ({{count}})",
+      "workerName": "Device",
+      "noWorkers": "No device connected yet.",
+      "errors": {
+        "startFailed": "Could not start the local network server."
+      },
+      "manualHeading": "Manual entry (no camera on the other device)",
+      "manualHint": "If scanning the QR code doesn't work, copy these 3 values into the \"Manual connection\" form on the linked device.",
+      "copyManualInfo": "Copy this information",
+      "copied": "Copied!"
+    },
+    "worker": {
+      "status": "Status",
+      "statusLabels": {
+        "idle": "Not connected",
+        "connecting": "Connecting...",
+        "connected": "Connected",
+        "error": "Error",
+        "disconnected": "Disconnected"
+      },
+      "connecting": "Connecting to the Master...",
+      "scanQr": "Scan the Master's QR code",
+      "reconnect": "Reconnect",
+      "searchOnNetwork": "Search for the Master on the network",
+      "searching": "Searching...",
+      "host": "Master's IP address",
+      "port": "Port",
+      "token": "Pairing token",
+      "connect": "Connect",
+      "manualEntryError": "Address, port and token are required.",
+      "manualMasterName": "Master (entered manually)",
+      "errors": {
+        "connectionFailed": "Could not open the network connection.",
+        "timeout": "The Master did not respond in time.",
+        "rejected": "Connection rejected by the Master.",
+        "searchFailed": "Master not found on this network — rescan its QR code or enter its address manually.",
+        "connectionClosed": "The connection closed before even reaching the Master — likely the address/port, a firewall, or the two devices not being on the same Wi-Fi network."
+      },
+      "manualEntryHint": "Find these 3 values on the Master's screen (Advanced settings → Network mode), under the QR code — \"Copy this information\" button.",
+      "rejectedTitle": "Events refused by the Master",
+      "rejectedHint": "The Master did not accept these operations made on this device (so they are NOT in its books). Fix the cause, then retry, or discard them.",
+      "retry": "Retry",
+      "retryAll": "Retry all",
+      "discard": "Discard",
+      "applyError": "An event received from the Master could not be applied here: {{message}}"
     }
   },
   "storesSection": {
@@ -447,7 +657,28 @@
       "change_maintenance_code": "Maintenance code changed",
       "create_expense": "Expense recorded",
       "update_expense": "Expense updated",
-      "delete_expense": "Expense deleted"
+      "delete_expense": "Expense deleted",
+      "stock_entry": "Manual stock entry",
+      "stock_loss": "Stock loss",
+      "stock_transfer": "Stock transfer",
+      "stock_expired_writeoff": "Expired batches written off",
+      "stock_break_pack": "Boxes broken down",
+      "stock_count_start": "Stock count started",
+      "stock_count_close": "Stock count closed",
+      "receive_purchase": "Purchase received",
+      "approval_failed": "Wrong approval code",
+      "create_role": "Role created",
+      "update_role": "Role updated",
+      "approval_rejected": "Request refused by a manager",
+      "cancel_service_order": "Service ticket cancelled",
+      "create_service_tariff": "Service rate created",
+      "update_service_tariff": "Service rate changed",
+      "approval_request_created": "Approval request created",
+      "approval_request_approved": "Request approved",
+      "approval_request_rejected": "Request refused",
+      "controls_reviewed": "Review done",
+      "set_focus_code": "Focus mode code set",
+      "change_focus_code": "Focus mode code changed"
     },
     "sales": {
       "searchPlaceholder": "Sale number...",
@@ -508,14 +739,15 @@
       "remaining": "Remaining",
       "quantityToRefund": "Qty to refund",
       "restock": "Restock",
-      "reason": "Reason (optional)",
+      "reason": "Reason",
       "method": "Refund method",
       "totalToRefund": "Total to refund:",
       "errorQuantityRequired": "Enter a quantity to refund for at least one item.",
       "errorGeneric": "Could not record the refund.",
       "saving": "Saving...",
       "submit": "Refund",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "errorReasonRequired": "A refund reason is required."
     },
     "refundHistoryModal": {
       "title": "Refunds — sale {{number}}",
@@ -524,6 +756,102 @@
       "restocked": " (restocked)",
       "close": "Close"
     }
+  },
+  "pharmacy": {
+    "lotAndExpiry": "Lot and expiry",
+    "lotNumber": "Lot no.",
+    "expiryDate": "Expiry",
+    "sellExpiredConfirm": "Not enough sellable stock: {{available}} unit(s) left outside expired batches, and {{expired}} expired unit(s). Also sell expired products? A manager will have to confirm with their code.",
+    "expiryTitle": "Expiry dates",
+    "tiers": {
+      "expired": "Expired",
+      "within30": "≤ 30 days",
+      "within60": "≤ 60 days",
+      "within90": "≤ 90 days",
+      "later": "Later"
+    },
+    "expiredNotSellable": "Expired batches can no longer be sold. Write them off to clean up the stock.",
+    "product": "Product",
+    "quantity": "Quantity",
+    "status": "Status",
+    "writeOff": "Write off expired batches",
+    "writeOffConfirm": "Write off {{count}} expired batch(es) (value lost: {{value}})? This is tracked and cannot be undone.",
+    "writeOffDone": "{{batches}} batch(es) written off: {{units}} unit(s), value {{value}}.",
+    "writeOffFailed": "The write-off failed.",
+    "dashboardExpired": "Expired batches to remove",
+    "dashboardExpiredDetail": "{{count}} expired batch(es) still in stock: not sellable, to be written off",
+    "drugSheet": "Drug sheet",
+    "dci": "INN (active ingredient)",
+    "dciPlaceholder": "e.g. paracetamol",
+    "dosage": "Strength",
+    "dosageForm": "Form",
+    "dosageFormPlaceholder": "tablet, syrup…",
+    "laboratory": "Manufacturer",
+    "requiresPrescription": "Prescription-only",
+    "prescriptionBadge": "Prescription",
+    "prescriptionTitle": "Prescription required",
+    "prescriptionRef": "Prescription reference",
+    "prescriber": "Prescriber (doctor)",
+    "prescriptionRequiredHint": "This sale contains a prescription-only product: enter the prescription reference.",
+    "equivalents": "Show equivalents (same INN and strength)",
+    "equivalentsShort": "Equiv.",
+    "equivalentsFor": "Equivalents of \"{{name}}\"",
+    "noEquivalent": "No equivalent found (fill in the INN and strength of your products).",
+    "inStock": "{{count}} in stock",
+    "outOfStock": "Out of stock",
+    "addEquivalent": "Add",
+    "breakTitle": "Break down boxes",
+    "breakHint": "Open boxes into blisters (or another presentation): lot, expiry and cost follow. Expired batches cannot be opened.",
+    "breakBox": "Box to open",
+    "breakInto": "Break down into",
+    "unitsPerBox": "{{count}} per box",
+    "breakQuantity": "Number of boxes to open",
+    "boxesInStock": "{{count}} in stock here",
+    "breakRequired": "Choose the box, the presentation, the location and a number of boxes above zero.",
+    "breakDone": "{{boxes}} box(es) opened → {{units}} unit(s) broken down.",
+    "breakFailed": "The break-down failed.",
+    "breaking": "Opening…",
+    "breakSubmit": "Break down",
+    "presentationsTitle": "Broken-down presentations",
+    "presentationsHint": "Also sell by the unit: a blister, a tablet… Each presentation has its own stock, fed by opening boxes (Stock → Break down).",
+    "presentationName": "Name (e.g. Blister)",
+    "unitsPerBoxLabel": "Units per box",
+    "presentationPrice": "Selling price of one unit",
+    "presentationAdd": "Add the presentation",
+    "presentationNone": "No broken-down presentation.",
+    "presentationLine": "{{name}} — {{units}} per box — {{price}}",
+    "presentationInvalid": "Enter a name, a number of units per box above zero and a selling price.",
+    "traceTitle": "Lot traceability",
+    "traceHint": "Find where a lot is and who it was sold to, to warn customers in case of a recall.",
+    "traceSearch": "Search",
+    "traceNotFound": "No lot \"{{lot}}\" found.",
+    "traceFailed": "The search failed.",
+    "traceRemaining": "Left in stock",
+    "traceOrigin": "Origin (supplier · purchase)",
+    "traceSold": "Sold: {{count}} unit(s) in {{sales}} sale(s)",
+    "traceSale": "Sale",
+    "traceDate": "Date",
+    "traceCustomer": "Customer",
+    "traceAnonymous": "Walk-in customer",
+    "traceWarn": "Warn (WhatsApp)",
+    "traceReachable": "{{reachable}} of {{total}} sale(s) have a customer reachable on WhatsApp; the others are walk-in customers without a number.",
+    "packTitle": "Pharmacy pack",
+    "packHint": "Drug sheet (INN, strength, prescription), mandatory expiry, expired batches not sellable, equivalents, box break-down and lot traceability are active. You can add starter categories (never duplicated).",
+    "starterInstall": "Install starter categories",
+    "starterCategories": [
+      "Pain and fever",
+      "Antibiotics",
+      "Antimalarials",
+      "Anti-inflammatories",
+      "Vitamins and supplements",
+      "Digestion",
+      "Cough and cold",
+      "Hygiene and care",
+      "Medical equipment"
+    ],
+    "starterDone": "{{count}} categories added.",
+    "starterNone": "The starter categories already exist.",
+    "starterFailed": "Adding the categories failed."
   },
   "stock": {
     "title": "Stock",
@@ -548,7 +876,9 @@
       "lotNumber": "Batch number (optional)",
       "expiryDate": "Expiry date",
       "saving": "Saving...",
-      "submit": "Add to stock"
+      "submit": "Add to stock",
+      "note": "Reason",
+      "notePlaceholder": "E.g. opening stock, supplier return…"
     },
     "transfer": {
       "heading": "Reserve ↔ Sales floor transfer",
@@ -562,7 +892,9 @@
       "hint": "Removes an expired, broken, stolen or destroyed product from stock — without going through a sale. The movement stays tracked in Logs with its reason.",
       "reason": "Reason",
       "saving": "Saving...",
-      "submit": "Remove from stock"
+      "submit": "Remove from stock",
+      "note": "Details (optional)",
+      "notePlaceholder": "E.g. box dropped off the truck"
     },
     "errors": {
       "entryRequired": "Choose a product, a location and a positive quantity.",
@@ -573,7 +905,8 @@
       "transferFailed": "Could not transfer the stock.",
       "lossRequired": "Choose a product, a location and a positive quantity.",
       "lossInsufficient": "Insufficient stock at this location (available: {{available}}).",
-      "lossFailed": "Could not record the removal."
+      "lossFailed": "Could not record the removal.",
+      "entryNoteRequired": "A reason is required for a manual stock entry."
     }
   },
   "expenses": {
@@ -837,7 +1170,7 @@
     "emailColumn": "Email",
     "newPassword": "New password (leave empty = unchanged)",
     "password": "Password",
-    "pin": "PIN code (4 digits, optional)",
+    "pin": "Unlock PIN (6 to 8 digits, optional)",
     "role": "Role",
     "chooseOption": "— Choose —",
     "storeLabel": "Store (this role cannot switch stores itself)",
@@ -859,11 +1192,14 @@
       "requiredFields": "Name, username and role are required.",
       "passwordLength": "The password must be at least 8 characters.",
       "newPasswordLength": "The new password must be at least 8 characters.",
-      "pinFormat": "The PIN code must be exactly 4 digits.",
+      "pinFormat": "The PIN code must be 6 to 8 digits.",
       "storeRequired": "This role must be assigned to a store (it cannot switch stores itself).",
       "emailInUse": "This email is already in use.",
-      "impersonateFailed": "Could not open a session for this account."
-    }
+      "impersonateFailed": "Could not open a session for this account.",
+      "limitFormat": "A limit must be empty or a positive number.",
+      "pinsDiffer": "The unlock PIN and the approval PIN must be different."
+    },
+    "approvalPin": "Approval PIN (6 to 8 digits, different from the unlock PIN, optional)"
   },
   "quotes": {
     "title": "Quotes",
@@ -1107,7 +1443,8 @@
     "paymentStatus": {
       "paid": "Paid",
       "partial": "Partial",
-      "credit": "Credit"
+      "credit": "Credit",
+      "unpaid": "To pay"
     },
     "errors": {
       "itemRequired": "The ticket must contain at least one item.",
@@ -1116,8 +1453,24 @@
       "repayAmountPositive": "The amount must be greater than zero.",
       "repayFailed": "Could not record the repayment.",
       "historyDescriptionRequired": "Each item must have a description.",
-      "historySaveFailed": "Could not save the changes."
-    }
+      "historySaveFailed": "Could not save the changes.",
+      "customerRequired": "The customer's name is required to drop off an item."
+    },
+    "tariff": {
+      "choose": "Rate (optional)",
+      "manual": "— Manual entry —"
+    },
+    "cancel": {
+      "button": "Cancel ticket",
+      "reason": "Cancellation reason",
+      "confirm": "Confirm cancellation",
+      "tag": "Cancelled",
+      "done": "Ticket cancelled."
+    },
+    "payLater": "Pay later (at pickup)",
+    "balanceDue": "Balance to pay:",
+    "collectDue": "Collect",
+    "dueHint": "The customer doesn't have to pay at drop-off. If they leave without paying, this balance becomes a credit at pickup (identified customer, manager approval)."
   },
   "auth": {
     "loading": "Loading...",
@@ -1140,19 +1493,21 @@
       "username": "Username",
       "email": "Email (optional)",
       "password": "Password",
-      "pin": "PIN code (4 digits) — for quick lock",
+      "pin": "Unlock PIN (6 to 8 digits) — to quickly reopen a locked session",
       "creating": "Creating...",
       "submit": "Create the administrator account",
       "errors": {
         "usernameRequired": "The username is required.",
         "passwordLength": "The password must be at least 8 characters.",
-        "pinFormat": "The PIN code must be exactly 4 digits.",
-        "emailInUse": "This email is already in use."
-      }
+        "pinFormat": "The PIN code must be 6 to 8 digits.",
+        "emailInUse": "This email is already in use.",
+        "pinsDiffer": "The two PINs must be different."
+      },
+      "approvalPin": "Approval PIN (6 to 8 digits, different from the unlock PIN) — to approve discounts, refunds, expenses…"
     },
     "moduleSetup": {
       "title": "Modules to activate",
-      "hint": "Choose the features useful to your business — changeable at any time later in Settings.",
+      "hint": "Choose the features useful to your business — changeable at any time later in Advanced settings.",
       "saving": "Saving...",
       "continue": "Continue"
     },
@@ -1183,17 +1538,28 @@
   },
   "coreErrors": {
     "common": {
+      "invalidQuantity": "Invalid quantity: it must be a number greater than 0.",
+      "invalidPrice": "Invalid price: it must be zero or a positive number.",
+      "invalidDiscount": "Invalid discount: it must be positive and not exceed the line amount.",
+      "invalidAmount": "Invalid amount: it must be a number greater than 0.",
+      "invalidTaxRate": "Invalid tax rate: it must be between 0 and 100.",
       "tooManyAttempts": "Too many attempts. Try again in {{seconds}} second(s).",
       "amountExceedsBalance": "The amount exceeds the remaining balance ({{balance}}).",
       "insufficientLoyaltyPoints": "The customer only has {{points}} points."
     },
     "auth": {
       "usernameTaken": "This username is already in use.",
+      "pinInvalid": "The PIN must be 6 to 8 digits.",
+      "pinRemoteOnly": "This PIN can only be checked by the Master: connect to the Master, or log out and log back in with your password.",
+      "pinChallengeInvalid": "PIN check expired or invalid: try again.",
+      "syncEventNotAllowed": "This event type is not accepted from a linked device.",
+      "syncEventUnknown": "Unknown sync event type.",
       "accountNotFound": "Account not found.",
       "wrongCurrentPassword": "Incorrect current password.",
       "userNotFound": "User not found.",
       "accountDisabled": "This account is disabled.",
-      "permissionDenied": "Action not authorized for this role."
+      "permissionDenied": "Action not authorized for this role.",
+      "pinsMustDiffer": "The unlock PIN and the approval PIN must be different."
     },
     "backup": {
       "fileTooSmall": "This file is too small to be a valid backup.",
@@ -1232,7 +1598,11 @@
     "purchases": {
       "itemRequired": "The purchase must contain at least one item.",
       "quantityPositive": "Each item's quantity must be greater than zero.",
-      "reserveLocationNotFound": "Reserve location not found for this store."
+      "reserveLocationNotFound": "Reserve location not found for this store.",
+      "duplicateInvoice": "Invoice “{{reference}}” from this supplier is already recorded.",
+      "notFound": "Purchase not found.",
+      "notAwaitingReceipt": "This purchase is not awaiting receipt.",
+      "receiptQuantityRequired": "Enter the received quantity of every item."
     },
     "quotes": {
       "itemRequired": "The quote must contain at least one item.",
@@ -1246,7 +1616,8 @@
       "saleItemNotFound": "Sale item not found for this sale.",
       "quantityExceeded": "Refundable quantity exceeded for this item (remaining: {{remaining}}, requested: {{requested}}).",
       "noValidQuantity": "No valid quantity to refund.",
-      "cannotFindOriginalLocation": "Could not find the original location of this item to restock it."
+      "cannotFindOriginalLocation": "Could not find the original location of this item to restock it.",
+      "reasonRequired": "A reason is required to refund a sale."
     },
     "sales": {
       "itemRequired": "The sale must contain at least one item.",
@@ -1258,10 +1629,74 @@
     "serviceOrders": {
       "itemRequired": "The ticket must contain at least one item.",
       "customerIdRequiredCredit": "Enter at least the customer's name for a credit ticket or partial payment (no need for an existing customer account).",
-      "itemNotFound": "Item not found."
+      "itemNotFound": "Item not found.",
+      "cancelled": "This ticket is cancelled: it can no longer be changed.",
+      "cancelReasonRequired": "A cancellation reason is required.",
+      "cancelPickedUp": "Cannot cancel: at least one item has already been picked up.",
+      "notFound": "Service ticket not found.",
+      "customerRequiredAtPickup": "This ticket isn't paid: set the customer (History → edit ticket) so the balance becomes a credit, or collect it before pickup.",
+      "customerRequired": "The customer's name is required: no anonymous drop-offs (traceability)."
     },
     "stores": {
       "noStoreExists": "No store exists — the database migration must have failed."
+    },
+    "settings": {
+      "advancedCodeRequired": "The maintenance code is required to change these settings.",
+      "advancedCodeWrong": "Incorrect maintenance code."
+    },
+    "approval": {
+      "required": "This action ({{kind}} of {{amount}}) exceeds the limit of {{threshold}}: a manager's approval is required.",
+      "invalidApprover": "This manager cannot approve this action.",
+      "wrongPin": "Incorrect manager approval PIN.",
+      "requiredPoints": "This action ({{kind}} of {{amount}} points) exceeds the {{threshold}}-point limit: a manager's approval is required.",
+      "overApproverLimit": "This amount is above this approver's limit: a higher-level approver is needed."
+    },
+    "stock": {
+      "quantityPositive": "The quantity must be greater than zero.",
+      "sameLocation": "The source and destination locations must be different.",
+      "insufficient": "Not enough stock at this location ({{available}} available).",
+      "noteRequired": "A reason is required for a manual stock entry."
+    },
+    "pharmacy": {
+      "expiredStock": "Not enough sellable stock: {{available}} available, {{expired}} in expired batches (not sellable).",
+      "expiryRequired": "An expiry date is required for \"{{product}}\" (expiry-tracked product).",
+      "receivedExpired": "\"{{product}}\" is already expired: refuse it or return it to the supplier.",
+      "nothingExpired": "No expired batch to write off.",
+      "prescriptionRequired": "This sale contains a prescription-only product: enter the prescription reference.",
+      "packInvalid": "Invalid presentation: choose a \"box\" variant of the same product and a unit count above zero.",
+      "breakQuantityPositive": "Enter the number of boxes to break down (above zero).",
+      "noPackLink": "This product has no broken-down presentation (e.g. blister): add it in Products first.",
+      "notEnoughToBreak": "Not enough sellable boxes to break down ({{available}} available)."
+    },
+    "cashSession": {
+      "notFound": "Cash session not found.",
+      "alreadyClosed": "This cash session is already closed."
+    },
+    "inventory": {
+      "alreadyOpen": "A stock count is already in progress at this location.",
+      "notOpen": "This stock count is not open.",
+      "negative": "The counted quantity cannot be negative.",
+      "notFound": "Stock count not found.",
+      "nothingCounted": "No product has been counted: enter at least one quantity before closing."
+    },
+    "roles": {
+      "nameRequired": "The role name is required.",
+      "nameTaken": "A role already has this name.",
+      "notFound": "Role not found.",
+      "adminLocked": "The Admin role cannot be modified.",
+      "sensitiveDenied": "You cannot grant or remove a sensitive right (user management, settings, approval, log, controls) that you do not hold yourself."
+    },
+    "serviceTariffs": {
+      "nameRequired": "The service name is required.",
+      "priceInvalid": "The price must be zero or a positive number.",
+      "notFound": "This service rate could not be found."
+    },
+    "focus": {
+      "codeTooShort": "The focus mode code must be at least {{min}} characters long.",
+      "settingsMissing": "Settings not found.",
+      "currentCodeRequired": "Enter the current focus mode code (or the maintenance code if it is forgotten) to change it.",
+      "wrongCurrentCode": "Incorrect current focus mode code.",
+      "wrongMaintenanceCode": "Incorrect maintenance code."
     }
   },
   "whatsapp": {
@@ -1275,12 +1710,15 @@
       "thanks": "Thank you for your visit!"
     },
     "lowStockAlert": "Low stock alert — {{count}} product(s) to restock at {{business}}:\n{{lines}}",
+    "lotRecall": "Hello, {{business}} is informing you of a lot recall: the product \"{{product}}\" (lot {{lot}}) you bought from us is affected. Please do not use it and bring it back to us. Thank you for your understanding.",
     "lowStockLine": "- {{name}}: {{stock}}/{{threshold}}",
     "moreItems": "... and {{count}} more.",
     "expiringAlert": "Items expiring soon (≤ {{days}} days) — {{count}} batch(es) at {{business}}:\n{{lines}}",
     "expiringLine": "- {{name}} (batch {{lot}}): expires {{date}}",
     "overdueDebt": "Hello {{customerName}}, you have an overdue balance of {{amount}} since {{dueDate}} at {{business}} (ref. {{reference}}). Please settle it as soon as possible.",
-    "serviceOrderReady": "Hello {{customerName}}, your ticket {{orderNumber}} is ready for pickup at {{business}}."
+    "serviceOrderReady": "Hello {{customerName}}, your ticket {{orderNumber}} is ready for pickup at {{business}}.",
+    "verifyMessage": "Hello {{name}}, could you confirm your {{kind}} no. {{number}} of {{date}} for {{amount}}? Thank you!",
+    "countryRequired": "This number can't be completed: first choose the business country in Settings → Company, or save the number with its dialling code (+225…)."
   },
   "documents": {
     "common": {
@@ -1295,7 +1733,11 @@
     "receipt": {
       "cashier": "Cashier: {{name}}",
       "payment": "Payment ({{method}}): {{amount}}",
-      "thanks": "Thank you for your visit!"
+      "thanks": "Thank you for your visit!",
+      "fneCertified": "FNE certified invoice: {{reference}}",
+      "prescription": "Prescription no. {{reference}}",
+      "fnePending": "Awaiting FNE certification",
+      "fneFailed": "FNE certification pending (automatic retry)"
     },
     "serviceTicket": {
       "title": "DROP-OFF SLIP",
@@ -1532,9 +1974,20 @@
     "reserve": "Reserve",
     "surface_vente": "Sales floor"
   },
+  "app": {
+    "pageLoading": "Loading…"
+  },
+  "errorBoundary": {
+    "title": "This screen ran into an error.",
+    "hint": "Your data is not lost. Try showing the page again; if it keeps happening, reload the app and tell support the message below.",
+    "retry": "Try again",
+    "reload": "Reload the app"
+  },
   "database": {
     "initError": "Could not initialize the local database: {{error}}",
-    "initializing": "Initializing local database..."
+    "initializing": "Initializing local database...",
+    "reload": "Reload",
+    "initErrorHint": "Your data stays on this device. Do not uninstall the app: reload, and if the problem persists contact support before doing anything else."
   },
   "updateBanner": {
     "message": "A new version of the app is available.",
@@ -1574,6 +2027,532 @@
       "listFilesFailed": "Could not list Google Drive files.",
       "updateFileFailed": "Failed to update the file on Google Drive.",
       "uploadFileFailed": "Failed to upload the file to Google Drive."
+    }
+  },
+  "approval": {
+    "kinds": {
+      "refund": "refund",
+      "stock": "stock movement",
+      "credit": "credit sale",
+      "discount": "discount outside a promotion",
+      "expense": "expense",
+      "points": "points adjustment",
+      "ticket": "ticket change or cancellation",
+      "price": "price change",
+      "payment": "supplier payment"
+    },
+    "title": "Approval required",
+    "approver": "Manager",
+    "pin": "Manager approval PIN",
+    "approve": "Approve",
+    "cancel": "Cancel",
+    "cancelled": "Action cancelled: approval not given.",
+    "noApprover": "No manager has an approval PIN. Set one for an Owner or Admin (Users).",
+    "reject": "Refuse",
+    "rejected": "Request refused by the manager."
+  },
+  "inventory": {
+    "movementNote": "Stock count #{{id}}",
+    "title": "Physical stock count",
+    "hint": "Count the real stock at a location. System quantities stay hidden while counting; on closing, the difference is valued and stock is adjusted (with a manager's approval above the limit).",
+    "location": "Location",
+    "start": "Start a stock count",
+    "inProgress": "Stock count #{{id}} in progress",
+    "progress": "{{counted}} / {{total}} products counted",
+    "blindHint": "system quantities hidden",
+    "search": "Search a product…",
+    "product": "Product",
+    "counted": "Counted",
+    "note": "Note (optional)",
+    "close": "Close and adjust stock",
+    "closing": "Closing…",
+    "closeHint": "Uncounted products are left unchanged. Count and close in the same session, without selling in between.",
+    "reportTitle": "Result of stock count #{{id}}",
+    "missingValue": "Missing (value at cost)",
+    "surplusValue": "Surplus (value at cost)",
+    "noVariance": "No difference: counted stock matches system stock.",
+    "system": "System",
+    "difference": "Difference",
+    "value": "Value",
+    "history": "Closed stock counts",
+    "number": "No.",
+    "closedAt": "Closed on",
+    "viewReport": "View report",
+    "errors": {
+      "generic": "The stock count operation failed."
+    }
+  },
+  "controls": {
+    "title": "Management controls",
+    "hint": "Signals to check by employee and by supplier. They are not accusations: each signal is a starting point (receipt, conversation, on-site check).",
+    "from": "From",
+    "to": "To",
+    "signalsTitle": "Signals to check ({{count}})",
+    "noSignal": "No signal for this period.",
+    "employees": "By employee",
+    "thresholds": "Flag thresholds: refunds ≥ {{refund}}% of the employee's sales (2 minimum), losses ≥ {{loss}}% of their sales, ≥ {{entries}} manual stock entries, any cash difference above the threshold set in Configuration.",
+    "col": {
+      "employee": "Employee",
+      "sales": "Sales",
+      "refundsProcessed": "Refunds made",
+      "refundRate": "Refund rate",
+      "credit": "Credit granted",
+      "losses": "Stock losses",
+      "manualEntries": "Manual entries",
+      "cashVariance": "Cash differences",
+      "other": "Other",
+      "date": "Date",
+      "expected": "Expected",
+      "counted": "Counted",
+      "difference": "Difference",
+      "missing": "Missing",
+      "surplus": "Surplus",
+      "supplier": "Supplier",
+      "purchases": "Purchases",
+      "priceAlerts": "Price increases",
+      "shortfall": "Short at receipt",
+      "awaiting": "Awaiting receipt",
+      "debt": "Open debt",
+      "product": "Product",
+      "supplierPrices": "Price by supplier (latest)",
+      "kind": "Type",
+      "amount": "Amount",
+      "detail": "Detail",
+      "risk": "Risk",
+      "discount": "Off-promo discounts",
+      "ticket": "Ticket",
+      "readyItems": "Ready items",
+      "value": "Value",
+      "age": "Age (days)",
+      "customer": "Customer",
+      "remaining": "Balance due"
+    },
+    "other": "prices changed: {{prices}} · expenses corrected: {{expenses}} · approvals refused: {{failed}} · approvals given: {{approvals}}",
+    "empty": "Nothing for this period.",
+    "cashTitle": "Cash register closings",
+    "stockCountsTitle": "Stock counts",
+    "suppliersTitle": "Suppliers",
+    "priceComparison": "Purchase price comparison (products bought from several suppliers)",
+    "avg": "avg.",
+    "eventsTitle": "Recent sensitive events",
+    "eventKinds": {
+      "refund": "Refund",
+      "loss": "Stock loss",
+      "manual_entry": "Manual stock entry",
+      "cash_variance": "Cash difference",
+      "price_alert": "Purchase price increase",
+      "credit_approved": "Credit approved",
+      "stock_count": "Stock count",
+      "discount": "Discount outside a promotion",
+      "expired_sale": "Expired-batch sale (override)",
+      "expired_writeoff": "Expired batches written off"
+    },
+    "flags": {
+      "refund_rate": "{{value}}% of their sales were refunded (threshold {{threshold}}%).",
+      "cash_variance": "cumulative cash differences: {{amount}}.",
+      "loss_rate": "high declared losses ({{value}} — threshold {{threshold}}% of sales).",
+      "manual_entries": "{{value}} manual stock entries (threshold {{threshold}}).",
+      "failed_approvals": "{{value}} approval codes refused (threshold {{threshold}}).",
+      "price_changes": "{{value}} price changes (threshold {{threshold}}).",
+      "expense_edits": "{{value}} expenses corrected or deleted (threshold {{threshold}}).",
+      "supplier_price_alert": "{{value}} purchase price increase(s) flagged.",
+      "supplier_shortfall": "shortfall found at receipt: {{amount}} to claim.",
+      "supplier_same_user_receipt": "{{value}} receipt(s) made by the person who entered the invoice.",
+      "discount_rate": "discounts outside a promotion: {{value}} % of their sales (threshold {{threshold}} %).",
+      "rejected_approvals": "{{value}} requests refused by a manager.",
+      "low_tickets": "{{value}} tickets at zero or far below average.",
+      "ticket_cancels": "{{value}} cancelled tickets.",
+      "stale_tickets": "{{value}} ticket(s) ready for more than {{threshold}} days, never picked up.",
+      "unpaid_pickups": "items picked up with a balance due: {{amount}} to recover.",
+      "number_gaps": "{{value}} missing number(s) in the sales or tickets sequence (deleted or never entered).",
+      "pending_approvals": "{{value}} approval request(s) pending for over {{threshold}} h — decide them so business isn't blocked."
+    },
+    "integrityTitle": "Log integrity",
+    "integrityHint": "Each action is chained to the previous one by a fingerprint: deleting or editing a log line breaks the chain. Note the head fingerprint from time to time: it also lets you detect a rollback.",
+    "integrityCheck": "Verify log integrity",
+    "integrityChecking": "Checking…",
+    "integrityOk": "Log intact: {{count}} chained action(s) verified ({{legacy}} predate the protection).",
+    "integrityBroken": "Log TAMPERED at line {{id}} — {{reason}}",
+    "integrityHead": "Head fingerprint:",
+    "integrityReasons": {
+      "prev_mismatch": "a line was deleted or moved",
+      "hash_mismatch": "a line's content was modified",
+      "unhashed_after_chain": "a line was added outside the application"
+    },
+    "alertsTitle": "Alerts to handle first ({{count}})",
+    "alertsNone": "No alerts: nothing unusual in this period.",
+    "riskHint": "The risk score (0-100) combines refunds, losses, discounts outside a promotion, cash differences, refused approvals, manual entries and corrections. It is a reading aid, not proof.",
+    "riskLevels": {
+      "low": "low",
+      "medium": "medium",
+      "high": "high"
+    },
+    "extra": "points adjusted by hand: {{points}} · requests refused by a manager: {{rejected}}",
+    "ticketsTitle": "Service tickets to watch",
+    "staleTitle": "Ready but never picked up",
+    "unpaidTitle": "Picked up with a balance due",
+    "gapsTitle": "Missing numbers",
+    "gapKinds": {
+      "sale": "Sales",
+      "ticket": "Tickets"
+    },
+    "none": "Nothing to report.",
+    "summary": {
+      "title": "Daily summary",
+      "hint": "The day's figures and everything that needs your attention, as one message to send by WhatsApp.",
+      "date": "Day",
+      "generate": "Generate summary",
+      "send": "Send on WhatsApp",
+      "copy": "Copy",
+      "copied": "Copied.",
+      "noPhone": "No phone to notify: set it in Configuration → Business."
+    },
+    "verify": {
+      "title": "Phone check",
+      "hint": "Draws recent operations at random so you can ask the customer to confirm them. An operation they don't recognise, or at a different amount, is a strong signal.",
+      "draw": "Draw at random",
+      "anonymous": "{{percent}} % of the period's operations have no identified customer: they cannot be checked.",
+      "empty": "No recent operation with a customer and a phone number.",
+      "ask": "Ask for confirmation",
+      "kinds": {
+        "sale": "sale",
+        "ticket": "ticket"
+      }
+    },
+    "review": {
+      "title": "Owner review",
+      "last": "Last review: {{date}} by {{name}}.",
+      "never": "No review recorded yet.",
+      "since": "Since then: {{events}} logged action(s), {{pending}} pending request(s).",
+      "note": "Note (optional)",
+      "mark": "Review done",
+      "showSince": "Show since last review"
+    }
+  },
+  "controlsSettings": {
+    "heading": "Management controls",
+    "hint": "Limits above which an action requires a manager's approval (their PIN). Leave empty for no control; 0 = control everything. Per-person limits are set in Users.",
+    "approvalRefund": "Refund above",
+    "approvalStock": "Manual stock loss or entry above (value at cost) — 0 = every manual stock movement must be approved by an Owner/Admin",
+    "approvalCredit": "Credit sale above",
+    "cashVariance": "Flag cash difference above (empty = any difference)",
+    "priceAlert": "Alert if purchase price rises by more than (%) — 0 to disable",
+    "requireReceipt": "Two-step purchases: the invoice is entered, stock only comes in at controlled receipt (counted quantities)",
+    "defaultCreditLimit": "Default customer credit limit (empty = unlimited)",
+    "approverHint": "Tip: the Owner and Admin can approve. Set a PIN for them (Users → Edit).",
+    "invalid": "A control limit must be empty or a positive number.",
+    "approvalDiscount": "Discount or price below catalogue, outside a scheduled promotion, above — 0 = every discount must be approved by the owner",
+    "approvalExpense": "Expense above — 0 = every expense must be approved",
+    "approvalPoints": "Manual loyalty points adjustment above (points) — 0 = every adjustment must be approved",
+    "alertHeading": "Control dashboard alert thresholds",
+    "alertRefund": "Alert when refunds exceed (% of the employee's sales)",
+    "alertLoss": "Alert when declared losses exceed (% of the employee's sales)",
+    "alertDiscount": "Alert when off-promotion discounts exceed (% of the employee's sales)",
+    "approvalTicket": "Ticket: price cut after payment, cancellation, pickup with balance due, undo — above (0 = everything must be approved)",
+    "staleTicketDays": "Flag a « ready » ticket not picked up for (days)",
+    "modeHeading": "How to approve",
+    "modeHint": "« PIN »: the manager types their code on the spot. « Later validation »: the action waits for the owner (Requests screen) — stock is applied right away then validated or corrected; expenses and points are only recorded after approval.",
+    "modeStock": "Stock: entries, withdrawals, purchases, inventory",
+    "modeExpense": "Expenses",
+    "modePoints": "Loyalty points adjustments",
+    "modePin": "Manager's PIN, on the spot",
+    "modeLater": "Later validation by the owner",
+    "profilesHeading": "Control profile",
+    "profilesHint": "Pick one based on how present you are: a profile fills the thresholds, modes and alert delay below (adjust then Save). Amounts are scaled to your currency.",
+    "profileApplied": "Settings filled in below — remember to Save.",
+    "profiles": {
+      "present": {
+        "name": "Always present",
+        "description": "everything goes through your PIN on the spot; a pending request is flagged after 4 h."
+      },
+      "evening": {
+        "name": "Daily check-in",
+        "description": "small amounts are free, the rest waits for your evening validation (stock applied now, expenses and points after approval); alert after 24 h."
+      },
+      "periodic": {
+        "name": "Weekly or monthly",
+        "description": "high thresholds, everything is logged for your review afterwards. Give your manager approval rights and an approval limit (Users) so daily work isn't blocked; alert after 7 days."
+      }
+    },
+    "pendingAlertHours": "Flag an approval request pending for more than (hours) — 0 to disable",
+    "approvalPrice": "Product price change above (price gap) — 0 = every change must be approved",
+    "approvalPayment": "Supplier debt payment above — 0 = every payment must be approved"
+  },
+  "approvalRoles": {
+    "title": "Roles and permissions",
+    "hint": "Create custom roles (e.g. “Storekeeper”) and choose exactly what they can do. The Admin role cannot be modified.",
+    "newRole": "New role",
+    "name": "Role name",
+    "create": "Create role",
+    "save": "Save permissions",
+    "editRole": "Edit role",
+    "saved": "Role saved.",
+    "limits": "Personal approval limits (empty = global threshold)",
+    "limitRefund": "Max refund without approval",
+    "limitStock": "Max stock movement without approval (value at cost)",
+    "limitCredit": "Max credit sale without approval",
+    "newPin": "New unlock PIN (6 to 8 digits)",
+    "pinSet": "Unlock PIN set",
+    "pinMissing": "No unlock PIN",
+    "limitDiscount": "Max off-promotion discount without approval",
+    "limitExpense": "Max expense without approval",
+    "limitPoints": "Max points adjustment without approval",
+    "limitTicket": "Max ticket change/cancellation without approval",
+    "limitApprove": "Approval limit: maximum amount this person can approve (empty = unlimited)",
+    "limitApproveHint": "Above this amount, the request must be decided by a higher-level approver (owner). Does not apply to loyalty points.",
+    "template": "Start from a template",
+    "templateNone": "— None (empty role) —",
+    "newApprovalPin": "New approval PIN (6 to 8 digits)",
+    "approvalPinSet": "Approval PIN set",
+    "approvalPinMissing": "No approval PIN (cannot approve)"
+  },
+  "permissions": {
+    "view_margins": "See margins",
+    "manage_products": "Manage products",
+    "manage_promotions": "Manage promotions",
+    "manage_stock": "Manage stock and stock counts",
+    "manage_sales": "Sell (register)",
+    "manage_refunds": "Refund",
+    "manage_service_orders": "Create service tickets",
+    "edit_service_orders": "Correct service tickets",
+    "manage_customers": "Create customers",
+    "edit_customers": "Edit customers (incl. credit limit)",
+    "manage_suppliers": "Manage suppliers and purchases",
+    "edit_suppliers": "Edit suppliers",
+    "manage_quotes": "Create quotes",
+    "edit_quotes": "Edit quotes",
+    "manage_credits": "Collect receivables",
+    "manage_debts": "Pay supplier debts",
+    "manage_expenses": "Enter expenses",
+    "edit_expenses": "Correct expenses",
+    "view_reports": "See reports",
+    "view_accounting": "See accounting",
+    "manage_settings": "Manage settings",
+    "manage_users": "Manage users and roles",
+    "view_audit_logs": "See the action log",
+    "switch_store": "Switch store",
+    "view_controls": "See the Controls dashboard",
+    "approve_actions": "Approve everything (all areas)",
+    "categories": {
+      "sales": "Sales and register",
+      "stock": "Products and stock",
+      "people": "Customers, suppliers and purchases",
+      "finance": "Money: receivables, debts, expenses, margins",
+      "reports": "Reports, log and controls",
+      "admin": "Administration",
+      "approvals": "Approvals (who can validate what)"
+    },
+    "checkAll": "Check all",
+    "uncheckAll": "Uncheck all",
+    "sensitive": "sensitive right",
+    "delete_expenses": "Delete expenses",
+    "adjust_loyalty_points": "Adjust loyalty points by hand",
+    "approve_refunds": "Approve refunds",
+    "approve_stock": "Approve stock movements",
+    "approve_credit": "Approve sales on credit",
+    "approve_discounts": "Approve discounts outside a promotion",
+    "approve_expenses": "Approve expenses",
+    "approve_points": "Approve points adjustments",
+    "approve_tickets": "Approve ticket changes",
+    "transfer_stock": "Transfer stock between locations",
+    "record_stock_losses": "Record stock losses (breakage, expiry, theft)",
+    "manage_inventory": "Do stock counts",
+    "manage_purchases": "Enter purchases",
+    "receive_purchases": "Receive purchases",
+    "edit_product_prices": "Change product prices",
+    "view_costs": "See purchase prices (costs)",
+    "open_close_cash": "Open and close the cash drawer",
+    "sell_on_credit": "Sell on credit",
+    "export_reports": "Export reports (PDF, Excel)",
+    "manage_backups": "Back up and restore data",
+    "approve_prices": "Approve price changes",
+    "approve_payments": "Approve supplier payments"
+  },
+  "purchasesControls": {
+    "invoiceReference": "Supplier invoice number",
+    "priceAlert": "Price up {{percent}}% vs the last one ({{previous}}).",
+    "awaitingReceipt": "Awaiting receipt",
+    "receive": "Receive",
+    "receiveTitle": "Receipt of purchase {{number}}",
+    "receiveHint": "Count what you actually receive, without looking at the invoice. Stock only comes in for the quantities entered.",
+    "receivedQty": "Quantity received",
+    "receiveSubmit": "Confirm receipt",
+    "shortfallResult": "Shortfall versus the invoice: {{amount}} — to claim from the supplier.",
+    "receiptOk": "Receipt matches the invoice.",
+    "status": "Status",
+    "statusReceived": "Received"
+  },
+  "creditsControls": {
+    "method": "Payment method",
+    "cash": "Cash",
+    "card": "Card",
+    "mobile": "Mobile / transfer"
+  },
+  "customersControls": {
+    "creditLimit": "Credit limit (empty = default limit)",
+    "creditLimitInvalid": "The credit limit must be empty or a positive number."
+  },
+  "journalsControls": {
+    "verify": "Verify integrity"
+  },
+  "userRights": {
+    "title": "This user's individual rights",
+    "hint": "On top of their role: allow or deny a specific right for this person only. “Per role” = no change. Sensitive rights (⚠) can only be granted by someone who holds them.",
+    "inherit": "Per role",
+    "allow": "Allow",
+    "deny": "Deny",
+    "roleHas": "the role grants it",
+    "roleLacks": "the role does not grant it",
+    "effective": "Effective rights: {{count}} of {{total}}",
+    "reset": "Reset everything to “per role”"
+  },
+  "dailySummary": {
+    "title": "Summary for {{date}} — {{business}}",
+    "sales": "Sales: {{count}} for {{total}}",
+    "tickets": "Service tickets: {{count}} for {{total}}",
+    "expenses": "Expenses: {{count}} for {{total}}",
+    "watchTitle": "To watch:",
+    "discounts": "Discounts outside a promotion: {{count}} ({{total}})",
+    "refunds": "Refunds: {{count}} ({{total}})",
+    "losses": "Stock losses: {{count}} (value {{total}})",
+    "entries": "Manual stock entries: {{count}} (value {{total}})",
+    "cancelled": "Cancelled tickets: {{count}}",
+    "cash": "Cash: {{count}} closing(s), total difference {{variance}}",
+    "cashNone": "Cash: no closing today",
+    "approvals": "Approvals given: {{count}}",
+    "alerts": "Open control alerts: {{count}} including {{danger}} serious",
+    "titleNoName": "Summary for {{date}}"
+  },
+  "serviceTariffs": {
+    "title": "Service rates (optional)",
+    "hint": "Record your usual services so the price is checked: a price below the rate or a discount needs your approval. Without rates, ticket entry stays fully manual.",
+    "name": "Service",
+    "price": "Price",
+    "add": "Add rate",
+    "disable": "Disable",
+    "enable": "Enable",
+    "save": "Save",
+    "none": "No rates: entry is manual.",
+    "inactive": "disabled"
+  },
+  "approvalRequests": {
+    "queued": "Request sent to the manager for validation: nothing is recorded until it is approved.",
+    "reversalNote": "Refusal of request no. {{id}}",
+    "errors": {
+      "notFound": "Request not found.",
+      "alreadyDecided": "This request has already been decided.",
+      "reasonRequired": "A reason is required to refuse.",
+      "selfDecision": "You cannot decide your own request."
+    },
+    "summary": {
+      "stockEntry": "Stock entry: {{quantity}} × {{product}} (value {{value}}) — {{note}}",
+      "stockLoss": "Stock withdrawal: {{quantity}} × {{product}} (value {{value}}) — reason: {{reason}}",
+      "purchase": "Purchase {{number}} received into stock ({{total}})",
+      "receipt": "Receipt of purchase {{number}} ({{total}})",
+      "inventory": "Inventory no. {{id}} adjusted: missing {{missing}}, surplus {{surplus}}",
+      "expense": "Expense « {{category}} » of {{amount}} {{note}}",
+      "points": "Adjustment of {{points}} points for {{customer}} {{reason}}"
+    },
+    "title": "Approval requests",
+    "hint": "What awaits a decision, and the follow-up of your requests. « Already applied »: stock is already up to date, your validation confirms it (a refusal corrects it with a reverse movement). « Pending »: nothing is recorded until you approve.",
+    "pendingTitle": "To validate ({{count}})",
+    "nonePending": "Nothing to validate right now.",
+    "myTitle": "My requests",
+    "historyTitle": "Decision history",
+    "none": "No requests.",
+    "kinds": {
+      "stock": "Stock",
+      "expense": "Expense",
+      "points": "Points",
+      "price": "Price",
+      "payment": "Payment"
+    },
+    "by": "Requested by {{name}} on {{date}}",
+    "effectNow": "Already applied — to validate",
+    "blocked": "Pending — nothing recorded",
+    "approve": "Approve",
+    "reject": "Refuse",
+    "reason": "Reason for refusal",
+    "confirmReject": "Confirm refusal",
+    "cancel": "Cancel",
+    "status": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Refused"
+    },
+    "col": {
+      "date": "Date",
+      "detail": "Detail",
+      "amount": "Amount",
+      "status": "Status",
+      "requestedBy": "Requested by",
+      "decidedBy": "Decided by"
+    },
+    "overLimit": "This amount is above your approval limit: a higher-level approver must decide.",
+    "batchDone": "{{count}} request(s) approved.",
+    "selectAll": "Select all",
+    "approveSelected": "Approve selection ({{count}})",
+    "remotePinLabel": "Your approval PIN (checked by the Master)",
+    "remotePinHint": "This device is linked to a Master: your decision is sent to it with proof of your approval PIN (the PIN itself is never sent). You must be connected to the Master.",
+    "remotePinRequired": "Enter your PIN to decide from this device.",
+    "select": "Select",
+    "new": "New"
+  },
+  "roleTemplates": {
+    "storekeeper": {
+      "name": "Storekeeper",
+      "description": "receives, shelves, transfers and counts stock; cannot record losses"
+    },
+    "deputy_manager": {
+      "name": "Deputy manager",
+      "description": "like a manager, without prices, points, expense deletion or exports"
+    },
+    "senior_cashier": {
+      "name": "Senior cashier",
+      "description": "sells, opens and closes the drawer, collects credits, manages customers"
+    },
+    "accountant": {
+      "name": "Accountant",
+      "description": "reads and exports accounts, enters expenses; does not sell or touch stock"
+    },
+    "supervisor": {
+      "name": "Supervisor",
+      "description": "read-only: reports, margins, controls"
+    }
+  },
+  "focus": {
+    "enterButton": "Full screen",
+    "exitButton": "Exit focus mode",
+    "exit": {
+      "title": "Exit focus mode",
+      "hint": "Enter the focus mode code to go back to windowed mode.",
+      "code": "Focus mode code",
+      "wrongCode": "Incorrect code.",
+      "confirm": "Exit full screen",
+      "cancel": "Stay in full screen",
+      "forgotten": "Forgot the code? Use the maintenance code",
+      "useFocusCode": "Use the focus mode code",
+      "maintenanceHint": "The owner's maintenance code can also exit full screen.",
+      "maintenanceCode": "Maintenance code",
+      "wrongMaintenanceCode": "Incorrect maintenance code."
+    },
+    "settings": {
+      "heading": "Focus mode (full screen)",
+      "hint": "On PC and tablet the app starts in full screen so the team stays focused on it. This code is asked to go back to windowed mode; with no code set, leaving is free. It is neither the maintenance code nor an account PIN.",
+      "unavailableHere": "Full screen is not available on this device (phone or unsupported platform).",
+      "codeSet": "A focus mode code is set.",
+      "codeMissing": "No code set: anyone can exit full screen.",
+      "currentCode": "Current focus mode code",
+      "maintenanceCode": "Maintenance code",
+      "forgotten": "Forgot the code? Use the maintenance code",
+      "useFocusCode": "Use the current focus mode code",
+      "newCode": "New focus mode code",
+      "setCode": "Set the focus mode code",
+      "codePlaceholder": "At least {{min}} characters",
+      "saved": "Code saved.",
+      "saving": "Saving...",
+      "save": "Save code",
+      "saveFailed": "Could not save the code."
     }
   }
 }

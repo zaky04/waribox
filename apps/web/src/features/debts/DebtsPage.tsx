@@ -1,3 +1,4 @@
+import { formatAmount } from "../../lib/format";
 import {
   listAllVariants,
   listProducts,
@@ -19,6 +20,7 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { useApproval } from "../approval/ApprovalProvider";
 import { useAuth } from "../auth/useAuth";
 
 type Debt = typeof schema.supplierDebts.$inferSelect;
@@ -31,6 +33,7 @@ type Product = typeof schema.products.$inferSelect;
 export function DebtsPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
+  const approval = useApproval();
   const { t } = useTranslation();
 
   const STATUS_LABELS: Record<string, string> = {
@@ -107,7 +110,7 @@ export function DebtsPage() {
 
     setSaving(true);
     try {
-      await recordDebtPayment(db, { debtId: debt.id, amount: value, userId: user.id }, user.permissions);
+      await approval.run((a) => recordDebtPayment(db, { debtId: debt.id, amount: value, userId: user.id, approval: a }, user.permissions));
       setPayingId(null);
       setAmount("");
       await refresh();
@@ -126,7 +129,7 @@ export function DebtsPage() {
           style={{
             ...primaryButtonStyle,
             background: showSettled ? "var(--gradient-accent)" : "transparent",
-            color: showSettled ? "#0f172a" : "var(--color-text)",
+            color: showSettled ? "var(--color-on-accent)" : "var(--color-text)",
             border: showSettled ? "none" : "1px solid var(--color-border)",
           }}
           onClick={() => setShowSettled((v) => !v)}
@@ -156,8 +159,8 @@ export function DebtsPage() {
                 <td style={tdStyle}>{supplierName(debt.supplierId)}</td>
                 <td style={tdStyle}>{purchaseNumber(debt.purchaseId)}</td>
                 <td style={tdStyle}>{articleSummary(debt.purchaseId)}</td>
-                <td style={tdStyle}>{debt.originalAmount}</td>
-                <td style={tdStyle}>{debt.remainingBalance}</td>
+                <td style={tdStyle}>{formatAmount(debt.originalAmount)}</td>
+                <td style={tdStyle}>{formatAmount(debt.remainingBalance)}</td>
                 <td style={tdStyle}>
                   <span style={badgeStyle(debt.status === "settled" ? "ok" : "warning")}>
                     {STATUS_LABELS[debt.status] ?? debt.status}
@@ -168,7 +171,7 @@ export function DebtsPage() {
                     (payingId === debt.id ? (
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                         <input
-                          type="number"
+                          type="number" step="any"
                           style={{ ...inputStyle, width: 90, marginTop: 0 }}
                           value={amount}
                           onChange={(e) => setAmount(e.target.value)}

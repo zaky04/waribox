@@ -1,7 +1,13 @@
+import { useApproval } from "../approval/ApprovalProvider";
+import { getCurrency } from "@gestion-boutique/i18n";
+import { formatAmount, formatMoney } from "../../lib/format";
 import {
   createSale,
+  ExpiredStockError,
+  findEquivalents,
+  hasPermission,
   getActivePromotionsWithProducts,
-  getExpectedCashAmount,
+  type CloseSessionResult,
   getSettings,
   listCustomers,
   listLocations,
@@ -9,15 +15,17 @@ import {
   listAllVariants,
   pointsToDiscount,
   type ActivePromotionWithProducts,
+  type EquivalentProduct,
   type PaymentMethod,
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { buildReceipt, buildReceiptPdf, type ReceiptData } from "@gestion-boutique/printer";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
+  amountStyle,
   cardStyle,
   inputStyle,
   pageStyle,
@@ -26,9 +34,12 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { IconCamera } from "../../components/icons";
+import { Stamp } from "../../components/Stamp";
+import { TicketEdge } from "../../components/TicketEdge";
 import { openExternalUrl } from "../../lib/openExternalUrl";
 import { saveGeneratedFile } from "../../lib/saveFile";
-import { buildReceiptWhatsAppMessage, buildWhatsAppLink } from "../../lib/whatsapp";
+import { buildReceiptWhatsAppMessage, openWhatsApp } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
 import { PrinterPanel } from "../printer/PrinterPanel";
 import { usePrinter } from "../printer/usePrinter";
@@ -59,10 +70,19 @@ function timestampForFilename(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
 }
 
+// Deux lettres pour la tuile produit (majuscule + minuscule : "Riz" -> "Ri").
+function productMonogram(name: string): string {
+  const letters = name.trim().replace(/[^\p{L}\p{N}]/gu, "");
+  if (!letters) return "?";
+  return letters[0]!.toUpperCase() + (letters[1]?.toLowerCase() ?? "");
+}
+
 export function SalesPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
   const { t } = useTranslation();
+  const approval = useApproval();
+  const canSellOnCredit = hasPermission(user?.permissions ?? {}, "sell_on_credit");
   const { session, open, close } = useCashSession(currentStoreId);
   const printer = usePrinter();
 
@@ -70,7 +90,7 @@ export function SalesPage() {
     { value: "cash", label: t("sales.paymentMethods.cash") },
     { value: "card", label: t("sales.paymentMethods.card") },
     { value: "mobile_money", label: t("sales.paymentMethods.mobile_money") },
-    { value: "credit", label: t("sales.paymentMethods.credit") },
+    ...(canSellOnCredit ? [{ value: "credit" as const, label: t("sales.paymentMethods.credit") }] : []),
   ];
 
   const [mode, setMode] = useState<"pos" | "form">("pos");
@@ -98,13 +118,19 @@ export function SalesPage() {
   const [amountPaid, setAmountPaid] = useState<string>("");
   const [cashReceived, setCashReceived] = useState<string>("");
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  // Pack Pharmacie : ordonnance (si le panier contient un produit sur ordonnance)
+  // et équivalents proposés pour un produit du panier.
+  const [prescriptionRef, setPrescriptionRef] = useState("");
+  const [prescriber, setPrescriber] = useState("");
+  const [equivalents, setEquivalents] = useState<{ sourceName: string; items: EquivalentProduct[] } | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
   const [lastSaleNumber, setLastSaleNumber] = useState<string | null>(null);
   const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null);
   const [receiptPhone, setReceiptPhone] = useState("");
   const [printError, setPrintError] = useState<string | null>(null);
   const [showCloseSession, setShowCloseSession] = useState(false);
-  const [expectedCash, setExpectedCash] = useState<number | null>(null);
+  // Résultat de la dernière clôture (montré sur l'écran d'ouverture qui suit).
+  const [closeResult, setCloseResult] = useState<CloseSessionResult | null>(null);
   const [showPrinterPanel, setShowPrinterPanel] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -136,11 +162,34 @@ export function SalesPage() {
     refresh();
   }, [refresh]);
 
-  const filteredProducts = useMemo(() => {
+  // Nom affiché d'une variante : « Doliprane 500 (Plaquette) » pour une
+  // présentation détaillée d'une boîte (pack Pharmacie), le nom du produit sinon.
+  const variantDisplayName = (variant: Variant, product: Product): string => {
+    if (variant.parentVariantId == null) return product.name;
+    let presentation = "";
+    try {
+      presentation = (JSON.parse(variant.attributes ?? "{}") as { presentation?: string }).presentation ?? "";
+    } catch {
+      presentation = "";
+    }
+    return presentation ? `${product.name} (${presentation})` : product.name;
+  };
+
+  // Une tuile par produit (sa variante de base) + une par présentation détaillée.
+  const saleTiles = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return products;
-    return products.filter((p) => p.name.toLowerCase().includes(term));
-  }, [products, search]);
+    const tiles: { key: string; product: Product; variant: Variant; label: string; price: number }[] = [];
+    for (const product of products) {
+      const productVariants = variants.filter((v) => v.productId === product.id);
+      const base = productVariants.find((v) => v.parentVariantId == null);
+      if (base) tiles.push({ key: `v${base.id}`, product, variant: base, label: product.name, price: base.priceOverride ?? product.salePrice });
+      for (const v of productVariants.filter((x) => x.parentVariantId != null)) {
+        tiles.push({ key: `v${v.id}`, product, variant: v, label: variantDisplayName(v, product), price: v.priceOverride ?? product.salePrice });
+      }
+    }
+    return term ? tiles.filter((tile) => tile.label.toLowerCase().includes(term)) : tiles;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, variants, search]);
 
   // TVA désactivée globalement -> toujours 0, quel que soit le taux
   // configuré sur le produit. Sinon, taux du produit ou, à défaut, taux par
@@ -161,7 +210,7 @@ export function SalesPage() {
         {
           variantId: variant.id,
           productId: product.id,
-          productName: product.name,
+          productName: variantDisplayName(variant, product),
           unitPrice: variant.priceOverride ?? product.salePrice,
           quantity: 1,
           taxRate: resolveTaxRate(product),
@@ -171,7 +220,7 @@ export function SalesPage() {
   };
 
   const addToCart = (product: Product) => {
-    const variant = variants.find((v) => v.productId === product.id);
+    const variant = variants.find((v) => v.productId === product.id && v.parentVariantId == null);
     if (!variant) return;
     addVariantToCart(variant, product);
   };
@@ -256,7 +305,10 @@ export function SalesPage() {
   // jamais ajoutée au total.
   const subtotal = cart.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
   const taxTotal = cart.reduce((sum, line) => {
-    const gross = line.quantity * line.unitPrice;
+    // Base = montant de la ligne après remise promo produit — même base que
+    // SalesService.createSale (sinon la TVA affichée/imprimée serait supérieure
+    // à celle enregistrée sur une vente remisée).
+    const gross = line.quantity * line.unitPrice * (1 - lineDiscount(line.productId).percent / 100);
     return sum + (line.taxRate > 0 ? gross * (line.taxRate / (100 + line.taxRate)) : 0);
   }, 0);
   // Remise promo "produit" : appliquée ligne par ligne, en pourcentage
@@ -290,19 +342,41 @@ export function SalesPage() {
   // crédit/partiel.
   const changeDue = Math.max(0, (Number(cashReceived) || 0) - total);
 
+  const cartNeedsPrescription = cart.some((l) => products.find((p) => p.id === l.productId)?.requiresPrescription);
+
+  const showEquivalents = async (productId: number) => {
+    const source = products.find((p) => p.id === productId);
+    if (!source) return;
+    setEquivalents({ sourceName: source.name, items: await findEquivalents(db, productId, currentStoreId ?? undefined) });
+  };
+
+  // Garde de ré-entrée : l'état « en cours » ne se met à jour qu'au prochain rendu,
+  // alors que deux activations rapprochées (scanner, clavier, tactile) peuvent
+  // arriver avant — chacune encaissait alors le même panier.
+  const checkingOutRef = useRef(false);
   const handleCheckout = async () => {
+    if (checkingOutRef.current) return;
     setCheckoutError(null);
     if (!user || !surfaceLocationId || !currentStoreId) return;
     if (cart.length === 0) {
       setCheckoutError(t("sales.emptyCartError"));
       return;
     }
+    if (cartNeedsPrescription && !prescriptionRef.trim()) {
+      setCheckoutError(t("pharmacy.prescriptionRequiredHint"));
+      return;
+    }
 
+    checkingOutRef.current = true;
     setCheckingOut(true);
     try {
       const paidValue = amountPaid === "" ? total : Number(amountPaid);
 
-      const sale = await createSale(db, {
+      const submitSale = (expiredOverride: boolean) => approval.run((a) => createSale(db, {
+        approval: a,
+        expiredOverride: expiredOverride || undefined,
+        prescriptionRef: cartNeedsPrescription ? prescriptionRef.trim() : undefined,
+        prescriber: cartNeedsPrescription ? prescriber.trim() || undefined : undefined,
         userId: user.id,
         customerId: customerId ? Number(customerId) : null,
         newCustomerName: customerId ? undefined : newCustomerName,
@@ -323,7 +397,20 @@ export function SalesPage() {
         amountPaid: paidValue,
         surfaceLocationId,
         storeId: currentStoreId,
-      }, user.permissions);
+      }, user.permissions));
+
+      // Un lot périmé ne se vend pas : si la vente en a besoin, on propose la
+      // dérogation d'un responsable (PIN) plutôt qu'un simple refus.
+      let sale: Awaited<ReturnType<typeof submitSale>>;
+      try {
+        sale = await submitSale(false);
+      } catch (err) {
+        if (err instanceof ExpiredStockError && window.confirm(t("pharmacy.sellExpiredConfirm", { expired: err.expired, available: err.available }))) {
+          sale = await submitSale(true);
+        } else {
+          throw err;
+        }
+      }
 
       const customerName =
         customers.find((c) => c.id === Number(customerId))?.fullName || newCustomerName.trim() || undefined;
@@ -340,6 +427,13 @@ export function SalesPage() {
         date: new Date().toLocaleString("fr-FR"),
         cashierName: user.fullName,
         customerName,
+        // "pending" plutôt qu'une relecture de `sale.fneStatus` (qui reste
+        // encore `null` à cet instant — la ligne n'est marquée "pending" par
+        // `enqueueFneCertification` qu'APRÈS le retour de `createSale`, voir
+        // CLAUDE.md) : on sait déjà ici, de façon fiable, si la FNE va
+        // s'appliquer à cette vente.
+        fneStatus: businessSettings?.fneEnabled ? "pending" : undefined,
+        prescriptionRef: cartNeedsPrescription ? prescriptionRef.trim() : undefined,
         lines: cart.map((line) => ({
           label: line.productName,
           quantity: line.quantity,
@@ -356,6 +450,9 @@ export function SalesPage() {
       setReceiptPhone(customers.find((c) => c.id === Number(customerId))?.phone ?? "");
       setPrintError(null);
       setCart([]);
+      setPrescriptionRef("");
+      setPrescriber("");
+      setEquivalents(null);
       setCustomerId("");
       setNewCustomerName("");
       setRedeemPointsInput("");
@@ -367,6 +464,7 @@ export function SalesPage() {
       setCheckoutError(err instanceof Error ? err.message : t("sales.saleError"));
     } finally {
       setCheckingOut(false);
+      checkingOutRef.current = false;
     }
   };
 
@@ -375,7 +473,51 @@ export function SalesPage() {
   }
 
   if (!session) {
-    return <OpenCashSessionScreen onOpen={open} />;
+    return (
+      <>
+        {closeResult && (
+          <main style={{ ...pageStyle, paddingBottom: 0 }}>
+            <div
+              style={{
+                ...cardStyle,
+                border: `2px solid ${closeResult.alert ? "var(--color-warning)" : "var(--color-success)"}`,
+              }}
+            >
+              <strong>{t("sales.closeSession.resultTitle")}</strong>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>{t("sales.closeSession.expectedLabel")}</span>
+                <span style={amountStyle}>{formatMoney(closeResult.expectedAmount)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>{t("sales.closeSession.countedLabel")}</span>
+                <span style={amountStyle}>{formatMoney(closeResult.session.closingAmount ?? 0)}</span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontWeight: 700,
+                  color: closeResult.alert ? "var(--color-warning)" : "var(--color-success)",
+                }}
+              >
+                <span>{t("sales.closeSession.difference")}</span>
+                <span style={amountStyle}>
+                  {closeResult.difference > 0 ? "+" : ""}
+                  {formatMoney(closeResult.difference)}
+                </span>
+              </div>
+              {closeResult.alert && (
+                <p style={{ color: "var(--color-warning)", margin: 0, fontSize: 13 }}>{t("sales.closeSession.alertHint")}</p>
+              )}
+              <button style={primaryButtonStyle} onClick={() => setCloseResult(null)}>
+                {t("sales.closeSession.dismiss")}
+              </button>
+            </div>
+          </main>
+        )}
+        <OpenCashSessionScreen onOpen={open} />
+      </>
+    );
   }
 
   return (
@@ -383,31 +525,30 @@ export function SalesPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1>{t("sales.title")}</h1>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <button
-            onClick={() => setMode("pos")}
-            style={{
-              ...primaryButtonStyle,
-              background: mode === "pos" ? "var(--gradient-accent)" : "transparent",
-              color: mode === "pos" ? "#0f172a" : "var(--color-text)",
-              border: mode === "pos" ? "none" : "1px solid var(--color-border)",
-            }}
-          >
-            {t("sales.modePos")}
-          </button>
-          <button
-            onClick={() => setMode("form")}
-            style={{
-              ...primaryButtonStyle,
-              background: mode === "form" ? "var(--gradient-accent)" : "transparent",
-              color: mode === "form" ? "#0f172a" : "var(--color-text)",
-              border: mode === "form" ? "none" : "1px solid var(--color-border)",
-            }}
-          >
-            {t("sales.modeForm")}
-          </button>
+          <div role="group" style={{ display: "flex", border: "1px solid var(--color-text)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
+            {(["pos", "form"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                aria-pressed={mode === m}
+                style={{
+                  height: 38,
+                  padding: "0 16px",
+                  border: "none",
+                  background: mode === m ? "var(--color-text)" : "transparent",
+                  color: mode === m ? "var(--color-bg)" : "var(--color-text)",
+                  fontSize: 14,
+                  fontWeight: mode === m ? 600 : 500,
+                  cursor: "pointer",
+                }}
+              >
+                {m === "pos" ? t("sales.modePos") : t("sales.modeForm")}
+              </button>
+            ))}
+          </div>
           <button
             onClick={() => setShowPrinterPanel((v) => !v)}
-            style={{ background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)", borderRadius: 8, padding: "0 16px" }}
+            style={{ background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)", borderRadius: "var(--radius-md)", padding: "0 16px" }}
           >
             {t("sales.printer")}
           </button>
@@ -417,10 +558,9 @@ export function SalesPage() {
                 setShowCloseSession(false);
                 return;
               }
-              setExpectedCash(await getExpectedCashAmount(db, session));
               setShowCloseSession(true);
             }}
-            style={{ background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)", borderRadius: 8, padding: "0 16px" }}
+            style={{ background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)", borderRadius: "var(--radius-md)", padding: "0 16px" }}
           >
             {t("sales.closeCashSession")}
           </button>
@@ -429,13 +569,13 @@ export function SalesPage() {
 
       {showPrinterPanel && <PrinterPanel />}
 
-      {showCloseSession && expectedCash !== null && (
+      {showCloseSession && (
         <CloseCashSessionPanel
-          expectedAmount={expectedCash}
           onCancel={() => setShowCloseSession(false)}
-          onClose={async (counted, expected) => {
-            await close({ closingAmount: counted, expectedAmount: expected });
+          onClose={async (counted) => {
+            const result = await close({ closingAmount: counted });
             setShowCloseSession(false);
+            if (result) setCloseResult(result);
           }}
         />
       )}
@@ -444,7 +584,6 @@ export function SalesPage() {
         <div
           style={{
             ...cardStyle,
-            borderLeft: "4px solid var(--color-success)",
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
@@ -452,8 +591,11 @@ export function SalesPage() {
             gap: 8,
           }}
         >
-          <span>
-            {t("sales.saleRegistered")} <strong>{lastSaleNumber}</strong>
+          <span style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+            <Stamp key={lastSaleNumber} text={t("sales.stampPaid")} subText={lastSaleNumber} width={190} />
+            <span>
+              {t("sales.saleRegistered")} <strong style={amountStyle}>{lastSaleNumber}</strong>
+            </span>
           </span>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             <button
@@ -505,7 +647,7 @@ export function SalesPage() {
               onClick={() => {
                 if (!lastReceipt) return;
                 const message = buildReceiptWhatsAppMessage(lastReceipt);
-                void openExternalUrl(buildWhatsAppLink(receiptPhone, businessSettings?.whatsappCountryCode, message));
+                void openWhatsApp(receiptPhone, businessSettings?.whatsappCountryCode, message);
               }}
             >
               {t("sales.sendWhatsapp")}
@@ -532,6 +674,9 @@ export function SalesPage() {
                   <button
                     onClick={() => setShowCameraScanner(true)}
                     style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
                       padding: "4px 10px",
                       borderRadius: 6,
                       border: "1px solid var(--color-border)",
@@ -542,6 +687,7 @@ export function SalesPage() {
                       whiteSpace: "nowrap",
                     }}
                   >
+                    <IconCamera size={14} />
                     {t("sales.scanCamera")}
                   </button>
                 )}
@@ -558,29 +704,78 @@ export function SalesPage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
                   gap: 12,
                   marginTop: 16,
                 }}
               >
-                {filteredProducts.map((product) => (
-                  <button
-                    key={product.id}
-                    onClick={() => addToCart(product)}
-                    style={{
-                      padding: 16,
-                      borderRadius: 12,
-                      border: "1px solid var(--color-border)",
-                      background: "var(--color-bg-elevated)",
-                      color: "var(--color-text)",
-                      textAlign: "left",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div style={{ fontWeight: 600 }}>{product.name}</div>
-                    <div style={{ color: "var(--color-text-muted)" }}>{product.salePrice} XOF</div>
-                  </button>
-                ))}
+                {saleTiles.map((tile) => {
+                  const { product, variant } = tile;
+                  const inCart = cart.filter((line) => line.variantId === variant.id).reduce((sum, line) => sum + line.quantity, 0);
+                  return (
+                    <button
+                      key={tile.key}
+                      onClick={() => addVariantToCart(variant, product)}
+                      style={{
+                        position: "relative",
+                        display: "flex",
+                        flexDirection: "column",
+                        padding: 0,
+                        textAlign: "left",
+                        border: "1px solid var(--color-border)",
+                        borderRadius: "var(--radius-md)",
+                        background: "var(--color-bg-elevated)",
+                        color: "var(--color-text)",
+                        overflow: "hidden",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          height: 76,
+                          background: `var(--tint-${(product.id % 5) + 1})`,
+                          fontSize: 32,
+                          fontWeight: 700,
+                          letterSpacing: "-0.02em",
+                        }}
+                      >
+                        {productMonogram(product.name)}
+                      </span>
+                      <span style={{ display: "flex", flexDirection: "column", gap: 4, padding: "10px 12px 12px" }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.25, minHeight: 35 }}>{tile.label}</span>
+                        <span style={{ ...amountStyle, fontSize: 15, fontWeight: 600 }}>{formatMoney(tile.price)}</span>
+                      </span>
+                      {inCart > 0 && (
+                        <span
+                          style={{
+                            ...amountStyle,
+                            position: "absolute",
+                            top: 8,
+                            right: 8,
+                            minWidth: 24,
+                            height: 24,
+                            boxSizing: "border-box",
+                            padding: "0 7px",
+                            borderRadius: 4,
+                            background: "var(--color-text)",
+                            color: "var(--color-bg)",
+                            fontSize: 13,
+                            fontWeight: 600,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          ×{inCart}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </>
           ) : (
@@ -602,219 +797,388 @@ export function SalesPage() {
           )}
         </div>
 
-        <div style={cardStyle}>
-          <strong>{t("sales.cart")}</strong>
-
-          {activePromotions.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          <div>
+            <TicketEdge position="top" />
             <div
               style={{
-                border: "1px solid var(--color-border)",
-                borderRadius: 8,
-                padding: 10,
+                background: "var(--color-ticket)",
+                borderLeft: "1px solid var(--color-border)",
+                borderRight: "1px solid var(--color-border)",
+                padding: "14px 20px 18px",
                 display: "flex",
                 flexDirection: "column",
-                gap: 4,
+                gap: 6,
+                fontSize: 14,
               }}
             >
-              <strong style={{ fontSize: 13 }}>{t("sales.activePromotions")}</strong>
-              {activePromotions.map((promo) => (
-                <label key={promo.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                  <input
-                    type="checkbox"
-                    checked={checkedPromotionIds.has(promo.id)}
-                    onChange={() => togglePromotion(promo.id)}
-                  />
-                  {promo.name} — -{promo.discountPercent}% (
-                  {promo.scope === "product" ? t("sales.promoScopeProduct") : t("sales.promoScopeInvoice")})
-                </label>
-              ))}
-            </div>
-          )}
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{t("sales.cart")}</h2>
+              <div style={{ borderBottom: "1px dashed var(--color-rule-strong)", margin: "6px 0 4px" }} />
 
-          {cart.length === 0 ? (
-            <p style={{ color: "var(--color-text-muted)" }}>{t("sales.emptyCart")}</p>
-          ) : (
-            <div className="table-scroll">
-              <table style={tableStyle}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>{t("sales.item")}</th>
-                    <th style={thStyle}>{t("sales.quantity")}</th>
-                    <th style={thStyle}>{t("sales.total")}</th>
-                    <th style={thStyle}></th>
-                  </tr>
-                </thead>
-                <tbody>
+              {activePromotions.length > 0 && (
+                <div
+                  style={{
+                    border: "1px dashed var(--color-rule-strong)",
+                    borderRadius: "var(--radius-md)",
+                    padding: 10,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                  }}
+                >
+                  <strong style={{ fontSize: 13 }}>{t("sales.activePromotions")}</strong>
+                  {activePromotions.map((promo) => (
+                    <label key={promo.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={checkedPromotionIds.has(promo.id)}
+                        onChange={() => togglePromotion(promo.id)}
+                      />
+                      {promo.name} — -{promo.discountPercent}% (
+                      {promo.scope === "product" ? t("sales.promoScopeProduct") : t("sales.promoScopeInvoice")})
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {cart.length === 0 ? (
+                <p
+                  style={{
+                    margin: "10px 0",
+                    textAlign: "center",
+                    fontFamily: "var(--font-hand)",
+                    fontSize: 22,
+                    fontWeight: 600,
+                    color: "var(--color-text-muted)",
+                  }}
+                >
+                  {t("sales.emptyCart")}
+                </p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", maxHeight: 300, overflowY: "auto" }}>
                   {cart.map((line) => {
                     const lineGross = line.quantity * line.unitPrice;
                     const promo = lineDiscount(line.productId);
                     const lineDiscountAmount = lineGross * (promo.percent / 100);
+                    const stepper = {
+                      width: 26,
+                      height: 26,
+                      padding: 0,
+                      border: "1px solid var(--color-rule-strong)",
+                      borderRadius: 4,
+                      background: "transparent",
+                      color: "var(--color-text)",
+                      fontSize: 15,
+                      lineHeight: 1,
+                      cursor: "pointer",
+                    } as const;
                     return (
-                      <tr key={line.variantId}>
-                        <td style={tdStyle}>
-                          {line.productName}
-                          {promo.percent > 0 && (
-                            <div style={{ color: "var(--color-success)", fontSize: 12 }}>
-                              {t("sales.promo")}
-                              {promo.name ? ` ${promo.name}` : ""} -{promo.percent}%
-                            </div>
-                          )}
-                        </td>
-                        <td style={tdStyle}>
-                          <input
-                            type="number"
-                            value={line.quantity}
-                            onChange={(e) => updateQuantity(line.variantId, Number(e.target.value))}
-                            style={{ ...inputStyle, width: 60, marginTop: 0 }}
-                          />
-                        </td>
-                        <td style={tdStyle}>{(lineGross - lineDiscountAmount).toFixed(0)}</td>
-                        <td style={tdStyle}>
+                      <div key={line.variantId} style={{ padding: "5px 0" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <button
-                            onClick={() => removeLine(line.variantId)}
-                            style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
+                            type="button"
+                            aria-label={t("sales.removeOne")}
+                            style={stepper}
+                            onClick={() =>
+                              line.quantity > 1
+                                ? updateQuantity(line.variantId, line.quantity - 1)
+                                : removeLine(line.variantId)
+                            }
                           >
-                            ✕
+                            −
                           </button>
-                        </td>
-                      </tr>
+                          <span style={{ ...amountStyle, minWidth: 22, textAlign: "center", fontSize: 13, fontWeight: 600 }}>
+                            {line.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={t("sales.addOne")}
+                            style={stepper}
+                            onClick={() => updateQuantity(line.variantId, line.quantity + 1)}
+                          >
+                            +
+                          </button>
+                          <span style={{ fontSize: 14, fontWeight: 500, marginLeft: 4, minWidth: 0, overflowWrap: "anywhere" }}>
+                            {line.productName}
+                          </span>
+                          <span
+                            style={{ flexGrow: 1, minWidth: 8, borderBottom: "2px dotted var(--color-dot)", transform: "translateY(-3px)" }}
+                          />
+                          <span style={{ ...amountStyle, fontSize: 14, fontWeight: 500 }}>
+                            {formatAmount(lineGross - lineDiscountAmount)}
+                          </span>
+                          {products.find((p) => p.id === line.productId)?.dci && (
+                            <button
+                              type="button"
+                              title={t("pharmacy.equivalents")}
+                              onClick={() => void showEquivalents(line.productId)}
+                              style={{ ...stepper, width: "auto", padding: "0 6px", fontSize: 12 }}
+                            >
+                              {t("pharmacy.equivalentsShort")}
+                            </button>
+                          )}
+                        </div>
+                        {promo.percent > 0 && (
+                          <div style={{ color: "var(--color-success)", fontSize: 12, marginLeft: 92 }}>
+                            {t("sales.promo")}
+                            {promo.name ? ` ${promo.name}` : ""} -{promo.percent}%
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
-            <div>
-              {t("sales.subtotal")} {subtotal.toFixed(0)}
-            </div>
-            <div>
-              {t("sales.tax")} {taxTotal.toFixed(0)}
-            </div>
-            {productPromoDiscount > 0 && (
-              <div style={{ color: "var(--color-success)" }}>
-                {t("sales.productPromoDiscount")} -{productPromoDiscount.toFixed(0)}
-              </div>
-            )}
-            {invoicePromoDiscount > 0 && (
-              <div style={{ color: "var(--color-success)" }}>
-                {t("sales.invoicePromoDiscount")}
-                {checkedInvoicePromo ? ` ${checkedInvoicePromo.name}` : ""} : -
-                {invoicePromoDiscount.toFixed(0)}
-              </div>
-            )}
-            {redemptionDiscount > 0 && (
-              <div style={{ color: "var(--color-success)" }}>
-                {t("sales.loyaltyDiscount")} -{redemptionDiscount.toFixed(0)}
-              </div>
-            )}
-            <div style={{ fontWeight: 700, fontSize: 18 }}>
-              {t("sales.totalLabel")} {total.toFixed(0)}
-            </div>
-          </div>
-
-          <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("sales.customerOptionalHint")}</p>
-
-          <label>
-            {t("sales.registeredCustomer")}
-            <SearchableSelect
-              value={customerId}
-              onChange={(id) => {
-                setCustomerId(id);
-                setRedeemPointsInput("");
-              }}
-              options={customers.map((c) => ({ value: String(c.id), label: c.fullName }))}
-              emptyLabel={t("sales.noCustomer")}
-              placeholder={t("sales.searchCustomerPlaceholder")}
-            />
-          </label>
-
-          {selectedCustomer && maxRedeemablePoints > 0 && (
-            <label>
-              {t("sales.loyaltyPoints")} ({selectedCustomer.loyaltyPoints} {t("sales.loyaltyPointsAvailable")}{" "}
-              {maxRedeemablePoints.toFixed(0)} {t("sales.pts")}
-              <input
-                style={inputStyle}
-                type="number"
-                min={0}
-                max={maxRedeemablePoints}
-                value={redeemPointsInput}
-                onChange={(e) => setRedeemPointsInput(e.target.value)}
-                placeholder="0"
-              />
-              {redeemPointsValue > 0 && (
-                <span style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-                  {t("sales.pointsReductionLabel")} {redemptionDiscount.toFixed(0)}
-                </span>
-              )}
-            </label>
-          )}
-          {!customerId && (
-            <label>
-              {t("sales.orCustomerName")}
-              {needsCustomerIdentification ? t("sales.requiredForCredit") : t("sales.optional")}
-              <input
-                style={{
-                  ...inputStyle,
-                  border: needsCustomerIdentification && !newCustomerName.trim() ? "1px solid var(--color-danger)" : inputStyle.border,
-                }}
-                value={newCustomerName}
-                onChange={(e) => setNewCustomerName(e.target.value)}
-                placeholder={t("sales.customerNamePlaceholder")}
-              />
-            </label>
-          )}
-
-          <label>
-            {t("sales.paymentMethod")}
-            <select
-              style={inputStyle}
-              value={paymentMethod}
-              onChange={(e) => handlePaymentMethodChange(e.target.value as PaymentMethod)}
-            >
-              {paymentMethods.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            {t("sales.amountPaid")}
-            <input
-              style={inputStyle}
-              type="number"
-              value={amountPaid}
-              onChange={(e) => setAmountPaid(e.target.value)}
-              placeholder={total.toFixed(0)}
-            />
-          </label>
-
-          {paymentMethod === "cash" && (
-            <label>
-              {t("sales.cashReceived")}
-              <input
-                style={inputStyle}
-                type="number"
-                value={cashReceived}
-                onChange={(e) => setCashReceived(e.target.value)}
-                placeholder={total.toFixed(0)}
-              />
-              {cashReceived !== "" && (
-                <div style={{ fontWeight: 700, fontSize: 16, marginTop: 4 }}>
-                  {t("sales.changeDue")} {changeDue.toFixed(0)}
                 </div>
               )}
+
+              {equivalents && (
+                <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: 8, margin: "6px 0", fontSize: 13 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <strong>{t("pharmacy.equivalentsFor", { name: equivalents.sourceName })}</strong>
+                    <button type="button" onClick={() => setEquivalents(null)} style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}>
+                      ✕
+                    </button>
+                  </div>
+                  {equivalents.items.length === 0 ? (
+                    <p style={{ margin: "4px 0 0", color: "var(--color-text-muted)" }}>{t("pharmacy.noEquivalent")}</p>
+                  ) : (
+                    equivalents.items.map((e) => (
+                      <div key={e.product.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0" }}>
+                        <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
+                          {e.product.name}
+                          <span style={{ color: "var(--color-text-muted)" }}> — {formatAmount(e.product.salePrice)}</span>
+                        </span>
+                        <span style={{ color: e.sellableStock > 0 ? "var(--color-success)" : "var(--color-danger)" }}>
+                          {e.sellableStock > 0 ? t("pharmacy.inStock", { count: e.sellableStock }) : t("pharmacy.outOfStock")}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={e.sellableStock <= 0}
+                          onClick={() => addToCart(e.product)}
+                          style={{ ...primaryButtonStyle, padding: "2px 10px", fontSize: 12 }}
+                        >
+                          {t("pharmacy.addEquivalent")}
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              <div style={{ borderBottom: "1px dashed var(--color-rule-strong)", margin: "8px 0 4px" }} />
+              {[
+                { label: t("sales.subtotal"), value: formatAmount(subtotal), show: true, color: undefined },
+                { label: t("sales.tax"), value: formatAmount(taxTotal), show: true, color: undefined },
+                {
+                  label: t("sales.productPromoDiscount"),
+                  value: "-" + formatAmount(productPromoDiscount),
+                  show: productPromoDiscount > 0,
+                  color: "var(--color-success)",
+                },
+                {
+                  label: t("sales.invoicePromoDiscount") + (checkedInvoicePromo ? " " + checkedInvoicePromo.name : ""),
+                  value: "-" + formatAmount(invoicePromoDiscount),
+                  show: invoicePromoDiscount > 0,
+                  color: "var(--color-success)",
+                },
+                {
+                  label: t("sales.loyaltyDiscount"),
+                  value: "-" + formatAmount(redemptionDiscount),
+                  show: redemptionDiscount > 0,
+                  color: "var(--color-success)",
+                },
+              ]
+                .filter((row) => row.show)
+                .map((row) => (
+                  <div
+                    key={row.label}
+                    style={{ display: "flex", alignItems: "baseline", gap: 8, color: row.color ?? "var(--color-text-muted)" }}
+                  >
+                    <span>{row.label}</span>
+                    <span style={{ flexGrow: 1, borderBottom: "2px dotted var(--color-dot)" }} />
+                    <span style={amountStyle}>{row.value}</span>
+                  </div>
+                ))}
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 6 }}>
+                <span style={{ fontSize: 16, fontWeight: 700 }}>{t("sales.totalLabel")}</span>
+                <span style={{ ...amountStyle, fontSize: 34, fontWeight: 600, letterSpacing: "-0.02em" }}>
+                  {formatMoney(total)}
+                </span>
+              </div>
+            </div>
+            <TicketEdge position="bottom" />
+          </div>
+
+          <div style={{ ...cardStyle, marginTop: 0 }}>
+            {cartNeedsPrescription && (
+              <div style={{ border: "1px solid var(--color-warning)", borderRadius: "var(--radius-md)", padding: 10, display: "grid", gap: 8 }}>
+                <strong style={{ color: "var(--color-warning)", fontSize: 13 }}>{t("pharmacy.prescriptionTitle")}</strong>
+                <label>
+                  {t("pharmacy.prescriptionRef")}
+                  <input style={inputStyle} value={prescriptionRef} onChange={(e) => setPrescriptionRef(e.target.value)} />
+                </label>
+                <label>
+                  {t("pharmacy.prescriber")}
+                  <input style={inputStyle} value={prescriber} onChange={(e) => setPrescriber(e.target.value)} />
+                </label>
+              </div>
+            )}
+
+            <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("sales.customerOptionalHint")}</p>
+
+            <label>
+              {t("sales.registeredCustomer")}
+              <SearchableSelect
+                value={customerId}
+                onChange={(id) => {
+                  setCustomerId(id);
+                  setRedeemPointsInput("");
+                }}
+                options={customers.map((c) => ({ value: String(c.id), label: c.fullName }))}
+                emptyLabel={t("sales.noCustomer")}
+                placeholder={t("sales.searchCustomerPlaceholder")}
+              />
             </label>
-          )}
 
-          {checkoutError && <p style={{ color: "var(--color-danger)" }}>{checkoutError}</p>}
+            {selectedCustomer && maxRedeemablePoints > 0 && (
+              <label>
+                {t("sales.loyaltyPoints")} ({selectedCustomer.loyaltyPoints} {t("sales.loyaltyPointsAvailable")}{" "}
+                {formatAmount(maxRedeemablePoints)} {t("sales.pts")}
+                <input
+                  style={inputStyle}
+                  type="number"
+                  min={0}
+                  max={maxRedeemablePoints}
+                  value={redeemPointsInput}
+                  onChange={(e) => setRedeemPointsInput(e.target.value)}
+                  placeholder="0"
+                />
+                {redeemPointsValue > 0 && (
+                  <span style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
+                    {t("sales.pointsReductionLabel")} {formatAmount(redemptionDiscount)}
+                  </span>
+                )}
+              </label>
+            )}
+            {!customerId && (
+              <label>
+                {t("sales.orCustomerName")}
+                {needsCustomerIdentification ? t("sales.requiredForCredit") : t("sales.optional")}
+                <input
+                  style={{
+                    ...inputStyle,
+                    border:
+                      needsCustomerIdentification && !newCustomerName.trim()
+                        ? "1px solid var(--color-danger)"
+                        : inputStyle.border,
+                  }}
+                  value={newCustomerName}
+                  onChange={(e) => setNewCustomerName(e.target.value)}
+                  placeholder={t("sales.customerNamePlaceholder")}
+                />
+              </label>
+            )}
 
-          <button style={primaryButtonStyle} onClick={handleCheckout} disabled={checkingOut}>
-            {checkingOut ? t("sales.checkingOut") : t("sales.checkout")}
-          </button>
+            <div role="group" aria-label={t("sales.paymentMethod")}>
+              <div style={{ fontSize: 14, marginBottom: 6 }}>{t("sales.paymentMethod")}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6 }}>
+                {paymentMethods.map((m) => (
+                  <button
+                    key={m.value}
+                    type="button"
+                    aria-pressed={paymentMethod === m.value}
+                    onClick={() => handlePaymentMethodChange(m.value)}
+                    style={{
+                      height: 40,
+                      border: "1px solid var(--color-text)",
+                      borderRadius: "var(--radius-md)",
+                      background: paymentMethod === m.value ? "var(--color-text)" : "transparent",
+                      color: paymentMethod === m.value ? "var(--color-bg)" : "var(--color-text)",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <label>
+              {t("sales.amountPaid")}
+              <input
+                style={{ ...inputStyle, ...amountStyle }}
+                type="number" step="any"
+                value={amountPaid}
+                onChange={(e) => setAmountPaid(e.target.value)}
+                placeholder={total.toFixed(0)}
+              />
+            </label>
+
+            {paymentMethod === "cash" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <label>
+                  {t("sales.cashReceived")}
+                  <input
+                    style={{ ...inputStyle, ...amountStyle, textAlign: "right", fontSize: 20, fontWeight: 600 }}
+                    type="number" step="any"
+                    value={cashReceived}
+                    onChange={(e) => setCashReceived(e.target.value)}
+                    placeholder={total.toFixed(0)}
+                  />
+                </label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {[null, ...getCurrency().cashQuickAmounts].map((bill) => {
+                    const value = bill === null ? total : bill;
+                    const selected = total > 0 && Number(cashReceived) === value;
+                    return (
+                      <button
+                        key={bill ?? "exact"}
+                        type="button"
+                        onClick={() => setCashReceived(String(Math.round(value * 100) / 100))}
+                        style={{
+                          ...amountStyle,
+                          height: 34,
+                          padding: "0 12px",
+                          border: "1px solid var(--color-rule-strong)",
+                          borderRadius: "var(--radius-md)",
+                          background: selected ? "var(--color-text)" : "var(--color-bg-elevated)",
+                          color: selected ? "var(--color-bg)" : "var(--color-text)",
+                          fontSize: 13,
+                          fontWeight: 500,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {bill === null ? t("sales.exactAmount") : formatAmount(bill).replace(/[.,]00$/, "")}
+                      </button>
+                    );
+                  })}
+                </div>
+                {cashReceived !== "" && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      border: "2px solid var(--color-accent)",
+                      borderRadius: "var(--radius-md)",
+                      padding: "10px 14px",
+                      color: "var(--color-accent)",
+                    }}
+                  >
+                    <span style={{ fontSize: 15, fontWeight: 700 }}>{t("sales.changeDue")}</span>
+                    <span style={{ ...amountStyle, fontSize: 26, fontWeight: 600 }}>{formatMoney(changeDue)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {checkoutError && <p style={{ color: "var(--color-danger)" }}>{checkoutError}</p>}
+
+            <button style={{ ...primaryButtonStyle, height: 56, fontSize: 18 }} onClick={handleCheckout} disabled={checkingOut}>
+              {checkingOut ? t("sales.checkingOut") : t("sales.checkout")}
+            </button>
+          </div>
         </div>
       </div>
     </main>

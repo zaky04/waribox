@@ -12,6 +12,8 @@ import { users } from "./users";
 // ExpensesService.
 export const expenses = sqliteTable("expenses", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  // Voir CLAUDE.md, mode réseau Phase 2 — même rôle que sales.syncId.
+  syncId: text("sync_id"),
   category: text("category").notNull(), // texte libre ; suggestions via EXPENSE_CATEGORIES (datalist UI)
   amount: real("amount").notNull(),
   // Date à laquelle la dépense s'applique (ex: loyer de juillet payé le 3

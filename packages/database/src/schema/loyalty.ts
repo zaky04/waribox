@@ -4,6 +4,8 @@ import { customers } from "./customers";
 
 export const loyaltyTransactions = sqliteTable("loyalty_transactions", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  // Voir CLAUDE.md, mode réseau Phase 2 — même rôle que sales.syncId.
+  syncId: text("sync_id"),
   customerId: integer("customer_id")
     .notNull()
     .references(() => customers.id),

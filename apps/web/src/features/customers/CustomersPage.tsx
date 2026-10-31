@@ -23,6 +23,7 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { useApproval } from "../approval/ApprovalProvider";
 import { useAuth } from "../auth/useAuth";
 
 type Customer = typeof schema.customers.$inferSelect;
@@ -31,6 +32,7 @@ type Credit = typeof schema.customerCredits.$inferSelect;
 export function CustomersPage() {
   const db = useDatabase();
   const { user } = useAuth();
+  const approval = useApproval();
   const { t } = useTranslation();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -43,6 +45,7 @@ export function CustomersPage() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
+  const [creditLimit, setCreditLimit] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -102,6 +105,7 @@ export function CustomersPage() {
     setPhone("");
     setEmail("");
     setAddress("");
+    setCreditLimit("");
     setShowForm(false);
   };
 
@@ -111,6 +115,7 @@ export function CustomersPage() {
     setPhone(customer.phone ?? "");
     setEmail(customer.email ?? "");
     setAddress(customer.address ?? "");
+    setCreditLimit(customer.creditLimit == null ? "" : String(customer.creditLimit));
     setShowForm(true);
   };
 
@@ -131,7 +136,13 @@ export function CustomersPage() {
         createdBy: user?.id,
       };
       if (editingId) {
-        await updateCustomer(db, editingId, input, user?.permissions ?? {});
+        const limit = creditLimit.trim() === "" ? null : Number(creditLimit);
+        if (limit !== null && (Number.isNaN(limit) || limit < 0)) {
+          setError(t("customersControls.creditLimitInvalid"));
+          setSaving(false);
+          return;
+        }
+        await updateCustomer(db, editingId, { ...input, creditLimit: limit }, user?.permissions ?? {});
       } else {
         await createCustomer(db, input, user?.permissions ?? {});
       }
@@ -163,15 +174,18 @@ export function CustomersPage() {
 
     setAdjusting(true);
     try {
-      await adjustPoints(
-        db,
-        {
-          customerId: customer.id,
-          pointsDelta: delta,
-          userId: user.id,
-          reason: pointsReason.trim() || undefined,
-        },
-        user.permissions,
+      await approval.run((a) =>
+        adjustPoints(
+          db,
+          {
+            customerId: customer.id,
+            pointsDelta: delta,
+            userId: user.id,
+            reason: pointsReason.trim() || undefined,
+            approval: a,
+          },
+          user.permissions,
+        ),
       );
       setAdjustingId(null);
       await refresh();
@@ -217,6 +231,12 @@ export function CustomersPage() {
             {t("customers.address")}
             <input style={inputStyle} value={address} onChange={(e) => setAddress(e.target.value)} />
           </label>
+          {editingId && (
+            <label>
+              {t("customersControls.creditLimit")}
+              <input style={inputStyle} type="number" step="any" min={0} value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} />
+            </label>
+          )}
 
           {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
@@ -265,19 +285,21 @@ export function CustomersPage() {
                         {t("customers.edit")}
                       </button>
                     )}
-                    <button
-                      style={{
-                        ...primaryButtonStyle,
-                        padding: "6px 12px",
-                        fontSize: 14,
-                        background: "transparent",
-                        border: "1px solid var(--color-border)",
-                        color: "var(--color-text)",
-                      }}
-                      onClick={() => startAdjust(c)}
-                    >
-                      {t("customers.adjustPoints")}
-                    </button>
+                    {user && hasPermission(user.permissions, "adjust_loyalty_points") && (
+                      <button
+                        style={{
+                          ...primaryButtonStyle,
+                          padding: "6px 12px",
+                          fontSize: 14,
+                          background: "transparent",
+                          border: "1px solid var(--color-border)",
+                          color: "var(--color-text)",
+                        }}
+                        onClick={() => startAdjust(c)}
+                      >
+                        {t("customers.adjustPoints")}
+                      </button>
+                    )}
                   </div>
                   {adjustingId === c.id && (
                     <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>

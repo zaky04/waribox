@@ -1,3 +1,5 @@
+import { PermissionOverridesEditor } from "./PermissionOverridesEditor";
+import { RolesSection } from "./RolesSection";
 import {
   createUser,
   ensureDefaultRoles,
@@ -9,6 +11,7 @@ import {
   listUsers,
   setUserActive,
   updateUser,
+  type PermissionOverrides,
   type PermissionSet,
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
@@ -46,8 +49,18 @@ export function UsersPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
+  const [approvalPin, setApprovalPin] = useState("");
   const [roleId, setRoleId] = useState<string>("");
   const [storeId, setStoreId] = useState<string>("");
+  const [overrides, setOverrides] = useState<PermissionOverrides>({});
+  const [limitRefund, setLimitRefund] = useState("");
+  const [limitStock, setLimitStock] = useState("");
+  const [limitCredit, setLimitCredit] = useState("");
+  const [limitDiscount, setLimitDiscount] = useState("");
+  const [limitExpense, setLimitExpense] = useState("");
+  const [limitPoints, setLimitPoints] = useState("");
+  const [limitTicket, setLimitTicket] = useState("");
+  const [limitApprove, setLimitApprove] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [impersonateError, setImpersonateError] = useState<string | null>(null);
@@ -82,8 +95,17 @@ export function UsersPage() {
     setEmail("");
     setPassword("");
     setPin("");
+    setApprovalPin("");
     setRoleId("");
     setStoreId("");
+    setLimitRefund("");
+    setLimitStock("");
+    setLimitCredit("");
+    setLimitDiscount("");
+    setLimitExpense("");
+    setLimitPoints("");
+    setLimitTicket("");
+    setOverrides({});
     setEditingUserId(null);
     setError(null);
   };
@@ -100,9 +122,19 @@ export function UsersPage() {
     setEmail(target.email ?? "");
     setPassword("");
     setPin("");
+    setApprovalPin("");
     const role = roles.find((r) => r.name === target.roleName);
     setRoleId(role ? String(role.id) : "");
     setStoreId(target.storeId ? String(target.storeId) : "");
+    setOverrides(target.permissionOverrides ?? {});
+    setLimitRefund(target.limitRefund == null ? "" : String(target.limitRefund));
+    setLimitStock(target.limitStock == null ? "" : String(target.limitStock));
+    setLimitCredit(target.limitCredit == null ? "" : String(target.limitCredit));
+    setLimitDiscount(target.limitDiscount == null ? "" : String(target.limitDiscount));
+    setLimitExpense(target.limitExpense == null ? "" : String(target.limitExpense));
+    setLimitPoints(target.limitPoints == null ? "" : String(target.limitPoints));
+    setLimitTicket(target.limitTicket == null ? "" : String(target.limitTicket));
+    setLimitApprove(target.limitApprove == null ? "" : String(target.limitApprove));
     setError(null);
     setShowForm(true);
   };
@@ -121,13 +153,37 @@ export function UsersPage() {
       setError(t("users.errors.newPasswordLength"));
       return;
     }
-    if (pin && !/^\d{4}$/.test(pin)) {
+    if ((pin && !/^\d{6,8}$/.test(pin)) || (approvalPin && !/^\d{6,8}$/.test(approvalPin))) {
       setError(t("users.errors.pinFormat"));
+      return;
+    }
+    if (pin && approvalPin && pin === approvalPin) {
+      setError(t("users.errors.pinsDiffer"));
       return;
     }
     const needsStore = multiStoreEnabled && !roleCanSwitchStore(roleId);
     if (needsStore && !storeId) {
       setError(t("users.errors.storeRequired"));
+      return;
+    }
+
+    const parseLimit = (v: string): number | null | undefined => {
+      if (v.trim() === "") return null;
+      const n = Number(v);
+      return Number.isNaN(n) || n < 0 ? undefined : n;
+    };
+    const limits = {
+      limitRefund: parseLimit(limitRefund),
+      limitStock: parseLimit(limitStock),
+      limitCredit: parseLimit(limitCredit),
+      limitDiscount: parseLimit(limitDiscount),
+      limitExpense: parseLimit(limitExpense),
+      limitPoints: parseLimit(limitPoints),
+      limitTicket: parseLimit(limitTicket),
+      limitApprove: parseLimit(limitApprove),
+    };
+    if (Object.values(limits).some((v) => v === undefined)) {
+      setError(t("users.errors.limitFormat"));
       return;
     }
 
@@ -145,6 +201,17 @@ export function UsersPage() {
             roleId: Number(roleId),
             storeId: resolvedStoreId,
             newPassword: password || undefined,
+            pin: pin || undefined,
+            approvalPin: approvalPin || undefined,
+            permissionOverrides: overrides,
+            limitRefund: limits.limitRefund,
+            limitStock: limits.limitStock,
+            limitCredit: limits.limitCredit,
+            limitDiscount: limits.limitDiscount,
+            limitExpense: limits.limitExpense,
+            limitPoints: limits.limitPoints,
+            limitTicket: limits.limitTicket,
+            limitApprove: limits.limitApprove,
           },
           user?.permissions ?? {},
           user?.id,
@@ -158,8 +225,18 @@ export function UsersPage() {
             email: email.trim() || undefined,
             password,
             pin: pin || undefined,
+            approvalPin: approvalPin || undefined,
             roleId: Number(roleId),
             storeId: resolvedStoreId,
+            permissionOverrides: overrides,
+            limitRefund: limits.limitRefund,
+            limitStock: limits.limitStock,
+            limitCredit: limits.limitCredit,
+            limitDiscount: limits.limitDiscount,
+            limitExpense: limits.limitExpense,
+            limitPoints: limits.limitPoints,
+            limitTicket: limits.limitTicket,
+            limitApprove: limits.limitApprove,
             createdBy: user?.id,
           },
           user?.permissions ?? {},
@@ -244,18 +321,42 @@ export function UsersPage() {
               minLength={8}
             />
           </label>
-          {!editingUserId && (
-            <label>
-              {t("users.pin")}
-              <input
-                style={inputStyle}
-                inputMode="numeric"
-                maxLength={4}
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
-              />
-            </label>
-          )}
+          <label>
+            {editingUserId ? t("approvalRoles.newPin") : t("users.pin")}
+            <input
+              style={inputStyle}
+              inputMode="numeric"
+              maxLength={8}
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+            />
+          </label>
+          {(() => {
+            const target = users.find((u) => u.id === editingUserId);
+            return target ? (
+              <span style={{ fontSize: 12.5, color: target.hasPin ? "var(--color-success)" : "var(--color-warning)" }}>
+                {target.hasPin ? t("approvalRoles.pinSet") : t("approvalRoles.pinMissing")}
+              </span>
+            ) : null;
+          })()}
+          <label>
+            {editingUserId ? t("approvalRoles.newApprovalPin") : t("users.approvalPin")}
+            <input
+              style={inputStyle}
+              inputMode="numeric"
+              maxLength={8}
+              value={approvalPin}
+              onChange={(e) => setApprovalPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+            />
+          </label>
+          {(() => {
+            const target = users.find((u) => u.id === editingUserId);
+            return target ? (
+              <span style={{ fontSize: 12.5, color: target.hasApprovalPin ? "var(--color-success)" : "var(--color-warning)" }}>
+                {target.hasApprovalPin ? t("approvalRoles.approvalPinSet") : t("approvalRoles.approvalPinMissing")}
+              </span>
+            ) : null;
+          })()}
           <label>
             {t("users.role")}
             <select
@@ -287,6 +388,51 @@ export function UsersPage() {
               </select>
             </label>
           )}
+
+          {roleId && (
+            <PermissionOverridesEditor
+              rolePermissions={JSON.parse(roles.find((r) => String(r.id) === roleId)?.permissions ?? "{}") as PermissionSet}
+              overrides={overrides}
+              onChange={setOverrides}
+              actingPermissions={user?.permissions ?? {}}
+            />
+          )}
+
+          <strong style={{ fontSize: 14 }}>{t("approvalRoles.limits")}</strong>
+          <label>
+            {t("approvalRoles.limitRefund")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitRefund} onChange={(e) => setLimitRefund(e.target.value)} />
+          </label>
+          <label>
+            {t("approvalRoles.limitStock")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitStock} onChange={(e) => setLimitStock(e.target.value)} />
+          </label>
+          <label>
+            {t("approvalRoles.limitCredit")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitCredit} onChange={(e) => setLimitCredit(e.target.value)} />
+          </label>
+          <label>
+            {t("approvalRoles.limitDiscount")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitDiscount} onChange={(e) => setLimitDiscount(e.target.value)} />
+          </label>
+          <label>
+            {t("approvalRoles.limitExpense")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitExpense} onChange={(e) => setLimitExpense(e.target.value)} />
+          </label>
+          <label>
+            {t("approvalRoles.limitPoints")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitPoints} onChange={(e) => setLimitPoints(e.target.value)} />
+          </label>
+          <label>
+            {t("approvalRoles.limitTicket")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitTicket} onChange={(e) => setLimitTicket(e.target.value)} />
+          </label>
+
+          <label>
+            {t("approvalRoles.limitApprove")}
+            <input style={inputStyle} type="number" step="any" min={0} value={limitApprove} onChange={(e) => setLimitApprove(e.target.value)} />
+          </label>
+          <p style={{ color: "var(--color-text-muted)", fontSize: 12.5, margin: 0 }}>{t("approvalRoles.limitApproveHint")}</p>
 
           {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
@@ -361,6 +507,7 @@ export function UsersPage() {
           </tbody>
         </table>
       </div>
+      <RolesSection onChanged={refresh} />
     </main>
   );
 }

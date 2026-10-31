@@ -1,0 +1,16 @@
+{
+  "name": "@gestion-boutique/network",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@gestion-boutique/config": "workspace:*",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.8"
+  }
+}

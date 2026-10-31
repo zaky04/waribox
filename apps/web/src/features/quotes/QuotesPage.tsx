@@ -1,3 +1,5 @@
+import { useApproval } from "../approval/ApprovalProvider";
+import { formatAmount } from "../../lib/format";
 import {
   convertQuoteToSale,
   createQuote,
@@ -28,6 +30,7 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { IconX } from "../../components/icons";
 import { saveGeneratedFile } from "../../lib/saveFile";
 import { useAuth } from "../auth/useAuth";
 
@@ -54,6 +57,7 @@ export function QuotesPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
   const { t } = useTranslation();
+  const approval = useApproval();
   const canManage = hasPermission(user?.permissions ?? {}, "manage_quotes");
   const canEdit = hasPermission(user?.permissions ?? {}, "edit_quotes");
 
@@ -245,13 +249,14 @@ export function QuotesPage() {
     if (!user || !surfaceLocationId || !currentStoreId) return;
     setConverting(true);
     try {
-      await convertQuoteToSale(db, quote.id, {
+      await approval.run((a) => convertQuoteToSale(db, quote.id, {
+        approval: a,
         surfaceLocationId,
         paymentMethod: convertPaymentMethod,
         amountPaid: convertAmountPaid === "" ? undefined : Number(convertAmountPaid),
         userId: user.id,
         storeId: currentStoreId,
-      }, user.permissions);
+      }, user.permissions));
       setExpandedQuoteId(null);
       await refresh();
     } catch (err) {
@@ -311,13 +316,13 @@ export function QuotesPage() {
                             style={{ ...inputStyle, width: 60, marginTop: 0 }}
                           />
                         </td>
-                        <td style={tdStyle}>{(line.quantity * line.unitPrice).toFixed(0)}</td>
+                        <td style={tdStyle}>{formatAmount(line.quantity * line.unitPrice)}</td>
                         <td style={tdStyle}>
                           <button
                             onClick={() => removeLine(line.variantId)}
-                            style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
+                            style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer", display: "flex" }}
                           >
-                            ✕
+                            <IconX size={16} />
                           </button>
                         </td>
                       </tr>
@@ -331,9 +336,9 @@ export function QuotesPage() {
           <div style={cardStyle}>
             <strong>{t("quotes.customerAndValidity")}</strong>
             <div>
-              <div>{t("quotes.subtotal")} {subtotal.toFixed(0)}</div>
-              <div>{t("quotes.tax")} {taxTotal.toFixed(0)}</div>
-              <div style={{ fontWeight: 700, fontSize: 18 }}>{t("quotes.totalLabel")} {total.toFixed(0)}</div>
+              <div>{t("quotes.subtotal")} {formatAmount(subtotal)}</div>
+              <div>{t("quotes.tax")} {formatAmount(taxTotal)}</div>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>{t("quotes.totalLabel")} {formatAmount(total)}</div>
             </div>
 
             <label>
@@ -399,7 +404,7 @@ export function QuotesPage() {
                     <tr>
                       <td style={tdStyle}>{quote.number}</td>
                       <td style={tdStyle}>{customerName(quote.customerId)}</td>
-                      <td style={tdStyle}>{quote.total.toFixed(0)}</td>
+                      <td style={tdStyle}>{formatAmount(quote.total)}</td>
                       <td style={tdStyle}>
                         <span style={badgeStyle(quote.status === "converted" || quote.status === "accepted" ? "ok" : "warning")}>
                           {STATUS_LABELS[quote.status] ?? quote.status}
@@ -469,7 +474,7 @@ export function QuotesPage() {
                               {t("quotes.amountPaid")}
                               <input
                                 style={inputStyle}
-                                type="number"
+                                type="number" step="any"
                                 value={convertAmountPaid}
                                 onChange={(e) => setConvertAmountPaid(e.target.value)}
                                 placeholder={quote.total.toFixed(0)}

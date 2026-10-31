@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { stores } from "./stores";
 
 export const roles = sqliteTable("roles", {
@@ -19,7 +19,15 @@ export const users = sqliteTable("users", {
   username: text("username"),
   email: text("email").unique(),
   passwordHash: text("password_hash"),
+  // PIN de déverrouillage de session (écran de verrouillage).
   pinHash: text("pin_hash"),
+  // PIN d'approbation, distinct du précédent : celui qu'un responsable saisit pour
+  // valider une remise, un remboursement, une dépense... Un PIN deviné par-dessus
+  // l'épaule à l'écran de verrouillage ne permet donc pas d'approuver. Compteur
+  // d'essais séparé pour que l'un ne bloque pas l'autre.
+  approvalPinHash: text("approval_pin_hash"),
+  approvalFailedAttempts: integer("approval_failed_attempts").notNull().default(0),
+  approvalLockedUntil: text("approval_locked_until"),
   biometricCredentialId: text("biometric_credential_id"),
   roleId: integer("role_id")
     .notNull()
@@ -37,5 +45,21 @@ export const users = sqliteTable("users", {
   // qu'une tentative réussit ou que le délai est écoulé.
   failedAttempts: integer("failed_attempts").notNull().default(0),
   lockedUntil: text("locked_until"),
+  // Plafonds personnels (NULL = utiliser le seuil global des paramètres) —
+  // au-delà, l'action exige l'approbation d'un responsable.
+  // Droits particuliers de cet utilisateur, par-dessus ceux de son rôle :
+  // JSON { "manage_stock": true, "manage_refunds": false }. true accorde, false
+  // retire ; une permission absente suit le rôle. NULL = aucun droit particulier.
+  permissionOverrides: text("permission_overrides"),
+  limitRefund: real("limit_refund"),
+  limitStock: real("limit_stock"),
+  limitDiscount: real("limit_discount"),
+  limitExpense: real("limit_expense"),
+  limitPoints: real("limit_points"),
+  limitTicket: real("limit_ticket"),
+  limitCredit: real("limit_credit"),
+  // Montant maximal que cette personne peut approuver (elle-même ou chez les
+  // autres) ; au-dessus, il faut un responsable de niveau supérieur. NULL = illimité.
+  limitApprove: real("limit_approve"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

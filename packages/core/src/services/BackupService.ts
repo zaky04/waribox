@@ -100,7 +100,7 @@ export async function restoreBackupFromFile(
   bytes: Uint8Array,
   actingPermissions: PermissionSet,
 ): Promise<RestoreBackupResult> {
-  requirePermission(actingPermissions, "manage_settings");
+  requirePermission(actingPermissions, "manage_backups");
   validateBackupFile(bytes);
 
   const { bytes: previousBytes } = await exportDatabaseFile();

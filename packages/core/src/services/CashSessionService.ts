@@ -1,8 +1,13 @@
 import type { Database } from "@gestion-boutique/database";
-import { schema } from "@gestion-boutique/database";
+import { schema, withTransaction } from "@gestion-boutique/database";
 import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
+import { t } from "@gestion-boutique/i18n";
+import { roundMoney } from "../domain/money";
+import { getSettings } from "./SettingsService";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
+import { assertValidAmount } from "../domain/validation";
+import { localDayEndUtc, localDayStartUtc } from "../domain/localDay";
 
 // Une session est scopée par (utilisateur, boutique) — un même caissier peut
 // avoir une session ouverte par boutique s'il opère sur plusieurs.
@@ -31,29 +36,34 @@ export async function openSession(
   input: OpenSessionInput,
   actingPermissions: PermissionSet,
 ) {
-  requirePermission(actingPermissions, "manage_sales");
-  const existing = await getActiveSession(db, input.userId, input.storeId);
-  if (existing) return existing;
+  requirePermission(actingPermissions, "open_close_cash");
+  assertValidAmount(input.openingAmount, { allowZero: true });
+  // Vérification et création dans une seule transaction : deux ouvertures
+  // simultanées (double clic) créaient deux sessions ouvertes pour la même personne.
+  return withTransaction(async () => {
+    const existing = await getActiveSession(db, input.userId, input.storeId);
+    if (existing) return existing;
 
-  const session = await db
-    .insert(schema.cashSessions)
-    .values({ userId: input.userId, storeId: input.storeId, openingAmount: input.openingAmount })
-    .returning()
-    .get();
+    const session = await db
+      .insert(schema.cashSessions)
+      .values({ userId: input.userId, storeId: input.storeId, openingAmount: input.openingAmount })
+      .returning()
+      .get();
 
-  await logAction(db, {
-    userId: input.userId,
-    action: "open_cash_session",
-    entity: "cash_session",
-    entityId: session.id,
-    metadata: { openingAmount: input.openingAmount },
+    await logAction(db, {
+      userId: input.userId,
+      action: "open_cash_session",
+      entity: "cash_session",
+      entityId: session.id,
+      metadata: { openingAmount: input.openingAmount },
+    });
+
+    return session;
   });
-
-  return session;
 }
 
 // Montant théoriquement présent dans le tiroir : le fond de caisse d'ouverture
-// plus les encaissements espèces de la session (ventes moins remboursements),
+// plus les encaissements espèces de la session (ventes et tickets de service, moins remboursements),
 // réglés par ce même caissier depuis l'ouverture. Ignore les paiements par
 // carte/mobile money — seul le liquide passe physiquement par le tiroir.
 export async function getExpectedCashAmount(
@@ -72,9 +82,22 @@ export async function getExpectedCashAmount(
     .from(schema.payments)
     .where(and(...conditions));
 
-  let net = 0;
+  // Règlements de créances clients encaissés par ce caissier depuis l'ouverture
+  // (sans mode de paiement renseigné = espèces, comme au comptoir).
+  const repayments = await db
+    .select()
+    .from(schema.creditRepayments)
+    .where(and(eq(schema.creditRepayments.receivedBy, session.userId), gte(schema.creditRepayments.paidAt, session.openedAt)));
+  const cashRepayments = repayments.filter(
+    (r) => (r.method == null || r.method === "cash") && (session.storeId == null || r.storeId == null || r.storeId === session.storeId),
+  );
+
+  let net = cashRepayments.reduce((sum, r) => sum + r.amount, 0);
   for (const payment of cashPayments) {
-    if (payment.referenceType === "sale") net += payment.amount;
+    // Ventes et acomptes/soldes de tickets de service encaissés en espèces.
+    // (Les remboursements de créances clients ne sont pas rattachables à un
+    // caissier — credit_repayments n'a ni utilisateur ni boutique — donc exclus.)
+    if (payment.referenceType === "sale" || payment.referenceType === "service_order") net += payment.amount;
     else if (payment.referenceType === "refund") net -= payment.amount;
   }
 
@@ -84,7 +107,17 @@ export async function getExpectedCashAmount(
 export interface CloseSessionInput {
   sessionId: number;
   closingAmount: number;
+  // Ignoré : le montant attendu est TOUJOURS recalculé ici (un appelant ne doit
+  // pas pouvoir choisir sa propre référence pour effacer un écart).
+  expectedAmount?: number;
+}
+
+export interface CloseSessionResult {
+  session: typeof schema.cashSessions.$inferSelect;
   expectedAmount: number;
+  difference: number;
+  // Vrai si |écart| dépasse le seuil des paramètres (tout écart si non défini).
+  alert: boolean;
 }
 
 export async function closeSession(
@@ -92,35 +125,48 @@ export async function closeSession(
   input: CloseSessionInput,
   actingPermissions: PermissionSet,
 ) {
-  requirePermission(actingPermissions, "manage_sales");
+  requirePermission(actingPermissions, "open_close_cash");
+  const current = await db
+    .select()
+    .from(schema.cashSessions)
+    .where(eq(schema.cashSessions.id, input.sessionId))
+    .get();
+  if (!current) throw new Error(t("coreErrors.cashSession.notFound"));
+  if (current.closedAt) throw new Error(t("coreErrors.cashSession.alreadyClosed"));
+  assertValidAmount(input.closingAmount, { allowZero: true });
+
+  const expectedAmount = roundMoney(await getExpectedCashAmount(db, current));
+  const closingAmount = roundMoney(input.closingAmount);
+  const difference = roundMoney(closingAmount - expectedAmount);
+  const settings = await getSettings(db);
+  const alert = Math.abs(difference) > (settings.cashVarianceThreshold ?? 0);
+
   const session = await db
     .update(schema.cashSessions)
     .set({
-      closingAmount: input.closingAmount,
-      expectedAmount: input.expectedAmount,
+      closingAmount,
+      expectedAmount,
       // Même format que `openedAt` (défaut SQL CURRENT_TIMESTAMP : "YYYY-MM-DD
       // HH:MM:SS", UTC, sans millisecondes) — un .toISOString() brut produit
       // un format différent ("...T...Z" + ms) qui s'affichait de façon
       // incohérente à côté d'openedAt dans le rapport Caisse.
       closedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
     })
-    .where(eq(schema.cashSessions.id, input.sessionId))
+    // Garde atomique : deux clôtures simultanées ne passent pas toutes les deux.
+    .where(and(eq(schema.cashSessions.id, input.sessionId), isNull(schema.cashSessions.closedAt)))
     .returning()
     .get();
+  if (!session) throw new Error(t("coreErrors.cashSession.alreadyClosed"));
 
   await logAction(db, {
     userId: session.userId,
     action: "close_cash_session",
     entity: "cash_session",
     entityId: session.id,
-    metadata: {
-      closingAmount: input.closingAmount,
-      expectedAmount: input.expectedAmount,
-      difference: input.closingAmount - input.expectedAmount,
-    },
+    metadata: { closingAmount, expectedAmount, difference, alert },
   });
 
-  return session;
+  return { session, expectedAmount, difference, alert } satisfies CloseSessionResult;
 }
 
 export interface CashSessionFilters {
@@ -135,8 +181,8 @@ export interface CashSessionFilters {
 // qu'une session en cours n'a jamais existé.
 export async function listCashSessions(db: Database, filters: CashSessionFilters = {}) {
   const conditions = [];
-  if (filters.from) conditions.push(gte(schema.cashSessions.openedAt, `${filters.from.slice(0, 10)} 00:00:00`));
-  if (filters.to) conditions.push(lte(schema.cashSessions.openedAt, `${filters.to.slice(0, 10)} 23:59:59`));
+  if (filters.from) conditions.push(gte(schema.cashSessions.openedAt, localDayStartUtc(filters.from)));
+  if (filters.to) conditions.push(lte(schema.cashSessions.openedAt, localDayEndUtc(filters.to)));
   if (filters.storeId) conditions.push(eq(schema.cashSessions.storeId, filters.storeId));
 
   const query = db.select().from(schema.cashSessions).orderBy(desc(schema.cashSessions.id));

@@ -2,6 +2,8 @@ import i18next from "i18next";
 import en from "./locales/en.json";
 import fr from "./locales/fr.json";
 
+export * from "./countries";
+
 export type Language = "fr" | "en";
 export const LANGUAGES: Language[] = ["fr", "en"];
 export const DEFAULT_LANGUAGE: Language = "fr";
@@ -31,3 +33,5 @@ export function getLanguage(): Language {
 
 export const t = i18next.t.bind(i18next);
 export { i18next };
+
+export * from "./currency";

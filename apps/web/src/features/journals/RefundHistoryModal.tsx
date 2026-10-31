@@ -1,3 +1,4 @@
+import { formatAmount } from "../../lib/format";
 import { listRefundItems, listRefundsForSale, listSaleItems, type RefundMethod } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { useEffect, useState } from "react";
@@ -82,7 +83,7 @@ export function RefundHistoryModal({
             >
               <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                 <strong>{refund.createdAt}</strong>
-                <strong>{refund.total.toFixed(0)}</strong>
+                <strong>{formatAmount(refund.total)}</strong>
               </div>
               <p style={{ margin: "4px 0", color: "var(--color-text-muted)" }}>
                 {METHOD_LABELS[refund.method as RefundMethod] ?? refund.method}
@@ -93,7 +94,7 @@ export function RefundHistoryModal({
                   const variantId = variantBySaleItem[item.saleItemId];
                   return (
                     <li key={item.id}>
-                      {variantId !== undefined ? variantLabel(variantId) : "—"} × {item.quantity} — {item.total.toFixed(0)}
+                      {variantId !== undefined ? variantLabel(variantId) : "—"} × {item.quantity} — {formatAmount(item.total)}
                       {item.restocked ? t("journals.refundHistoryModal.restocked") : ""}
                     </li>
                   );

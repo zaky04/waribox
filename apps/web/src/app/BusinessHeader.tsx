@@ -8,20 +8,21 @@ export function BusinessHeader({ businessName, logoDataUrl }: BusinessHeaderProp
 
   return (
     <div
+      className="business-header"
       style={{
         display: "flex",
         alignItems: "center",
         gap: 12,
         padding: "10px 24px",
         background: "var(--color-bg)",
-        borderBottom: "1px solid var(--color-bg-elevated)",
+        borderBottom: "1px solid var(--color-border)",
       }}
     >
       {logoDataUrl && (
         <img
           src={logoDataUrl}
           alt="Logo"
-          style={{ width: 32, height: 32, objectFit: "contain", background: "#fff", borderRadius: 6 }}
+          style={{ width: 32, height: 32, objectFit: "contain", background: "#fff", borderRadius: 4 }}
         />
       )}
       {businessName && <strong style={{ color: "var(--color-text)", fontSize: 16 }}>{businessName}</strong>}

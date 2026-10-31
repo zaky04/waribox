@@ -1,9 +1,11 @@
+import { roundMoney } from "../domain/money";
 import type { Database } from "@gestion-boutique/database";
 import { schema, withTransaction } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
 import { and, asc, eq } from "drizzle-orm";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
+import { checkApproval, verifyApprovalInput, type ApprovalInput } from "./ApprovalService";
 import { recordMovement } from "./StockService";
 
 // Répartit `amount` unités sur une liste de lots ordonnée (même ordre FEFO
@@ -55,6 +57,8 @@ export interface CreateRefundInput {
   reason?: string;
   method: RefundMethod;
   userId: number;
+  // Approbation d'un responsable quand le montant dépasse le plafond.
+  approval?: ApprovalInput;
 }
 
 // Total déjà remboursé par ligne de vente, toutes remboursements confondus
@@ -88,16 +92,30 @@ export async function createRefund(db: Database, input: CreateRefundInput, actin
   if (input.items.length === 0) {
     throw new Error(t("coreErrors.refunds.selectAtLeastOne"));
   }
+  // Motif obligatoire : un remboursement sans explication est le moyen le plus
+  // courant de faire sortir de l'argent de la caisse.
+  if (!input.reason?.trim()) {
+    throw new Error(t("coreErrors.refunds.reasonRequired"));
+  }
+  // Le responsable éventuel est vérifié ICI, hors transaction (son compteur
+  // d'essais doit survivre à un rollback) ; le contrôle du plafond se fait dans
+  // la transaction, une fois le total réellement calculé.
+  const verifiedApproverId = await verifyApprovalInput(db, input.userId, input.approval);
 
   // Toute la séquence lecture-validation-écriture est atomique (voir
   // withTransaction dans SalesService.createSale pour le même raisonnement) —
   // sinon deux remboursements concurrents sur la même ligne de vente
   // pourraient tous deux valider la même quantité restante avant qu'aucun
   // n'écrive, causant un double remboursement.
-  return withTransaction(() => createRefundInTransaction(db, input));
+  return withTransaction(() => createRefundInTransaction(db, input, actingPermissions, verifiedApproverId));
 }
 
-async function createRefundInTransaction(db: Database, input: CreateRefundInput) {
+async function createRefundInTransaction(
+  db: Database,
+  input: CreateRefundInput,
+  actingPermissions: PermissionSet,
+  verifiedApproverId: number | null,
+) {
   const sale = await db.select().from(schema.sales).where(eq(schema.sales.id, input.saleId)).get();
   if (!sale) {
     throw new Error(t("coreErrors.refunds.saleNotFound"));
@@ -134,12 +152,12 @@ async function createRefundInTransaction(db: Database, input: CreateRefundInput)
     // plutôt que quantité×prix unitaire — évite de recalculer/dupliquer la
     // logique de remise appliquée à la vente d'origine.
     const fraction = requested.quantity / saleItem.quantity;
-    const lineTotal = saleItem.total * fraction;
+    const lineTotal = roundMoney(saleItem.total * fraction);
     const lineTax = lineTotal > 0 ? lineTotal * (saleItem.taxRate / (100 + saleItem.taxRate)) : 0;
 
     subtotal += saleItem.unitPrice * requested.quantity;
     taxTotal += saleItem.taxRate > 0 ? lineTax : 0;
-    total += lineTotal;
+    total = roundMoney(total + lineTotal);
 
     lines.push({
       saleItemId: saleItem.id,
@@ -156,6 +174,16 @@ async function createRefundInTransaction(db: Database, input: CreateRefundInput)
     throw new Error(t("coreErrors.refunds.noValidQuantity"));
   }
 
+  // Plafond : lève ApprovalRequiredError (rien n'est encore écrit) si le total
+  // dépasse le seuil et qu'aucun responsable n'a approuvé.
+  const approvedBy = await checkApproval(db, {
+    kind: "refund",
+    amount: total,
+    userId: input.userId,
+    actingPermissions,
+    verifiedApproverId,
+  });
+
   const refund = await db
     .insert(schema.refunds)
     .values({
@@ -166,6 +194,7 @@ async function createRefundInTransaction(db: Database, input: CreateRefundInput)
       subtotal,
       taxTotal,
       total,
+      approvedBy: approvedBy ?? undefined,
     })
     .returning()
     .get();
@@ -233,12 +262,39 @@ async function createRefundInTransaction(db: Database, input: CreateRefundInput)
     }
   }
 
+  // Vente (en partie) à crédit : la marchandise rendue annule d'abord ce que le
+  // client DEVAIT encore, on ne rembourse en argent que le surplus. Avant, le
+  // remboursement sortait la totalité en espèces alors que le client n'en avait
+  // payé qu'une partie, et la créance restait due pour des articles rendus.
+  let creditReduced = 0;
   if (total > 0) {
+    const openCredits = await db
+      .select()
+      .from(schema.customerCredits)
+      .where(eq(schema.customerCredits.saleId, input.saleId))
+      .orderBy(asc(schema.customerCredits.id));
+    let toCancel = total;
+    for (const credit of openCredits) {
+      if (toCancel <= 0.005) break;
+      if (credit.remainingBalance <= 0) continue;
+      const reduction = roundMoney(Math.min(toCancel, credit.remainingBalance));
+      const remainingBalance = roundMoney(credit.remainingBalance - reduction);
+      await db
+        .update(schema.customerCredits)
+        .set({ remainingBalance, status: remainingBalance <= 0 ? "settled" : "partial" })
+        .where(eq(schema.customerCredits.id, credit.id))
+        .run();
+      creditReduced = roundMoney(creditReduced + reduction);
+      toCancel = roundMoney(toCancel - reduction);
+    }
+  }
+  const cashRefund = roundMoney(total - creditReduced);
+  if (cashRefund > 0) {
     await db.insert(schema.payments).values({
       referenceType: "refund",
       referenceId: refund.id,
       method: input.method,
-      amount: total,
+      amount: cashRefund,
       receivedBy: input.userId,
       storeId: sale.storeId,
     });
@@ -253,7 +309,7 @@ async function createRefundInTransaction(db: Database, input: CreateRefundInput)
     .from(schema.refunds)
     .where(eq(schema.refunds.saleId, input.saleId));
   const totalRefunded = refundedTotals.reduce((sum, r) => sum + r.total, 0);
-  if (totalRefunded >= sale.total) {
+  if (totalRefunded >= sale.total - 0.005) {
     await db.update(schema.sales).set({ status: "refunded" }).where(eq(schema.sales.id, input.saleId)).run();
   }
 
@@ -262,7 +318,7 @@ async function createRefundInTransaction(db: Database, input: CreateRefundInput)
     action: "create_refund",
     entity: "refund",
     entityId: refund.id,
-    metadata: { saleNumber: sale.number, total, reason: input.reason },
+    metadata: { saleNumber: sale.number, total, cashRefund, creditReduced, reason: input.reason, method: input.method, approvedBy },
   });
 
   return refund;

@@ -31,6 +31,8 @@ export const businessSettings = sqliteTable("business_settings", {
   // Indicatif pays (ex: "225") utilisé pour compléter les numéros locaux des
   // clients lors de la génération d'un lien wa.me (voir lib/whatsapp.ts).
   whatsappCountryCode: text("whatsapp_country_code"),
+  // Pays du commerce (ISO) : indicatif ajouté aux numéros enregistrés en format national.
+  country: text("country"),
   // Numéro (gérant/propriétaire) à notifier par WhatsApp en cas de rupture de
   // stock — distinct de `phone` (coordonnées de l'entreprise affichées sur
   // les reçus) : celui-ci n'a de sens que comme destinataire d'alerte interne.
@@ -51,6 +53,12 @@ export const businessSettings = sqliteTable("business_settings", {
   // mérite la même protection contre les essais répétés.
   maintenanceCodeFailedAttempts: integer("maintenance_code_failed_attempts").notNull().default(0),
   maintenanceCodeLockedUntil: text("maintenance_code_locked_until"),
+  // Code du mode focus (plein écran) : un troisième secret, distinct du code de
+  // maintenance et des PIN, qui sert uniquement à quitter le plein écran sur PC
+  // et tablette. Même anti-brute-force, écrit seulement par FocusCodeService.
+  focusCodeHash: text("focus_code_hash"),
+  focusCodeFailedAttempts: integer("focus_code_failed_attempts").notNull().default(0),
+  focusCodeLockedUntil: text("focus_code_locked_until"),
   // Verrouille automatiquement la session (retour à l'écran PIN) après ce
   // délai d'inactivité — 0 désactive la fonctionnalité.
   autoLockMinutes: integer("auto_lock_minutes").notNull().default(0),
@@ -101,4 +109,76 @@ export const businessSettings = sqliteTable("business_settings", {
   // remises programmées aux ventes — désactivé par défaut (même convention
   // que multiStoreEnabled/enableSyscohada).
   enablePromotions: integer("enable_promotions", { mode: "boolean" }).notNull().default(false),
+  // Facture Normalisée Électronique (Côte d'Ivoire, DGI) — voir CLAUDE.md.
+  // Coquille activable : reste false tant que le commerçant n'a pas obtenu
+  // un accès DGI et saisi une vraie clé API. fneApiKey stockée en clair,
+  // même convention que googleDriveClientId/maintenanceCodeHash ci-dessus.
+  fneEnabled: integer("fne_enabled", { mode: "boolean" }).notNull().default(false),
+  fneEnvironment: text("fne_environment").notNull().default("test"), // 'test' | 'prod'
+  fneApiKey: text("fne_api_key"),
+  // Fournie par la DGI à la validation du compte production — l'URL de test
+  // est une constante en dur côté code (voir packages/core/src/fne/fneTypes.ts),
+  // pas besoin de la stocker.
+  fneApiBaseUrl: text("fne_api_base_url"),
+  // Identifiants attribués par la DGI à l'inscription — sans rapport avec
+  // les stores/stockLocations internes de WariBox.
+  fneEstablishment: text("fne_establishment"),
+  fnePointOfSale: text("fne_point_of_sale"),
+  // Apparence (voir Paramètres → Apparence) — couleur d'accent et forme des
+  // coins, indépendantes de `sectorType` ci-dessus (qui ne pilote plus que
+  // l'icône/libellé de l'onglet "Produits", voir Nav.tsx). `null` = thème
+  // par défaut (valeurs de :root dans index.css), une valeur explicite
+  // écrase l'accent partout où l'app utilise déjà var(--color-accent)/
+  // var(--gradient-accent)/etc. (voir apps/web/src/lib/appearance.ts).
+  appearanceAccentColor: text("appearance_accent_color"),
+  appearanceBackground: text("appearance_background"), // null (papier) | 'white' | 'grey' — thème clair seulement
+  appearanceFont: text("appearance_font"), // null (Familjen Grotesk) | 'system' | 'serif'
+  appearanceShape: text("appearance_shape"), // 'rounded' (défaut) | 'square'
+  // --- Contrôles de gestion (voir CLAUDE.md, journal du 2026-09-25) ---
+  // Seuils au-dessus desquels une action exige l'approbation d'un responsable
+  // (code PIN d'un utilisateur ayant la permission approve_actions). NULL =
+  // pas de contrôle ; 0 = toute action de ce type exige une approbation. Un
+  // plafond propre à l'utilisateur (users.limit*) prime sur ces valeurs.
+  approvalRefundThreshold: real("approval_refund_threshold"),
+  approvalStockThreshold: real("approval_stock_threshold").default(0), // valeur au coût d'une entrée (manuelle, achat) ou sortie (perte) — 0 par défaut
+  approvalCreditThreshold: real("approval_credit_threshold"),
+  // Remise hors promotion programmée (ou prix de vente sous le catalogue),
+  // dépense, ajustement manuel de points : 0 par défaut = tout exige une
+  // approbation ; NULL = pas de contrôle.
+  approvalDiscountThreshold: real("approval_discount_threshold").default(0),
+  approvalExpenseThreshold: real("approval_expense_threshold").default(0),
+  approvalPointsThreshold: real("approval_points_threshold").default(0),
+  // Modification d'un ticket encaissé, annulation, retour arrière d'un retrait (0 par défaut).
+  approvalTicketThreshold: real("approval_ticket_threshold").default(0),
+  // Changement de prix d'un produit (écart le plus grand entre ancien et nouveau prix)
+  // et paiement d'une dette fournisseur : 0 par défaut = tout doit être approuvé.
+  approvalPriceThreshold: real("approval_price_threshold").default(0),
+  approvalPaymentThreshold: real("approval_payment_threshold").default(0),
+  // Comment se fait l'approbation d'un domaine : 'pin' (le responsable saisit son
+  // code sur le moment) ou 'later' (la demande attend la validation du propriétaire).
+  approvalModeStock: text("approval_mode_stock").notNull().default("pin"),
+  approvalModeExpense: text("approval_mode_expense").notNull().default("pin"),
+  approvalModePoints: text("approval_mode_points").notNull().default("pin"),
+  // Un ticket « prêt » non retiré depuis ce nombre de jours est signalé.
+  staleTicketDays: integer("stale_ticket_days").notNull().default(30),
+  // Seuils de signalement du tableau de bord Contrôles (en %).
+  alertRefundPercent: real("alert_refund_percent").notNull().default(5),
+  alertLossPercent: real("alert_loss_percent").notNull().default(2),
+  alertDiscountPercent: real("alert_discount_percent").notNull().default(5),
+  // Écart de caisse (|compté - attendu|) à partir duquel une clôture est
+  // signalée. NULL = tout écart non nul est signalé.
+  cashVarianceThreshold: real("cash_variance_threshold"),
+  // Hausse de prix d'achat (en %, vs dernier coût connu) signalée à la saisie
+  // d'un achat. 0 = désactivé.
+  priceAlertPercent: real("price_alert_percent").notNull().default(10),
+  // Achats en deux temps : la facture fournisseur est saisie, le stock n'entre
+  // qu'à la réception contrôlée (quantités comptées).
+  requirePurchaseReceipt: integer("require_purchase_receipt", { mode: "boolean" }).notNull().default(false),
+  // Plafond de crédit par défaut d'un client (NULL/0 = illimité).
+  defaultCreditLimit: real("default_credit_limit"),
+  // Une demande d'approbation en attente depuis plus de N heures est signalée.
+  approvalPendingAlertHours: integer("approval_pending_alert_hours").notNull().default(48),
+  // Dernier « contrôle effectué » du propriétaire (repère pour ne revoir que le neuf).
+  controlsReviewedAt: text("controls_reviewed_at"),
+  controlsReviewedBy: integer("controls_reviewed_by"),
 });

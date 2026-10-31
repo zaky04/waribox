@@ -41,7 +41,26 @@ function getWorker(): Promise<Worker> {
   return workerPromise;
 }
 
+export type { WorkerResponse };
+
+// Remplace le worker SQLite du navigateur par un autre moteur — réservé aux
+// tests (voir packages/core/src/test/testDb.ts, qui branche `node:sqlite`) :
+// le reste du code (bootstrap, migrations, withTransaction, drizzle) passe
+// alors par ce moteur sans la moindre modification. `null` revient au worker.
+export type DatabaseBackend = (type: string, payload: Record<string, unknown>) => Promise<WorkerResponse>;
+
+let backendOverride: DatabaseBackend | null = null;
+const DEFAULT_BACKEND_KEY = {};
+const bootstrapByBackend = new WeakMap<object, Promise<void>>();
+
+export function setDatabaseBackend(backend: DatabaseBackend | null): void {
+  backendOverride = backend;
+  // Les transactions en file appartenaient à l'ancien moteur.
+  txLock = Promise.resolve();
+}
+
 async function callWorker(type: string, payload: Record<string, unknown> = {}): Promise<WorkerResponse> {
+  if (backendOverride) return backendOverride(type, payload);
   const worker = await getWorker();
   const id = nextId++;
   return new Promise((resolve, reject) => {
@@ -50,11 +69,11 @@ async function callWorker(type: string, payload: Record<string, unknown> = {}): 
   });
 }
 
-let bootstrapPromise: Promise<void> | null = null;
-
-// Exécute le bootstrap + les migrations une seule fois (singleton), peu
-// importe le nombre d'appels à createDatabase()/exportDatabaseFile().
+// Exécute le bootstrap + les migrations une seule fois par moteur (singleton),
+// peu importe le nombre d'appels à createDatabase()/exportDatabaseFile().
 function ensureBootstrapped(): Promise<void> {
+  const key: object = backendOverride ?? DEFAULT_BACKEND_KEY;
+  let bootstrapPromise = bootstrapByBackend.get(key);
   if (!bootstrapPromise) {
     bootstrapPromise = (async () => {
       for (const statement of BOOTSTRAP_SQL) {
@@ -77,6 +96,7 @@ function ensureBootstrapped(): Promise<void> {
 
       await runMigrations();
     })();
+    bootstrapByBackend.set(key, bootstrapPromise);
   }
   return bootstrapPromise;
 }
@@ -102,6 +122,323 @@ export const MIGRATIONS: Migration[] = [
     statements: [
       "ALTER TABLE business_settings ADD COLUMN maintenance_code_failed_attempts INTEGER NOT NULL DEFAULT 0",
       "ALTER TABLE business_settings ADD COLUMN maintenance_code_locked_until TEXT",
+    ],
+  },
+  // Mode réseau Phase 2 (voir CLAUDE.md) : `sync_id` identifie une ligne
+  // indépendamment de l'id local auto-incrémenté (propre à chaque appareil,
+  // sans rapport entre eux) — c'est lui qui circule dans les événements de
+  // réplication entre Master et Workers. Index unique partiel (WHERE sync_id
+  // IS NOT NULL) : les lignes déjà existantes avant cette migration restent
+  // à NULL, jamais concernées par la contrainte d'unicité. `__sync_log`/
+  // `__sync_outbox`/`__sync_state` : voir packages/database/src/schema/sync.ts.
+  {
+    id: 3,
+    statements: [
+      "ALTER TABLE sales ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_sales_sync_id ON sales(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE sale_items ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_sale_items_sync_id ON sale_items(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE payments ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_payments_sync_id ON payments(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE stock_movements ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_stock_movements_sync_id ON stock_movements(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE stock_batches ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_stock_batches_sync_id ON stock_batches(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE customer_credits ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_customer_credits_sync_id ON customer_credits(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE loyalty_transactions ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_loyalty_transactions_sync_id ON loyalty_transactions(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE customers ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_customers_sync_id ON customers(sync_id) WHERE sync_id IS NOT NULL",
+      "ALTER TABLE expenses ADD COLUMN sync_id TEXT",
+      "CREATE UNIQUE INDEX idx_expenses_sync_id ON expenses(sync_id) WHERE sync_id IS NOT NULL",
+      `CREATE TABLE __sync_log (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        origin_device_id TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE __sync_outbox (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        sent_at TEXT
+      )`,
+      `CREATE TABLE __sync_state (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )`,
+    ],
+  },
+  // FNE (Facture Normalisée Électronique, Côte d'Ivoire) — voir CLAUDE.md.
+  // Coquille de colonnes/table, désactivée par défaut (fne_enabled = 0) —
+  // aucun effet tant que le commerçant n'a pas saisi une vraie clé API dans
+  // Paramètres.
+  {
+    id: 4,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN fne_enabled INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN fne_environment TEXT NOT NULL DEFAULT 'test'",
+      "ALTER TABLE business_settings ADD COLUMN fne_api_key TEXT",
+      "ALTER TABLE business_settings ADD COLUMN fne_api_base_url TEXT",
+      "ALTER TABLE business_settings ADD COLUMN fne_establishment TEXT",
+      "ALTER TABLE business_settings ADD COLUMN fne_point_of_sale TEXT",
+      "ALTER TABLE sales ADD COLUMN fne_status TEXT",
+      "ALTER TABLE sales ADD COLUMN fne_reference TEXT",
+      "ALTER TABLE sales ADD COLUMN fne_ncc TEXT",
+      "ALTER TABLE sales ADD COLUMN fne_qr_token TEXT",
+      "ALTER TABLE sales ADD COLUMN fne_balance_sticker INTEGER",
+      "ALTER TABLE sales ADD COLUMN fne_error TEXT",
+      "ALTER TABLE sales ADD COLUMN fne_certified_at TEXT",
+      `CREATE TABLE __fne_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sale_id INTEGER NOT NULL,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        last_attempt_at TEXT,
+        last_error TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+    ],
+  },
+  // Apparence (voir Paramètres → Apparence, CLAUDE.md journal du 2026-09-20)
+  // — couleur d'accent et forme des coins personnalisables, indépendantes du
+  // secteur d'activité (qui ne pilote plus que l'icône/libellé "Produits").
+  {
+    id: 5,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN appearance_accent_color TEXT",
+      "ALTER TABLE business_settings ADD COLUMN appearance_shape TEXT",
+    ],
+  },
+  // Fond de page et police d'interface personnalisables (Paramètres → Apparence).
+  {
+    id: 6,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN appearance_background TEXT",
+      "ALTER TABLE business_settings ADD COLUMN appearance_font TEXT",
+    ],
+  },
+  // Contrôles de gestion (approbations, inventaire, chaîne d'audit, achats en
+  // deux temps, plafonds de crédit...) — voir CLAUDE.md, journal du 2026-09-25.
+  // Tous les seuils sont NULL/0 par défaut : aucun comportement ne change tant
+  // que le propriétaire n'active pas un contrôle.
+  {
+    id: 7,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN approval_refund_threshold REAL",
+      "ALTER TABLE business_settings ADD COLUMN approval_stock_threshold REAL",
+      "ALTER TABLE business_settings ADD COLUMN approval_credit_threshold REAL",
+      "ALTER TABLE business_settings ADD COLUMN cash_variance_threshold REAL",
+      "ALTER TABLE business_settings ADD COLUMN price_alert_percent REAL NOT NULL DEFAULT 10",
+      "ALTER TABLE business_settings ADD COLUMN require_purchase_receipt INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN default_credit_limit REAL",
+      "ALTER TABLE users ADD COLUMN limit_refund REAL",
+      "ALTER TABLE users ADD COLUMN limit_stock REAL",
+      "ALTER TABLE users ADD COLUMN limit_credit REAL",
+      "ALTER TABLE audit_log ADD COLUMN prev_hash TEXT",
+      "ALTER TABLE audit_log ADD COLUMN hash TEXT",
+      "ALTER TABLE customers ADD COLUMN credit_limit REAL",
+      "ALTER TABLE customer_credits ADD COLUMN approved_by INTEGER",
+      "ALTER TABLE credit_repayments ADD COLUMN received_by INTEGER",
+      "ALTER TABLE credit_repayments ADD COLUMN store_id INTEGER",
+      "ALTER TABLE refunds ADD COLUMN approved_by INTEGER",
+      "ALTER TABLE purchases ADD COLUMN invoice_reference TEXT",
+      "ALTER TABLE purchases ADD COLUMN received_at TEXT",
+      "ALTER TABLE purchases ADD COLUMN received_by INTEGER",
+      "ALTER TABLE purchase_items ADD COLUMN received_quantity REAL",
+      "ALTER TABLE purchase_items ADD COLUMN previous_unit_cost REAL",
+      "ALTER TABLE purchase_items ADD COLUMN price_alert INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE supplier_debt_payments ADD COLUMN paid_by INTEGER",
+      "ALTER TABLE stock_movements ADD COLUMN note TEXT",
+      "ALTER TABLE stock_movements ADD COLUMN approved_by INTEGER",
+      `CREATE TABLE stock_counts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        store_id INTEGER,
+        location_id INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        started_by INTEGER NOT NULL,
+        closed_by INTEGER,
+        approved_by INTEGER,
+        note TEXT,
+        started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        closed_at TEXT
+      )`,
+      `CREATE TABLE stock_count_lines (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        count_id INTEGER NOT NULL,
+        variant_id INTEGER NOT NULL,
+        system_quantity REAL NOT NULL,
+        counted_quantity REAL,
+        unit_cost REAL
+      )`,
+    ],
+  },
+  // Droits particuliers par utilisateur (par-dessus le rôle).
+  {
+    id: 8,
+    statements: ["ALTER TABLE users ADD COLUMN permission_overrides TEXT"],
+  },
+  // Approbation des remises hors promotion, des dépenses et des ajustements de
+  // points (seuil 0 par défaut : tout exige l'approbation d'un responsable tant
+  // que le propriétaire n'a pas relevé le seuil), plafonds personnels, et seuils
+  // d'alerte du tableau de bord Contrôles.
+  {
+    id: 9,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN approval_discount_threshold REAL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN approval_expense_threshold REAL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN approval_points_threshold REAL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN alert_refund_percent REAL NOT NULL DEFAULT 5",
+      "ALTER TABLE business_settings ADD COLUMN alert_loss_percent REAL NOT NULL DEFAULT 2",
+      "ALTER TABLE business_settings ADD COLUMN alert_discount_percent REAL NOT NULL DEFAULT 5",
+      "ALTER TABLE users ADD COLUMN limit_discount REAL",
+      "ALTER TABLE users ADD COLUMN limit_expense REAL",
+      "ALTER TABLE users ADD COLUMN limit_points REAL",
+    ],
+  },
+  // Entrées (manuelles, achats) et sorties (pertes, casse, péremption, vol) de
+  // stock : approbation d'un responsable par défaut (seuil 0). Le seuil vide
+  // (aucun contrôle) était le défaut ; le propriétaire peut le remettre à vide.
+  {
+    id: 10,
+    statements: ["UPDATE business_settings SET approval_stock_threshold = 0 WHERE approval_stock_threshold IS NULL"],
+  },
+  // Contrôles des tickets de service : approbation des modifications/annulations
+  // (seuil 0 par défaut), tarifs de services FACULTATIFS (le propriétaire les
+  // définit s'il le souhaite, sinon la saisie reste manuelle), annulation
+  // formelle d'un ticket, seuil « prêt mais jamais retiré ».
+  {
+    id: 11,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN approval_ticket_threshold REAL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN stale_ticket_days INTEGER NOT NULL DEFAULT 30",
+      "ALTER TABLE users ADD COLUMN limit_ticket REAL",
+      "ALTER TABLE service_orders ADD COLUMN cancelled_at TEXT",
+      "ALTER TABLE service_orders ADD COLUMN cancel_reason TEXT",
+      "ALTER TABLE service_orders ADD COLUMN cancelled_by INTEGER",
+      "ALTER TABLE service_order_items ADD COLUMN tariff_price REAL",
+      `CREATE TABLE service_tariffs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        price REAL NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+    ],
+  },
+  // File des demandes d'approbation + mode par domaine (PIN sur le moment, ou
+  // validation ultérieure par le propriétaire — sur l'appareil ou à distance).
+  {
+    id: 12,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN approval_mode_stock TEXT NOT NULL DEFAULT 'pin'",
+      "ALTER TABLE business_settings ADD COLUMN approval_mode_expense TEXT NOT NULL DEFAULT 'pin'",
+      "ALTER TABLE business_settings ADD COLUMN approval_mode_points TEXT NOT NULL DEFAULT 'pin'",
+      `CREATE TABLE approval_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sync_id TEXT,
+        kind TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        amount REAL NOT NULL DEFAULT 0,
+        requested_by INTEGER,
+        store_id INTEGER,
+        summary TEXT NOT NULL,
+        payload TEXT,
+        decided_by INTEGER,
+        decided_at TEXT,
+        decision_note TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_approval_requests_sync_id ON approval_requests(sync_id) WHERE sync_id IS NOT NULL",
+    ],
+  },
+  // Plafond d'approbation par personne, alerte de demande en attente, et repère
+  // « contrôle effectué » du propriétaire.
+  {
+    id: 13,
+    statements: [
+      "ALTER TABLE users ADD COLUMN limit_approve REAL",
+      "ALTER TABLE business_settings ADD COLUMN approval_pending_alert_hours INTEGER NOT NULL DEFAULT 48",
+      "ALTER TABLE business_settings ADD COLUMN controls_reviewed_at TEXT",
+      "ALTER TABLE business_settings ADD COLUMN controls_reviewed_by INTEGER",
+    ],
+  },
+  // Approbation des changements de prix produit et des paiements fournisseurs.
+  {
+    id: 14,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN approval_price_threshold REAL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN approval_payment_threshold REAL DEFAULT 0",
+    ],
+  },
+  // Le demandeur est prévenu quand sa demande a été tranchée.
+  {
+    id: 15,
+    statements: ["ALTER TABLE approval_requests ADD COLUMN decision_seen INTEGER NOT NULL DEFAULT 1"],
+  },
+  // Pays du commerce (indicatif téléphonique des numéros nationaux).
+  {
+    id: 16,
+    statements: ["ALTER TABLE business_settings ADD COLUMN country TEXT"],
+  },
+  // Pack Pharmacie : fiche médicament (DCI, dosage, forme, laboratoire, sur
+  // ordonnance), ordonnance enregistrée avec la vente, et lien boîte → plaquette
+  // entre variantes d'un même produit (action « Détailler »).
+  {
+    id: 17,
+    statements: [
+      "ALTER TABLE products ADD COLUMN dci TEXT",
+      "ALTER TABLE products ADD COLUMN dosage TEXT",
+      "ALTER TABLE products ADD COLUMN dosage_form TEXT",
+      "ALTER TABLE products ADD COLUMN laboratory TEXT",
+      "ALTER TABLE products ADD COLUMN requires_prescription INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE sales ADD COLUMN prescription_ref TEXT",
+      "ALTER TABLE sales ADD COLUMN prescriber TEXT",
+      "ALTER TABLE product_variants ADD COLUMN parent_variant_id INTEGER",
+      "ALTER TABLE product_variants ADD COLUMN units_per_parent REAL",
+    ],
+  },
+  // Événement refusé par le Maître : il reste visible dans la file de l'appareil
+  // relié (avec la raison) au lieu d'être renvoyé indéfiniment sans qu'on le sache.
+  {
+    id: 18,
+    statements: ["ALTER TABLE __sync_outbox ADD COLUMN rejected_at TEXT", "ALTER TABLE __sync_outbox ADD COLUMN reject_reason TEXT"],
+  },
+  // Mode focus (code dédié pour quitter le plein écran) et PIN d'approbation
+  // séparé du PIN de déverrouillage. Les comptes existants gardent leur PIN
+  // actuel comme PIN d'approbation (copie) pour que les responsables puissent
+  // continuer d'approuver ; ils le changent ensuite dans Utilisateurs.
+  {
+    id: 19,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN focus_code_hash TEXT",
+      "ALTER TABLE business_settings ADD COLUMN focus_code_failed_attempts INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE business_settings ADD COLUMN focus_code_locked_until TEXT",
+      "ALTER TABLE users ADD COLUMN approval_pin_hash TEXT",
+      "ALTER TABLE users ADD COLUMN approval_failed_attempts INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE users ADD COLUMN approval_locked_until TEXT",
+      "UPDATE users SET approval_pin_hash = pin_hash WHERE pin_hash IS NOT NULL",
+    ],
+  },
+  // Index de lecture : jusqu'ici la base n'en avait AUCUN (hors contraintes UNIQUE).
+  // Chaque requête filtrée par date, par boutique ou par référence parcourait donc
+  // toute la table — de plus en plus lent au fil des années de ventes.
+  {
+    id: 20,
+    statements: [
+      "CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at)",
+      "CREATE INDEX IF NOT EXISTS idx_sales_store_created ON sales(store_id, created_at)",
+      "CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id)",
+      "CREATE INDEX IF NOT EXISTS idx_payments_reference ON payments(reference_type, reference_id)",
+      "CREATE INDEX IF NOT EXISTS idx_payments_created_at ON payments(created_at)",
+      "CREATE INDEX IF NOT EXISTS idx_stock_movements_variant_location ON stock_movements(variant_id, location_id)",
+      "CREATE INDEX IF NOT EXISTS idx_stock_movements_reference ON stock_movements(reference_type, reference_id)",
+      "CREATE INDEX IF NOT EXISTS idx_stock_movements_batch ON stock_movements(batch_id)",
+      "CREATE INDEX IF NOT EXISTS idx_refunds_created_at ON refunds(created_at)",
+      "CREATE INDEX IF NOT EXISTS idx_refund_items_refund ON refund_items(refund_id)",
+      "CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at)",
+      "CREATE INDEX IF NOT EXISTS idx_customer_credits_sale ON customer_credits(sale_id)",
     ],
   },
 ];

@@ -12,6 +12,7 @@
     "build": "turbo run build",
     "build:desktop": "pnpm --filter @gestion-boutique/desktop tauri build",
     "collect:releases": "node scripts/collect-releases.mjs",
+    "android:sync": "node scripts/sync-android-overrides.mjs",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "db:generate": "pnpm --filter @gestion-boutique/database db:generate",
@@ -20,5 +21,11 @@
   "devDependencies": {
     "turbo": "^2.3.0",
     "typescript": "^5.7.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "dompurify": ">=3.4.17",
+      "shell-quote": ">=1.11.0"
+    }
   }
 }

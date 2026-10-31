@@ -1,7 +1,13 @@
+import { formatAmount, formatMoney } from "../../lib/format";
 import {
   createPurchase,
   ensureVariantBarcode,
   getLowStockProducts,
+  getPriceReferences,
+  getSettings,
+  listPurchaseItems,
+  priceIncreasePercent,
+  receivePurchase,
   getSalesVelocity,
   listAllVariants,
   listProducts,
@@ -25,7 +31,9 @@ import {
   tdStyle,
   thStyle,
 } from "../../components/sharedStyles";
+import { IconX } from "../../components/icons";
 import { saveGeneratedFile } from "../../lib/saveFile";
+import { useApproval } from "../approval/ApprovalProvider";
 import { useAuth } from "../auth/useAuth";
 
 function timestampForFilename(): string {
@@ -44,6 +52,10 @@ interface CartLine {
   productName: string;
   quantity: number;
   unitCost: number;
+  // Lot et péremption : requis pour un produit suivi en péremption (saisis ici en
+  // achat simple, à la réception en achat en deux temps).
+  lotNumber?: string;
+  expiryDate?: string;
 }
 
 // Fenêtre à la fois utilisée pour lire la vitesse de vente passée (30
@@ -55,6 +67,7 @@ const REORDER_WINDOW_DAYS = 30;
 export function PurchasesPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
+  const approval = useApproval();
   const { t } = useTranslation();
 
   const PAYMENT_METHODS: { value: PurchasePaymentMethod; label: string }[] = [
@@ -81,7 +94,25 @@ export function PurchasesPage() {
   const [printingLabels, setPrintingLabels] = useState(false);
   const [labelsError, setLabelsError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [invoiceReference, setInvoiceReference] = useState("");
+  const [priceRefs, setPriceRefs] = useState<Map<number, number>>(new Map());
+  const [alertPercent, setAlertPercent] = useState(0);
+  const [twoStep, setTwoStep] = useState(false);
+  // Réception contrôlée d'un achat en attente (comptage en aveugle).
+  const [receiving, setReceiving] = useState<Purchase | null>(null);
+  const [receiveItems, setReceiveItems] = useState<Awaited<ReturnType<typeof listPurchaseItems>>>([]);
+  const [receivedInputs, setReceivedInputs] = useState<Record<number, string>>({});
+  const [receiveError, setReceiveError] = useState<string | null>(null);
+  const [receiveResult, setReceiveResult] = useState<string | null>(null);
+  const [receiveSaving, setReceiveSaving] = useState(false);
   const [lastPurchaseNumber, setLastPurchaseNumber] = useState<string | null>(null);
+  // Lot / péremption saisis à la réception (par ligne d'achat).
+  const [receivedLots, setReceivedLots] = useState<Record<number, { lotNumber: string; expiryDate: string }>>({});
+
+  const isExpiryTracked = (variantId: number): boolean => {
+    const variant = variants.find((v) => v.id === variantId);
+    return products.find((p) => p.id === variant?.productId)?.trackExpiry ?? false;
+  };
 
   const refresh = useCallback(async () => {
     const [supplierRows, productRows, variantRows, purchaseRows, lowStockRows, velocityMap] = await Promise.all([
@@ -92,6 +123,9 @@ export function PurchasesPage() {
       getLowStockProducts(db, currentStoreId ?? undefined),
       getSalesVelocity(db, REORDER_WINDOW_DAYS, currentStoreId ?? undefined),
     ]);
+    const settings = await getSettings(db);
+    setAlertPercent(settings.priceAlertPercent);
+    setTwoStep(settings.requirePurchaseReceipt);
     setSuppliers(supplierRows);
     setProducts(productRows);
     setVariants(variantRows);
@@ -103,6 +137,63 @@ export function PurchasesPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Dernier coût connu des articles du panier : sert à signaler une hausse de prix.
+  useEffect(() => {
+    let cancelled = false;
+    void getPriceReferences(db, cart.map((l) => l.variantId)).then((refs) => {
+      if (!cancelled) setPriceRefs(refs);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [db, cart]);
+
+  const startReceive = async (purchase: Purchase) => {
+    setReceiving(purchase);
+    setReceiveError(null);
+    setReceiveResult(null);
+    const items = await listPurchaseItems(db, purchase.id);
+    setReceiveItems(items);
+    setReceivedInputs({});
+    setReceivedLots({});
+  };
+
+  const handleReceive = async () => {
+    if (!user || !receiving) return;
+    setReceiveError(null);
+    setReceiveSaving(true);
+    try {
+      const result = await approval.run((a) =>
+        receivePurchase(
+          db,
+          {
+            purchaseId: receiving.id,
+            userId: user.id,
+            lines: receiveItems.map((i) => ({
+              purchaseItemId: i.id,
+              receivedQuantity: Number(receivedInputs[i.id] ?? ""),
+              lotNumber: receivedLots[i.id]?.lotNumber || undefined,
+              expiryDate: receivedLots[i.id]?.expiryDate || undefined,
+            })),
+            approval: a,
+          },
+          user.permissions,
+        ),
+      );
+      setReceiveResult(
+        result.shortfallValue > 0
+          ? t("purchasesControls.shortfallResult", { amount: formatMoney(result.shortfallValue) })
+          : t("purchasesControls.receiptOk"),
+      );
+      setReceiving(null);
+      await refresh();
+    } catch (err) {
+      setReceiveError(err instanceof Error ? err.message : t("purchases.errors.saveFailed"));
+    } finally {
+      setReceiveSaving(false);
+    }
+  };
 
   const addToCart = (product: Product, quantity = 1) => {
     const variant = variants.find((v) => v.productId === product.id);
@@ -164,6 +255,10 @@ export function PurchasesPage() {
     );
   };
 
+  const updateLot = (variantId: number, patch: { lotNumber?: string; expiryDate?: string }) => {
+    setCart((prev) => prev.map((line) => (line.variantId === variantId ? { ...line, ...patch } : line)));
+  };
+
   const removeLine = (variantId: number) => {
     setCart((prev) => prev.filter((line) => line.variantId !== variantId));
   };
@@ -198,21 +293,28 @@ export function PurchasesPage() {
     setSaving(true);
     try {
       const paidValue = amountPaid === "" ? total : Number(amountPaid);
-      const purchase = await createPurchase(db, {
-        userId: user.id,
-        supplierId: Number(supplierId),
-        items: cart.map((line) => ({
-          variantId: line.variantId,
-          quantity: line.quantity,
-          unitCost: line.unitCost,
-        })),
-        paymentMethod,
-        amountPaid: paidValue,
-        dueDate: dueDate || undefined,
-        storeId: currentStoreId,
-      }, user.permissions);
+      const purchase = await approval.run((a) =>
+        createPurchase(db, {
+          invoiceReference: invoiceReference.trim() || undefined,
+          userId: user.id,
+          supplierId: Number(supplierId),
+          items: cart.map((line) => ({
+            variantId: line.variantId,
+            quantity: line.quantity,
+            unitCost: line.unitCost,
+            lotNumber: line.lotNumber || undefined,
+            expiryDate: line.expiryDate || undefined,
+          })),
+          paymentMethod,
+          amountPaid: paidValue,
+          dueDate: dueDate || undefined,
+          storeId: currentStoreId,
+          approval: a,
+        }, user.permissions),
+      );
 
       setLastPurchaseNumber(purchase.number);
+      setInvoiceReference("");
       setLastPurchaseLines(cart);
       setLabelsError(null);
       setCart([]);
@@ -379,6 +481,9 @@ export function PurchasesPage() {
                     <th style={thStyle}>{t("purchases.quantity")}</th>
                     <th style={thStyle}>{t("purchases.unitCost")}</th>
                     <th style={thStyle}>{t("purchases.total")}</th>
+                    {!twoStep && cart.some((l) => isExpiryTracked(l.variantId)) && (
+                      <th style={thStyle}>{t("pharmacy.lotAndExpiry")}</th>
+                    )}
                     <th style={thStyle}></th>
                   </tr>
                 </thead>
@@ -396,19 +501,50 @@ export function PurchasesPage() {
                       </td>
                       <td style={tdStyle}>
                         <input
-                          type="number"
+                          type="number" step="any"
                           value={line.unitCost}
                           onChange={(e) => updateUnitCost(line.variantId, Number(e.target.value))}
                           style={{ ...inputStyle, width: 80, marginTop: 0 }}
                         />
+                        {alertPercent > 0 && priceIncreasePercent(priceRefs.get(line.variantId), line.unitCost) > alertPercent && (
+                          <div style={{ color: "var(--color-warning)", fontSize: 12, marginTop: 2 }}>
+                            {t("purchasesControls.priceAlert", {
+                              percent: Math.round(priceIncreasePercent(priceRefs.get(line.variantId), line.unitCost) * 10) / 10,
+                              previous: formatAmount(priceRefs.get(line.variantId) ?? 0),
+                            })}
+                          </div>
+                        )}
                       </td>
-                      <td style={tdStyle}>{(line.quantity * line.unitCost).toFixed(0)}</td>
+                      <td style={tdStyle}>{formatAmount(line.quantity * line.unitCost)}</td>
+                      {!twoStep && cart.some((l) => isExpiryTracked(l.variantId)) && (
+                        <td style={tdStyle}>
+                          {isExpiryTracked(line.variantId) ? (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                              <input
+                                style={{ ...inputStyle, width: 90, marginTop: 0 }}
+                                placeholder={t("pharmacy.lotNumber")}
+                                value={line.lotNumber ?? ""}
+                                onChange={(e) => updateLot(line.variantId, { lotNumber: e.target.value })}
+                              />
+                              <input
+                                style={{ ...inputStyle, width: 140, marginTop: 0 }}
+                                type="date"
+                                aria-label={t("pharmacy.expiryDate")}
+                                value={line.expiryDate ?? ""}
+                                onChange={(e) => updateLot(line.variantId, { expiryDate: e.target.value })}
+                              />
+                            </div>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      )}
                       <td style={tdStyle}>
                         <button
                           onClick={() => removeLine(line.variantId)}
-                          style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
+                          style={{ background: "transparent", border: "none", color: "var(--color-danger)", cursor: "pointer", display: "flex" }}
                         >
-                          ✕
+                          <IconX size={16} />
                         </button>
                       </td>
                     </tr>
@@ -419,8 +555,13 @@ export function PurchasesPage() {
           )}
 
           <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12, fontWeight: 700, fontSize: 18 }}>
-            {t("purchases.totalLabel")} {total.toFixed(0)}
+            {t("purchases.totalLabel")} {formatAmount(total)}
           </div>
+
+          <label>
+            {t("purchasesControls.invoiceReference")}
+            <input style={inputStyle} value={invoiceReference} onChange={(e) => setInvoiceReference(e.target.value)} />
+          </label>
 
           <label>
             {t("purchases.paymentMethod")}
@@ -441,7 +582,7 @@ export function PurchasesPage() {
             {t("purchases.amountPaid")}
             <input
               style={inputStyle}
-              type="number"
+              type="number" step="any"
               value={amountPaid}
               onChange={(e) => setAmountPaid(e.target.value)}
               placeholder={String(total)}
@@ -468,6 +609,65 @@ export function PurchasesPage() {
         </div>
       </div>
 
+      {receiveResult && <p style={{ color: "var(--color-text)", fontWeight: 600 }}>{receiveResult}</p>}
+      {receiving && (
+        <div style={cardStyle}>
+          <strong>{t("purchasesControls.receiveTitle", { number: receiving.number })}</strong>
+          <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("purchasesControls.receiveHint")}</p>
+          {receiveItems.map((item) => {
+            const variant = variants.find((v) => v.id === item.variantId);
+            const product = variant ? products.find((pr) => pr.id === variant.productId) : undefined;
+            return (
+              <label key={item.id}>
+                {product?.name ?? "?"} — {t("purchasesControls.receivedQty")}
+                <input
+                  style={inputStyle}
+                  type="number"
+                  step="any"
+                  min={0}
+                  value={receivedInputs[item.id] ?? ""}
+                  onChange={(e) => setReceivedInputs((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                />
+                {isExpiryTracked(item.variantId) && (
+                  <span style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+                    <input
+                      style={{ ...inputStyle, flex: 1, minWidth: 120, marginTop: 0 }}
+                      placeholder={t("pharmacy.lotNumber")}
+                      value={receivedLots[item.id]?.lotNumber ?? ""}
+                      onChange={(e) =>
+                        setReceivedLots((prev) => ({ ...prev, [item.id]: { lotNumber: e.target.value, expiryDate: prev[item.id]?.expiryDate ?? "" } }))
+                      }
+                    />
+                    <input
+                      style={{ ...inputStyle, flex: 1, minWidth: 140, marginTop: 0 }}
+                      type="date"
+                      aria-label={t("pharmacy.expiryDate")}
+                      value={receivedLots[item.id]?.expiryDate ?? ""}
+                      onChange={(e) =>
+                        setReceivedLots((prev) => ({ ...prev, [item.id]: { lotNumber: prev[item.id]?.lotNumber ?? "", expiryDate: e.target.value } }))
+                      }
+                    />
+                  </span>
+                )}
+              </label>
+            );
+          })}
+          {receiveError && <p style={{ color: "var(--color-danger)", fontSize: 13, margin: 0 }}>{receiveError}</p>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              style={primaryButtonStyle}
+              onClick={handleReceive}
+              disabled={receiveSaving || receiveItems.some((i) => (receivedInputs[i.id] ?? "") === "")}
+            >
+              {t("purchasesControls.receiveSubmit")}
+            </button>
+            <button style={{ ...primaryButtonStyle, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)" }} onClick={() => setReceiving(null)}>
+              {t("approval.cancel")}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="table-scroll">
         <table style={tableStyle}>
           <thead>
@@ -476,20 +676,33 @@ export function PurchasesPage() {
               <th style={thStyle}>{t("purchases.date")}</th>
               <th style={thStyle}>{t("purchases.supplier")}</th>
               <th style={thStyle}>{t("purchases.total")}</th>
+              <th style={thStyle}>{t("purchasesControls.status")}</th>
             </tr>
           </thead>
           <tbody>
             {purchases.map((p) => (
               <tr key={p.id}>
-                <td style={tdStyle}>{p.number}</td>
+                <td style={tdStyle}>
+                  {p.number}
+                  {p.invoiceReference ? <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{p.invoiceReference}</div> : null}
+                </td>
                 <td style={tdStyle}>{p.createdAt}</td>
                 <td style={tdStyle}>{supplierName(p.supplierId)}</td>
-                <td style={tdStyle}>{p.total}</td>
+                <td style={tdStyle}>{formatAmount(p.total)}</td>
+                <td style={tdStyle}>
+                  {p.status === "ordered" ? (
+                    <button style={{ ...primaryButtonStyle, padding: "4px 12px" }} onClick={() => void startReceive(p)}>
+                      {t("purchasesControls.receive")}
+                    </button>
+                  ) : (
+                    t("purchasesControls.statusReceived")
+                  )}
+                </td>
               </tr>
             ))}
             {purchases.length === 0 && (
               <tr>
-                <td style={tdStyle} colSpan={4}>
+                <td style={tdStyle} colSpan={5}>
                   {t("purchases.none")}
                 </td>
               </tr>

@@ -5,6 +5,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLanguageStore } from "../../stores/language";
 import { useThemeStore } from "../../stores/theme";
+import { IconMoon, IconSun } from "../../components/icons";
+import { FocusToggleButton } from "../focus/FocusToggleButton";
 import { StoreSwitcher } from "../stores/StoreSwitcher";
 import { ChangePasswordModal } from "./ChangePasswordModal";
 import { useAuth } from "./useAuth";
@@ -49,7 +51,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
               background: "transparent",
               border: "1px solid var(--color-warning)",
               color: "var(--color-warning)",
-              borderRadius: 8,
+              borderRadius: "var(--radius-md)",
               padding: "4px 10px",
               cursor: "pointer",
               fontSize: 13,
@@ -67,7 +69,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
           alignItems: "center",
           gap: 12,
           padding: "12px 16px",
-          background: "var(--color-bg-elevated)",
+          background: "var(--color-bg-side)",
           borderBottom: "1px solid var(--color-border)",
         }}
       >
@@ -83,7 +85,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
               background: "transparent",
               border: "1px solid var(--color-border)",
               color: "var(--color-text)",
-              borderRadius: 8,
+              borderRadius: "var(--radius-md)",
               padding: "6px 12px",
               cursor: "pointer",
             }}
@@ -98,7 +100,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
               background: "transparent",
               border: "1px solid var(--color-border)",
               color: "var(--color-text)",
-              borderRadius: 8,
+              borderRadius: "var(--radius-md)",
               padding: "6px 8px",
               cursor: "pointer",
             }}
@@ -109,23 +111,28 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
           <button
             onClick={toggleTheme}
             style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
               background: "transparent",
               border: "1px solid var(--color-border)",
               color: "var(--color-text)",
-              borderRadius: 8,
+              borderRadius: "var(--radius-md)",
               padding: "6px 12px",
               cursor: "pointer",
             }}
           >
+            {theme === "dark" ? <IconMoon size={15} /> : <IconSun size={15} />}
             {theme === "dark" ? t("topbar.themeDark") : t("topbar.themeLight")}
           </button>
+          <FocusToggleButton />
           <button
             onClick={lock}
             style={{
               background: "transparent",
               border: "1px solid var(--color-border)",
               color: "var(--color-text)",
-              borderRadius: 8,
+              borderRadius: "var(--radius-md)",
               padding: "6px 12px",
               cursor: "pointer",
             }}
@@ -138,7 +145,7 @@ export function TopBar({ multiStoreEnabled, stores }: TopBarProps) {
               background: "transparent",
               border: "1px solid var(--color-border)",
               color: "var(--color-text)",
-              borderRadius: 8,
+              borderRadius: "var(--radius-md)",
               padding: "6px 12px",
               cursor: "pointer",
             }}

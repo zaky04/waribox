@@ -2,9 +2,25 @@ import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
 import { eq } from "drizzle-orm";
-import { requirePermission, type PermissionSet } from "../domain/permissions";
+import {
+  applyOverrides,
+  assertCanChangePermissions,
+  parseOverrides,
+  requirePermission,
+  type PermissionOverrides,
+  type PermissionSet,
+} from "../domain/permissions";
 import { logAction } from "../services/AuditService";
 import { hashSecret, verifySecret } from "./hash";
+import {
+  clearFailedApprovalAttempts,
+  clearFailedAttempts,
+  registerFailedApprovalAttempt,
+  registerFailedAttempt,
+  remainingLockSeconds,
+} from "./lockout";
+import { assertValidPin, isRemotePinHash } from "./pin";
+import { getRemotePinVerifier } from "./remotePin";
 
 export interface AuthenticatedUser {
   id: number;
@@ -18,6 +34,22 @@ export interface AuthenticatedUser {
   // Boutique à laquelle ce compte est cantonné (voir schema/users.ts) — nul
   // pour Admin/Propriétaire ou en mono-boutique.
   storeId: number | null;
+  // Plafonds personnels d'approbation (null = seuil global des paramètres).
+  limitRefund: number | null;
+  limitStock: number | null;
+  limitCredit: number | null;
+  limitDiscount: number | null;
+  limitExpense: number | null;
+  limitPoints: number | null;
+  limitTicket: number | null;
+  // Montant max que cette personne peut approuver (null = illimité).
+  limitApprove: number | null;
+  // Vrai si un code PIN de déverrouillage est défini (jamais le hash).
+  hasPin: boolean;
+  // Vrai si un PIN d'approbation est défini (secret distinct du précédent).
+  hasApprovalPin: boolean;
+  // Droits particuliers (par-dessus le rôle) ; `permissions` est déjà le résultat fusionné.
+  permissionOverrides: PermissionOverrides;
 }
 
 async function toAuthenticatedUser(
@@ -32,42 +64,25 @@ async function toAuthenticatedUser(
     email: user.email,
     roleId: user.roleId,
     roleName: role?.name ?? "",
-    permissions: role ? (JSON.parse(role.permissions) as PermissionSet) : {},
+    permissions: applyOverrides(role ? (JSON.parse(role.permissions) as PermissionSet) : {}, parseOverrides(user.permissionOverrides)),
     isActive: user.isActive,
     storeId: user.storeId,
+    limitRefund: user.limitRefund,
+    limitStock: user.limitStock,
+    limitCredit: user.limitCredit,
+    limitDiscount: user.limitDiscount,
+    limitExpense: user.limitExpense,
+    limitPoints: user.limitPoints,
+    limitTicket: user.limitTicket,
+    limitApprove: user.limitApprove,
+    hasPin: !!user.pinHash,
+    hasApprovalPin: !!user.approvalPinHash,
+    permissionOverrides: parseOverrides(user.permissionOverrides),
   };
 }
 
-// Anti-brute-force : même compteur pour le mot de passe et le code PIN,
-// puisqu'ils protègent le même compte. Verrouillage court (30s) plutôt
-// qu'un blocage définitif — ralentit une attaque automatisée sans jamais
-// nécessiter l'intervention d'un administrateur pour un oubli ordinaire.
-const MAX_FAILED_ATTEMPTS = 5;
-const LOCKOUT_MS = 30_000;
-
-function remainingLockSeconds(lockedUntil: string | null): number {
-  if (!lockedUntil) return 0;
-  const until = new Date(`${lockedUntil.replace(" ", "T")}Z`).getTime();
-  return Math.max(0, Math.ceil((until - Date.now()) / 1000));
-}
-
-async function registerFailedAttempt(db: Database, userId: number, currentAttempts: number): Promise<void> {
-  const attempts = currentAttempts + 1;
-  if (attempts >= MAX_FAILED_ATTEMPTS) {
-    const lockedUntil = new Date(Date.now() + LOCKOUT_MS).toISOString().replace("T", " ").slice(0, 19);
-    await db.update(schema.users).set({ failedAttempts: 0, lockedUntil }).where(eq(schema.users.id, userId)).run();
-  } else {
-    await db.update(schema.users).set({ failedAttempts: attempts }).where(eq(schema.users.id, userId)).run();
-  }
-}
-
-async function clearFailedAttempts(db: Database, userId: number): Promise<void> {
-  await db
-    .update(schema.users)
-    .set({ failedAttempts: 0, lockedUntil: null })
-    .where(eq(schema.users.id, userId))
-    .run();
-}
+// Anti-brute-force : voir lockout.ts (verrouillage progressif, compteur partagé
+// entre mot de passe et code PIN puisqu'ils protègent le même compte).
 
 export async function hasAnyUser(db: Database): Promise<boolean> {
   const existing = await db.select({ id: schema.users.id }).from(schema.users).limit(1).get();
@@ -82,8 +97,19 @@ export async function createUser(
     email?: string;
     password: string;
     pin?: string;
+    // PIN d'approbation : un secret différent du PIN de déverrouillage.
+    approvalPin?: string;
     roleId: number;
     storeId?: number | null;
+    limitRefund?: number | null;
+    limitStock?: number | null;
+    limitCredit?: number | null;
+    limitDiscount?: number | null;
+    limitExpense?: number | null;
+    limitPoints?: number | null;
+    limitTicket?: number | null;
+    limitApprove?: number | null;
+    permissionOverrides?: PermissionOverrides;
     createdBy?: number;
   },
   actingPermissions: PermissionSet,
@@ -91,8 +117,13 @@ export async function createUser(
   // Aucune vérification si la base ne contient encore aucun compte — c'est
   // le tout premier compte (Admin) créé par SetupAdminScreen, avant qu'une
   // session ne puisse exister.
-  if (await hasAnyUser(db)) {
+  const firstAccount = !(await hasAnyUser(db));
+  if (!firstAccount) {
     requirePermission(actingPermissions, "manage_users");
+    // Accorder un rôle ou des droits "de pouvoir" exige de les détenir soi-même.
+    const role = await db.select().from(schema.roles).where(eq(schema.roles.id, input.roleId)).get();
+    const rolePerms = role ? (JSON.parse(role.permissions) as PermissionSet) : {};
+    assertCanChangePermissions(actingPermissions, {}, applyOverrides(rolePerms, input.permissionOverrides ?? {}));
   }
 
   // Normalisé (espaces + casse) pour que "Admin" et "admin" désignent le même
@@ -106,8 +137,14 @@ export async function createUser(
     throw new Error(t("coreErrors.auth.usernameTaken"));
   }
 
+  if (input.pin) assertValidPin(input.pin);
+  if (input.approvalPin) {
+    assertValidPin(input.approvalPin);
+    if (input.approvalPin === input.pin) throw new Error(t("coreErrors.auth.pinsMustDiffer"));
+  }
   const passwordHash = await hashSecret(input.password);
   const pinHash = input.pin ? await hashSecret(input.pin) : null;
+  const approvalPinHash = input.approvalPin ? await hashSecret(input.approvalPin) : null;
 
   const created = await db
     .insert(schema.users)
@@ -117,8 +154,18 @@ export async function createUser(
       email: input.email,
       passwordHash,
       pinHash,
+      approvalPinHash,
       roleId: input.roleId,
       storeId: input.storeId,
+      limitRefund: input.limitRefund,
+      limitStock: input.limitStock,
+      limitCredit: input.limitCredit,
+      limitDiscount: input.limitDiscount,
+      limitExpense: input.limitExpense,
+      limitPoints: input.limitPoints,
+      limitTicket: input.limitTicket,
+      limitApprove: input.limitApprove,
+      permissionOverrides: input.permissionOverrides && Object.keys(input.permissionOverrides).length > 0 ? JSON.stringify(input.permissionOverrides) : null,
     })
     .returning()
     .get();
@@ -192,6 +239,14 @@ export async function verifyPin(db: Database, userId: number, pin: string): Prom
 
   if (!user?.pinHash) return false;
 
+  // PIN vérifiable seulement chez le Maître (voir pin.ts) : le défi/réponse, le
+  // compteur d'essais et le verrouillage y sont gérés (verifyPinProof).
+  if (isRemotePinHash(user.pinHash)) {
+    const remote = getRemotePinVerifier();
+    if (!remote) throw new Error(t("coreErrors.auth.pinRemoteOnly"));
+    return remote(userId, pin, "unlock");
+  }
+
   const lockedSeconds = remainingLockSeconds(user.lockedUntil);
   if (lockedSeconds > 0) {
     throw new Error(t("coreErrors.common.tooManyAttempts", { seconds: lockedSeconds }));
@@ -207,9 +262,53 @@ export async function verifyPin(db: Database, userId: number, pin: string): Prom
   return true;
 }
 
-export async function setPin(db: Database, userId: number, pin: string): Promise<void> {
+export async function setPin(
+  db: Database,
+  userId: number,
+  pin: string,
+  actingPermissions: PermissionSet,
+): Promise<void> {
+  requirePermission(actingPermissions, "manage_users");
+  assertValidPin(pin);
   const pinHash = await hashSecret(pin);
   await db.update(schema.users).set({ pinHash }).where(eq(schema.users.id, userId)).run();
+}
+
+// PIN d'approbation : celui qu'un responsable saisit pour valider une action
+// (remise, remboursement, dépense...). Distinct du PIN de déverrouillage, avec son
+// propre compteur d'essais. Sur un appareil relié il se vérifie chez le Maître.
+export async function verifyApprovalPin(db: Database, userId: number, pin: string): Promise<boolean> {
+  const user = await db
+    .select({
+      approvalPinHash: schema.users.approvalPinHash,
+      approvalFailedAttempts: schema.users.approvalFailedAttempts,
+      approvalLockedUntil: schema.users.approvalLockedUntil,
+    })
+    .from(schema.users)
+    .where(eq(schema.users.id, userId))
+    .get();
+
+  if (!user?.approvalPinHash) return false;
+
+  if (isRemotePinHash(user.approvalPinHash)) {
+    const remote = getRemotePinVerifier();
+    if (!remote) throw new Error(t("coreErrors.auth.pinRemoteOnly"));
+    return remote(userId, pin, "approval");
+  }
+
+  const lockedSeconds = remainingLockSeconds(user.approvalLockedUntil);
+  if (lockedSeconds > 0) {
+    throw new Error(t("coreErrors.common.tooManyAttempts", { seconds: lockedSeconds }));
+  }
+
+  const valid = await verifySecret(pin, user.approvalPinHash);
+  if (!valid) {
+    await registerFailedApprovalAttempt(db, userId, user.approvalFailedAttempts);
+    return false;
+  }
+
+  await clearFailedApprovalAttempts(db, userId);
+  return true;
 }
 
 // Désactiver un compte bloque immédiatement la connexion (verifyPassword
@@ -271,12 +370,29 @@ export async function changeOwnPassword(
   await db.update(schema.users).set({ passwordHash }).where(eq(schema.users.id, userId)).run();
 }
 
+const LIMIT_KEYS = ["limitRefund", "limitStock", "limitCredit", "limitDiscount", "limitExpense", "limitPoints", "limitTicket", "limitApprove"] as const;
+
 export interface UpdateUserInput {
   fullName?: string;
   username?: string;
   email?: string;
   roleId?: number;
   storeId?: number | null;
+  limitRefund?: number | null;
+  limitStock?: number | null;
+  limitCredit?: number | null;
+  limitDiscount?: number | null;
+  limitExpense?: number | null;
+  limitPoints?: number | null;
+  limitTicket?: number | null;
+  limitApprove?: number | null;
+  // Nouveau code PIN (4 chiffres) — nécessaire pour qu'un responsable puisse
+  // approuver des actions.
+  pin?: string;
+  // Nouveau PIN d'approbation (secret distinct du PIN de déverrouillage).
+  approvalPin?: string;
+  // Droits particuliers (remplace l'ensemble ; {} ou null = aucun).
+  permissionOverrides?: PermissionOverrides | null;
   // Réinitialisation par l'Admin — contrairement à changeOwnPassword, ne
   // demande jamais l'ancien mot de passe (c'est justement l'intérêt : un
   // utilisateur qui l'a oublié).
@@ -300,6 +416,46 @@ export async function updateUser(
   if (input.email !== undefined) updates.email = input.email;
   if (input.roleId !== undefined) updates.roleId = input.roleId;
   if (input.storeId !== undefined) updates.storeId = input.storeId;
+  if (input.limitRefund !== undefined) updates.limitRefund = input.limitRefund;
+  if (input.limitStock !== undefined) updates.limitStock = input.limitStock;
+  if (input.limitCredit !== undefined) updates.limitCredit = input.limitCredit;
+  if (input.limitDiscount !== undefined) updates.limitDiscount = input.limitDiscount;
+  if (input.limitExpense !== undefined) updates.limitExpense = input.limitExpense;
+  if (input.limitPoints !== undefined) updates.limitPoints = input.limitPoints;
+  if (input.limitTicket !== undefined) updates.limitTicket = input.limitTicket;
+  if (input.limitApprove !== undefined) updates.limitApprove = input.limitApprove;
+  const before = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get();
+  if (input.pin) {
+    assertValidPin(input.pin);
+    updates.pinHash = await hashSecret(input.pin);
+  }
+  if (input.approvalPin) {
+    assertValidPin(input.approvalPin);
+    updates.approvalPinHash = await hashSecret(input.approvalPin);
+  }
+  // Les deux PIN doivent rester différents, même quand un seul est modifié :
+  // on compare au PIN saisi, ou au hash enregistré de l'autre.
+  if (input.pin && input.approvalPin && input.pin === input.approvalPin) throw new Error(t("coreErrors.auth.pinsMustDiffer"));
+  if (input.pin && !input.approvalPin && before?.approvalPinHash && !isRemotePinHash(before.approvalPinHash) && (await verifySecret(input.pin, before.approvalPinHash))) {
+    throw new Error(t("coreErrors.auth.pinsMustDiffer"));
+  }
+  if (input.approvalPin && !input.pin && before?.pinHash && !isRemotePinHash(before.pinHash) && (await verifySecret(input.approvalPin, before.pinHash))) {
+    throw new Error(t("coreErrors.auth.pinsMustDiffer"));
+  }
+  if (input.permissionOverrides !== undefined) {
+    updates.permissionOverrides =
+      input.permissionOverrides && Object.keys(input.permissionOverrides).length > 0 ? JSON.stringify(input.permissionOverrides) : null;
+  }
+  if (before && (input.permissionOverrides !== undefined || input.roleId !== undefined)) {
+    const roleRows = await db.select().from(schema.roles);
+    const permsOf = (roleId: number, overridesRaw: string | null | undefined) => {
+      const r = roleRows.find((x) => x.id === roleId);
+      return applyOverrides(r ? (JSON.parse(r.permissions) as PermissionSet) : {}, parseOverrides(overridesRaw));
+    };
+    const beforePerms = permsOf(before.roleId, before.permissionOverrides);
+    const afterPerms = permsOf(input.roleId ?? before.roleId, updates.permissionOverrides !== undefined ? updates.permissionOverrides : before.permissionOverrides);
+    assertCanChangePermissions(actingPermissions, beforePerms, afterPerms);
+  }
 
   if (input.username !== undefined) {
     const username = input.username.trim().toLowerCase();
@@ -325,7 +481,19 @@ export async function updateUser(
       action: "update_user",
       entity: "user",
       entityId: userId,
-      metadata: { fullName: updated.fullName, roleId: updated.roleId, passwordReset: !!input.newPassword },
+      metadata: {
+        fullName: updated.fullName,
+        roleId: updated.roleId,
+        passwordReset: !!input.newPassword,
+        pinChanged: !!input.pin,
+        approvalPinChanged: !!input.approvalPin,
+        overrides: input.permissionOverrides !== undefined ? { from: before?.permissionOverrides ?? null, to: updated.permissionOverrides ?? null } : undefined,
+        // Changement de rôle ou de plafonds : ancienne et nouvelle valeur.
+        roleFrom: before && before.roleId !== updated.roleId ? before.roleId : undefined,
+        limits: before && LIMIT_KEYS.some((k) => before[k] !== updated[k])
+          ? { from: LIMIT_KEYS.map((k) => before[k]), to: LIMIT_KEYS.map((k) => updated[k]) }
+          : undefined,
+      },
     });
   }
 

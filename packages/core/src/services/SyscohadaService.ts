@@ -8,6 +8,7 @@ import { listPurchases } from "./PurchasesService";
 import type { DateRange } from "./ReportsService";
 import { listSales } from "./SalesService";
 import { getSettings } from "./SettingsService";
+import { localDayEndUtc, localDayStartUtc } from "../domain/localDay";
 
 // Export comptable au référentiel SYSCOHADA révisé (OHADA, zone UEMOA/CFA) —
 // reclasse les mêmes données déjà utilisées par AccountingService (revenu,
@@ -146,8 +147,8 @@ function round2(n: number): number {
 }
 
 function normalizeRange(range: DateRange): DateRange {
-  const from = range.from.length === 10 ? `${range.from} 00:00:00` : range.from;
-  const to = range.to.length === 10 ? `${range.to} 23:59:59` : range.to;
+  const from = range.from.length === 10 ? localDayStartUtc(range.from) : range.from;
+  const to = range.to.length === 10 ? localDayEndUtc(range.to) : range.to;
   return { from, to };
 }
 
@@ -257,6 +258,7 @@ export async function getJournalVentes(
   }
 
   for (const so of serviceOrders) {
+    if (so.cancelledAt) continue; // ticket annulé : ni produit ni encaissement
     if (storeId && so.storeId !== storeId) continue;
     if (!inRange(so.createdAt, normalized)) continue;
 

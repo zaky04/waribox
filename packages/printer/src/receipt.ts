@@ -1,4 +1,4 @@
-import { t } from "@gestion-boutique/i18n";
+import { t, formatMoneyPlain, formatAmountPlain } from "@gestion-boutique/i18n";
 import { EscPosBuilder } from "./escpos";
 import { rasterizeLogo } from "./logo";
 
@@ -23,6 +23,13 @@ export interface ReceiptData {
   date: string;
   cashierName: string;
   customerName?: string;
+  // FNE (Facture Normalisée Électronique, Côte d'Ivoire) — voir CLAUDE.md.
+  // `fneStatus` absent = la FNE n'a jamais été activée pour cette vente,
+  // aucune ligne affichée. Voir packages/core/src/fne/.
+  fneStatus?: "pending" | "certified" | "failed";
+  fneReference?: string;
+  // Ordonnance (pack Pharmacie) : référence imprimée sur le ticket si présente.
+  prescriptionRef?: string;
   lines: ReceiptLine[];
   subtotal: number;
   discount: number;
@@ -75,13 +82,23 @@ export async function buildReceipt(data: ReceiptData): Promise<Uint8Array> {
   if (data.customerName) {
     builder.text(t("documents.common.customer", { name: data.customerName })).newline();
   }
+  if (data.prescriptionRef) {
+    builder.text(t("documents.receipt.prescription", { reference: data.prescriptionRef })).newline();
+  }
+  if (data.fneStatus === "certified" && data.fneReference) {
+    builder.text(t("documents.receipt.fneCertified", { reference: data.fneReference })).newline();
+  } else if (data.fneStatus === "pending") {
+    builder.text(t("documents.receipt.fnePending")).newline();
+  } else if (data.fneStatus === "failed") {
+    builder.text(t("documents.receipt.fneFailed")).newline();
+  }
 
   builder.align("left");
   builder.text(separator).newline();
 
   for (const line of data.lines) {
     const left = `${line.quantity} x ${line.label}`;
-    const right = line.total.toFixed(0);
+    const right = formatAmountPlain(line.total);
     const combined = padLine(left, right, columns);
     if (combined) {
       builder.text(combined).newline();
@@ -93,19 +110,19 @@ export async function buildReceipt(data: ReceiptData): Promise<Uint8Array> {
   }
 
   builder.text(separator).newline();
-  builder.text(t("documents.common.subtotal", { amount: data.subtotal.toFixed(0) })).newline();
+  builder.text(t("documents.common.subtotal", { amount: formatAmountPlain(data.subtotal) })).newline();
   if (data.discount > 0) {
-    builder.text(t("documents.common.discount", { amount: data.discount.toFixed(0) })).newline();
+    builder.text(t("documents.common.discount", { amount: formatAmountPlain(data.discount) })).newline();
   }
   if (data.tax > 0) {
-    builder.text(t("documents.common.tax", { amount: data.tax.toFixed(0) })).newline();
+    builder.text(t("documents.common.tax", { amount: formatAmountPlain(data.tax) })).newline();
   }
-  builder.bold(true).text(t("documents.common.total", { amount: data.total.toFixed(0) })).newline().bold(false);
+  builder.bold(true).text(t("documents.common.total", { amount: formatMoneyPlain(data.total) })).newline().bold(false);
   builder
     .text(
       t("documents.receipt.payment", {
         method: t(`sales.paymentMethods.${data.paymentMethod}`, { defaultValue: data.paymentMethod }),
-        amount: data.amountPaid.toFixed(0),
+        amount: formatAmountPlain(data.amountPaid),
       }),
     )
     .newline();
