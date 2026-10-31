@@ -421,6 +421,26 @@ export const MIGRATIONS: Migration[] = [
       "UPDATE users SET approval_pin_hash = pin_hash WHERE pin_hash IS NOT NULL",
     ],
   },
+  // Index de lecture : jusqu'ici la base n'en avait AUCUN (hors contraintes UNIQUE).
+  // Chaque requête filtrée par date, par boutique ou par référence parcourait donc
+  // toute la table — de plus en plus lent au fil des années de ventes.
+  {
+    id: 20,
+    statements: [
+      "CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at)",
+      "CREATE INDEX IF NOT EXISTS idx_sales_store_created ON sales(store_id, created_at)",
+      "CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id)",
+      "CREATE INDEX IF NOT EXISTS idx_payments_reference ON payments(reference_type, reference_id)",
+      "CREATE INDEX IF NOT EXISTS idx_payments_created_at ON payments(created_at)",
+      "CREATE INDEX IF NOT EXISTS idx_stock_movements_variant_location ON stock_movements(variant_id, location_id)",
+      "CREATE INDEX IF NOT EXISTS idx_stock_movements_reference ON stock_movements(reference_type, reference_id)",
+      "CREATE INDEX IF NOT EXISTS idx_stock_movements_batch ON stock_movements(batch_id)",
+      "CREATE INDEX IF NOT EXISTS idx_refunds_created_at ON refunds(created_at)",
+      "CREATE INDEX IF NOT EXISTS idx_refund_items_refund ON refund_items(refund_id)",
+      "CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at)",
+      "CREATE INDEX IF NOT EXISTS idx_customer_credits_sale ON customer_credits(sale_id)",
+    ],
+  },
 ];
 
 async function runMigrations(): Promise<void> {

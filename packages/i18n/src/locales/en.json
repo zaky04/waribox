@@ -223,7 +223,8 @@
     "status": "Status",
     "report": "Report",
     "generating": "Generating...",
-    "noSales": "No sales for this selection."
+    "noSales": "No sales for this selection.",
+    "loadMore": "Show more sales"
   },
   "settings": {
     "title": "Configuration",
@@ -378,6 +379,20 @@
       "errors": {
         "noFolderChosen": "No backup folder chosen.",
         "writePermissionDenied": "Write permission denied for the backup folder."
+      },
+      "encryption": {
+        "heading": "Backup encryption",
+        "hint": "Protects the backup file with a password: without it the file cannot be opened (Google Drive, USB stick, shared phone...).",
+        "passphrase": "Encryption password (8 characters minimum)",
+        "enable": "Turn on encryption",
+        "disable": "Turn off encryption",
+        "disableConfirm": "Future backups will no longer be encrypted. Continue?",
+        "active": "Encryption is on: backups are protected by your password.",
+        "warning": "Write this password down somewhere safe: without it an encrypted backup is permanently unreadable (nobody can recover it).",
+        "tooShort": "The password must be at least 8 characters.",
+        "importPassphrase": "This backup is encrypted. Password",
+        "decryptAndRestore": "Decrypt and restore",
+        "wrongPassphrase": "Wrong password, or the file is damaged."
       }
     },
     "maintenance": {
@@ -823,7 +838,17 @@
     "packTitle": "Pharmacy pack",
     "packHint": "Drug sheet (INN, strength, prescription), mandatory expiry, expired batches not sellable, equivalents, box break-down and lot traceability are active. You can add starter categories (never duplicated).",
     "starterInstall": "Install starter categories",
-    "starterCategories": ["Pain and fever", "Antibiotics", "Antimalarials", "Anti-inflammatories", "Vitamins and supplements", "Digestion", "Cough and cold", "Hygiene and care", "Medical equipment"],
+    "starterCategories": [
+      "Pain and fever",
+      "Antibiotics",
+      "Antimalarials",
+      "Anti-inflammatories",
+      "Vitamins and supplements",
+      "Digestion",
+      "Cough and cold",
+      "Hygiene and care",
+      "Medical equipment"
+    ],
     "starterDone": "{{count}} categories added.",
     "starterNone": "The starter categories already exist.",
     "starterFailed": "Adding the categories failed."

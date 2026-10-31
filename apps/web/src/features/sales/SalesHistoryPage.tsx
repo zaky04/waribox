@@ -46,6 +46,7 @@ interface FilterState {
   paymentMethod: string;
   search: string;
 }
+const PAGE_SIZE = 100;
 const EMPTY_FILTERS: FilterState = {
   from: "",
   to: "",
@@ -87,14 +88,13 @@ export function SalesHistoryPage() {
   const [refundingSale, setRefundingSale] = useState<Sale | null>(null);
 
   const refreshReference = useCallback(async () => {
-    const [productRows, variantRows, userRows, customerRows, storeRows, salePayments, businessSettings] =
+    const [productRows, variantRows, userRows, customerRows, storeRows, businessSettings] =
       await Promise.all([
         listProducts(db),
         listAllVariants(db),
         listUsers(db),
         listCustomers(db),
         listStores(db),
-        listSalePayments(db),
         getSettings(db),
       ]);
     setProducts(productRows);
@@ -102,7 +102,6 @@ export function SalesHistoryPage() {
     setUsers(userRows);
     setCustomers(customerRows);
     setStores(storeRows);
-    setPayments(salePayments);
     setSettings(businessSettings);
     setMultiStoreEnabled(businessSettings.multiStoreEnabled);
   }, [db]);
@@ -111,8 +110,15 @@ export function SalesHistoryPage() {
     refreshReference();
   }, [refreshReference]);
 
+  // Les ventes s'affichent par pages (les plus récentes d'abord) : sur un historique de
+  // plusieurs dizaines de milliers de ventes, tout charger et tout dessiner d'un coup
+  // rendait la page lente. On lit une ligne de plus que la page pour savoir s'il y en a d'autres.
+  const [pageLimit, setPageLimit] = useState(PAGE_SIZE);
+  const [hasMore, setHasMore] = useState(false);
+
   const refreshSales = useCallback(async () => {
-    const rows = await listSales(db, {
+    const found = await listSales(db, {
+      limit: pageLimit + 1,
       from: filters.from || undefined,
       to: filters.to || undefined,
       userId: filters.userId ? Number(filters.userId) : undefined,
@@ -121,8 +127,16 @@ export function SalesHistoryPage() {
       paymentMethod: filters.paymentMethod || undefined,
       search: filters.search || undefined,
     });
+    const rows = found.slice(0, pageLimit);
+    setHasMore(found.length > pageLimit);
+    setPayments(await listSalePayments(db, rows.map((r) => r.id)));
     setSales(rows);
-  }, [db, filters]);
+  }, [db, filters, pageLimit]);
+
+  // Un changement de filtre revient à la première page.
+  useEffect(() => {
+    setPageLimit(PAGE_SIZE);
+  }, [filters]);
 
   useEffect(() => {
     refreshSales();
@@ -136,7 +150,8 @@ export function SalesHistoryPage() {
     const product = products.find((p) => p.id === variant?.productId);
     return product?.name ?? "—";
   };
-  const paymentForSale = (saleId: number) => payments.find((p) => p.referenceId === saleId);
+  const paymentBySaleId = useMemo(() => new Map(payments.map((p) => [p.referenceId, p] as const)), [payments]);
+  const paymentForSale = (saleId: number) => paymentBySaleId.get(saleId);
 
   const customerOptions = useMemo(
     () => customers.map((c) => ({ value: String(c.id), label: c.fullName })),
@@ -320,6 +335,17 @@ export function SalesHistoryPage() {
           </tbody>
         </table>
       </div>
+      {hasMore && (
+        <div style={{ textAlign: "center", marginTop: 12 }}>
+          <button
+            type="button"
+            style={{ ...primaryButtonStyle, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)" }}
+            onClick={() => setPageLimit((n) => n + PAGE_SIZE)}
+          >
+            {t("salesHistory.loadMore")}
+          </button>
+        </div>
+      )}
       {refundingSale && (
         <RefundModal
           sale={refundingSale}

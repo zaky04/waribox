@@ -7,6 +7,7 @@ import { getSettings } from "./SettingsService";
 import { logAction } from "./AuditService";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { assertValidAmount } from "../domain/validation";
+import { localDayEndUtc, localDayStartUtc } from "../domain/localDay";
 
 // Une session est scopée par (utilisateur, boutique) — un même caissier peut
 // avoir une session ouverte par boutique s'il opère sur plusieurs.
@@ -180,8 +181,8 @@ export interface CashSessionFilters {
 // qu'une session en cours n'a jamais existé.
 export async function listCashSessions(db: Database, filters: CashSessionFilters = {}) {
   const conditions = [];
-  if (filters.from) conditions.push(gte(schema.cashSessions.openedAt, `${filters.from.slice(0, 10)} 00:00:00`));
-  if (filters.to) conditions.push(lte(schema.cashSessions.openedAt, `${filters.to.slice(0, 10)} 23:59:59`));
+  if (filters.from) conditions.push(gte(schema.cashSessions.openedAt, localDayStartUtc(filters.from)));
+  if (filters.to) conditions.push(lte(schema.cashSessions.openedAt, localDayEndUtc(filters.to)));
   if (filters.storeId) conditions.push(eq(schema.cashSessions.storeId, filters.storeId));
 
   const query = db.select().from(schema.cashSessions).orderBy(desc(schema.cashSessions.id));

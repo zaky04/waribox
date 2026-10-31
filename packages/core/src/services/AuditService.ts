@@ -1,6 +1,7 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { and, asc, desc, eq, gte, isNotNull, like, lte, or } from "drizzle-orm";
+import { localDayEndUtc, localDayStartUtc } from "../domain/localDay";
 
 export interface LogActionInput {
   userId?: number | null;
@@ -131,8 +132,8 @@ export interface AuditLogFilters {
 
 export async function listAuditLog(db: Database, filters: AuditLogFilters = {}) {
   const conditions = [];
-  if (filters.from) conditions.push(gte(schema.auditLog.createdAt, `${filters.from.slice(0, 10)} 00:00:00`));
-  if (filters.to) conditions.push(lte(schema.auditLog.createdAt, `${filters.to.slice(0, 10)} 23:59:59`));
+  if (filters.from) conditions.push(gte(schema.auditLog.createdAt, localDayStartUtc(filters.from)));
+  if (filters.to) conditions.push(lte(schema.auditLog.createdAt, localDayEndUtc(filters.to)));
   if (filters.userId) conditions.push(eq(schema.auditLog.userId, filters.userId));
   if (filters.action) conditions.push(eq(schema.auditLog.action, filters.action));
   if (filters.search) {

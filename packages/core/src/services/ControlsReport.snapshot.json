@@ -1,0 +1,1418 @@
+{
+ "all": {
+  "from": "2026-05-01",
+  "to": "2026-05-31",
+  "alerts": [
+   {
+    "subject": "employee",
+    "id": 3,
+    "name": "Caissier",
+    "code": "cash_variance",
+    "severity": "danger",
+    "value": -1000
+   },
+   {
+    "subject": "employee",
+    "id": 3,
+    "name": "Caissier",
+    "code": "failed_approvals",
+    "severity": "danger",
+    "value": 3
+   },
+   {
+    "subject": "employee",
+    "id": 2,
+    "name": "Gérant",
+    "code": "cash_variance",
+    "severity": "danger",
+    "value": -499
+   },
+   {
+    "subject": "supplier",
+    "id": 1,
+    "name": "Fournisseur A",
+    "code": "supplier_shortfall",
+    "severity": "danger",
+    "value": 2000
+   },
+   {
+    "subject": "shop",
+    "id": 0,
+    "name": "",
+    "code": "unpaid_pickups",
+    "severity": "danger",
+    "value": 8500
+   },
+   {
+    "subject": "shop",
+    "id": 0,
+    "name": "",
+    "code": "number_gaps",
+    "severity": "danger",
+    "value": 4
+   },
+   {
+    "subject": "employee",
+    "id": 3,
+    "name": "Caissier",
+    "code": "refund_rate",
+    "severity": "warning",
+    "value": 29.72972972972973
+   },
+   {
+    "subject": "employee",
+    "id": 3,
+    "name": "Caissier",
+    "code": "rejected_approvals",
+    "severity": "warning",
+    "value": 2
+   },
+   {
+    "subject": "employee",
+    "id": 3,
+    "name": "Caissier",
+    "code": "loss_rate",
+    "severity": "warning",
+    "value": 3.2432432432432434
+   },
+   {
+    "subject": "employee",
+    "id": 2,
+    "name": "Gérant",
+    "code": "loss_rate",
+    "severity": "warning",
+    "value": 40
+   },
+   {
+    "subject": "supplier",
+    "id": 1,
+    "name": "Fournisseur A",
+    "code": "supplier_price_alert",
+    "severity": "warning",
+    "value": 1
+   },
+   {
+    "subject": "supplier",
+    "id": 1,
+    "name": "Fournisseur A",
+    "code": "supplier_same_user_receipt",
+    "severity": "warning",
+    "value": 1
+   },
+   {
+    "subject": "shop",
+    "id": 0,
+    "name": "",
+    "code": "stale_tickets",
+    "severity": "warning",
+    "value": 1
+   }
+  ],
+  "staleTickets": [
+   {
+    "number": "TCK-2026-000001",
+    "readyItems": 1,
+    "value": 3000,
+    "ageDays": "<age>"
+   }
+  ],
+  "unpaidPickups": [
+   {
+    "number": "TCK-2026-000002",
+    "customerName": "—",
+    "remaining": 8000,
+    "closedAt": "2026-05-09 10:00:00"
+   },
+   {
+    "number": "TCK-2026-000006",
+    "customerName": "—",
+    "remaining": 500,
+    "closedAt": "2026-02-02 10:00:00"
+   }
+  ],
+  "numberGaps": [
+   {
+    "kind": "sale",
+    "missing": [
+     "VTE-2026-000004",
+     "VTE-2026-000007",
+     "VTE-2026-000008"
+    ]
+   },
+   {
+    "kind": "ticket",
+    "missing": [
+     "TCK-2026-000003"
+    ]
+   }
+  ],
+  "employees": [
+   {
+    "userId": 3,
+    "name": "Caissier",
+    "salesCount": 3,
+    "salesTotal": 37000,
+    "refundsProcessed": 2,
+    "refundsProcessedTotal": 5500,
+    "refundedOnOwnSalesTotal": 11000,
+    "refundRate": 29.72972972972973,
+    "creditCount": 1,
+    "creditTotal": 8000,
+    "creditOpen": 8000,
+    "lossCount": 1,
+    "lossValue": 1200,
+    "manualEntryCount": 1,
+    "manualEntryValue": 1600,
+    "cashSessions": 2,
+    "cashVariance": -1000,
+    "cashAlerts": 1,
+    "failedApprovals": 3,
+    "approvalsGiven": 0,
+    "priceChanges": 0,
+    "expenseEdits": 0,
+    "unauthorizedDiscountTotal": 1500,
+    "discountRate": 4.054054054054054,
+    "approvalsRejected": 2,
+    "pointsAdjusted": 40,
+    "ticketsCount": 1,
+    "ticketsTotal": 8000,
+    "lowTickets": 0,
+    "ticketCancels": 0,
+    "flags": [
+     {
+      "code": "refund_rate",
+      "severity": "warning",
+      "value": 29.72972972972973
+     },
+     {
+      "code": "cash_variance",
+      "severity": "danger",
+      "value": -1000
+     },
+     {
+      "code": "rejected_approvals",
+      "severity": "warning",
+      "value": 2
+     },
+     {
+      "code": "loss_rate",
+      "severity": "warning",
+      "value": 3.2432432432432434
+     },
+     {
+      "code": "failed_approvals",
+      "severity": "danger",
+      "value": 3
+     }
+    ],
+    "riskScore": 73,
+    "riskLevel": "high"
+   },
+   {
+    "userId": 2,
+    "name": "Gérant",
+    "salesCount": 1,
+    "salesTotal": 5000,
+    "refundsProcessed": 2,
+    "refundsProcessedTotal": 5500,
+    "refundedOnOwnSalesTotal": 0,
+    "refundRate": 0,
+    "creditCount": 1,
+    "creditTotal": 2000,
+    "creditOpen": 1200,
+    "lossCount": 1,
+    "lossValue": 2000,
+    "manualEntryCount": 1,
+    "manualEntryValue": 8000,
+    "cashSessions": 1,
+    "cashVariance": -499,
+    "cashAlerts": 1,
+    "failedApprovals": 0,
+    "approvalsGiven": 0,
+    "priceChanges": 1,
+    "expenseEdits": 1,
+    "unauthorizedDiscountTotal": 0,
+    "discountRate": 0,
+    "approvalsRejected": 0,
+    "pointsAdjusted": 0,
+    "ticketsCount": 1,
+    "ticketsTotal": 0,
+    "lowTickets": 1,
+    "ticketCancels": 1,
+    "flags": [
+     {
+      "code": "cash_variance",
+      "severity": "danger",
+      "value": -499
+     },
+     {
+      "code": "loss_rate",
+      "severity": "warning",
+      "value": 40
+     }
+    ],
+    "riskScore": 44,
+    "riskLevel": "medium"
+   },
+   {
+    "userId": 1,
+    "name": "Admin",
+    "salesCount": 1,
+    "salesTotal": 3000,
+    "refundsProcessed": 1,
+    "refundsProcessedTotal": 500,
+    "refundedOnOwnSalesTotal": 500,
+    "refundRate": 16.666666666666664,
+    "creditCount": 0,
+    "creditTotal": 0,
+    "creditOpen": 0,
+    "lossCount": 0,
+    "lossValue": 0,
+    "manualEntryCount": 0,
+    "manualEntryValue": 0,
+    "cashSessions": 0,
+    "cashVariance": 0,
+    "cashAlerts": 0,
+    "failedApprovals": 0,
+    "approvalsGiven": 10,
+    "priceChanges": 0,
+    "expenseEdits": 0,
+    "unauthorizedDiscountTotal": 0,
+    "discountRate": 0,
+    "approvalsRejected": 0,
+    "pointsAdjusted": 0,
+    "ticketsCount": 0,
+    "ticketsTotal": 0,
+    "lowTickets": 0,
+    "ticketCancels": 0,
+    "flags": [],
+    "riskScore": 20,
+    "riskLevel": "low"
+   }
+  ],
+  "suppliers": [
+   {
+    "supplierId": 1,
+    "name": "Fournisseur A",
+    "purchasesCount": 2,
+    "purchasesTotal": 21000,
+    "priceAlerts": 1,
+    "awaitingReceipt": 1,
+    "shortfallValue": 2000,
+    "sameUserReceipts": 1,
+    "openDebt": 4000,
+    "flags": [
+     {
+      "code": "supplier_price_alert",
+      "severity": "warning",
+      "value": 1
+     },
+     {
+      "code": "supplier_shortfall",
+      "severity": "danger",
+      "value": 2000
+     },
+     {
+      "code": "supplier_same_user_receipt",
+      "severity": "warning",
+      "value": 1
+     }
+    ]
+   }
+  ],
+  "cashVariances": [
+   {
+    "sessionId": 3,
+    "userId": 2,
+    "closedAt": "2026-05-04 18:00:00",
+    "expected": 500,
+    "counted": 1,
+    "difference": -499,
+    "alert": true
+   },
+   {
+    "sessionId": 2,
+    "userId": 3,
+    "closedAt": "2026-05-03 18:00:00",
+    "expected": 10000,
+    "counted": 10000,
+    "difference": 0,
+    "alert": false
+   },
+   {
+    "sessionId": 1,
+    "userId": 3,
+    "closedAt": "2026-05-02 18:00:00",
+    "expected": 10000,
+    "counted": 9000,
+    "difference": -1000,
+    "alert": true
+   }
+  ],
+  "stockCounts": [],
+  "events": [
+   {
+    "at": "2026-05-30 10:00:00",
+    "kind": "manual_entry",
+    "userId": 3,
+    "amount": 1600,
+    "detail": ""
+   },
+   {
+    "at": "2026-05-14 10:00:00",
+    "kind": "expired_writeoff",
+    "userId": 2,
+    "amount": 3000,
+    "detail": "2 lot(s)"
+   },
+   {
+    "at": "2026-05-10 10:00:00",
+    "kind": "credit_approved",
+    "userId": 2,
+    "amount": 2000,
+    "detail": ""
+   },
+   {
+    "at": "2026-05-10 10:00:00",
+    "kind": "expired_sale",
+    "userId": 3,
+    "amount": 700,
+    "detail": "VTE-2026-000003"
+   },
+   {
+    "at": "2026-05-09 10:00:00",
+    "kind": "loss",
+    "userId": 2,
+    "amount": 2000,
+    "detail": "theft"
+   },
+   {
+    "at": "2026-05-09 10:00:00",
+    "kind": "discount",
+    "userId": 3,
+    "amount": 1500,
+    "detail": "VTE-2026-000002"
+   },
+   {
+    "at": "2026-05-08 10:00:00",
+    "kind": "refund",
+    "userId": 1,
+    "amount": 500,
+    "detail": "VTE-2026-000009 — autre boutique"
+   },
+   {
+    "at": "2026-05-07 10:00:00",
+    "kind": "refund",
+    "userId": 2,
+    "amount": 1500,
+    "detail": "VTE-2026-000006 — ancienne vente"
+   },
+   {
+    "at": "2026-05-07 10:00:00",
+    "kind": "manual_entry",
+    "userId": 2,
+    "amount": 8000,
+    "detail": "stock initial"
+   },
+   {
+    "at": "2026-05-06 10:00:00",
+    "kind": "refund",
+    "userId": 3,
+    "amount": 2500,
+    "detail": "VTE-2026-000002 — retour"
+   },
+   {
+    "at": "2026-05-06 10:00:00",
+    "kind": "loss",
+    "userId": 3,
+    "amount": 1200,
+    "detail": "breakage — casse"
+   },
+   {
+    "at": "2026-05-05 10:00:00",
+    "kind": "refund",
+    "userId": 3,
+    "amount": 3000,
+    "detail": "VTE-2026-000002 — erreur"
+   },
+   {
+    "at": "2026-05-04 18:00:00",
+    "kind": "cash_variance",
+    "userId": 2,
+    "amount": -499,
+    "detail": ""
+   },
+   {
+    "at": "2026-05-04 10:00:00",
+    "kind": "refund",
+    "userId": 2,
+    "amount": 4000,
+    "detail": "VTE-2026-000001 — défaut"
+   },
+   {
+    "at": "2026-05-03 10:00:00",
+    "kind": "price_alert",
+    "userId": 2,
+    "amount": 400,
+    "detail": "ACH-2026-000001"
+   },
+   {
+    "at": "2026-05-02 18:00:00",
+    "kind": "cash_variance",
+    "userId": 3,
+    "amount": -1000,
+    "detail": ""
+   }
+  ]
+ },
+ "store": {
+  "from": "2026-05-01",
+  "to": "2026-05-31",
+  "alerts": [
+   {
+    "subject": "employee",
+    "id": 3,
+    "name": "Caissier",
+    "code": "cash_variance",
+    "severity": "danger",
+    "value": -1000
+   },
+   {
+    "subject": "employee",
+    "id": 3,
+    "name": "Caissier",
+    "code": "failed_approvals",
+    "severity": "danger",
+    "value": 3
+   },
+   {
+    "subject": "supplier",
+    "id": 1,
+    "name": "Fournisseur A",
+    "code": "supplier_shortfall",
+    "severity": "danger",
+    "value": 2000
+   },
+   {
+    "subject": "shop",
+    "id": 0,
+    "name": "",
+    "code": "unpaid_pickups",
+    "severity": "danger",
+    "value": 8500
+   },
+   {
+    "subject": "shop",
+    "id": 0,
+    "name": "",
+    "code": "number_gaps",
+    "severity": "danger",
+    "value": 2
+   },
+   {
+    "subject": "employee",
+    "id": 3,
+    "name": "Caissier",
+    "code": "refund_rate",
+    "severity": "warning",
+    "value": 29.72972972972973
+   },
+   {
+    "subject": "employee",
+    "id": 3,
+    "name": "Caissier",
+    "code": "rejected_approvals",
+    "severity": "warning",
+    "value": 2
+   },
+   {
+    "subject": "employee",
+    "id": 3,
+    "name": "Caissier",
+    "code": "loss_rate",
+    "severity": "warning",
+    "value": 3.2432432432432434
+   },
+   {
+    "subject": "employee",
+    "id": 2,
+    "name": "Gérant",
+    "code": "loss_rate",
+    "severity": "warning",
+    "value": 40
+   },
+   {
+    "subject": "supplier",
+    "id": 1,
+    "name": "Fournisseur A",
+    "code": "supplier_price_alert",
+    "severity": "warning",
+    "value": 1
+   },
+   {
+    "subject": "supplier",
+    "id": 1,
+    "name": "Fournisseur A",
+    "code": "supplier_same_user_receipt",
+    "severity": "warning",
+    "value": 1
+   },
+   {
+    "subject": "shop",
+    "id": 0,
+    "name": "",
+    "code": "stale_tickets",
+    "severity": "warning",
+    "value": 1
+   }
+  ],
+  "staleTickets": [
+   {
+    "number": "TCK-2026-000001",
+    "readyItems": 1,
+    "value": 3000,
+    "ageDays": "<age>"
+   }
+  ],
+  "unpaidPickups": [
+   {
+    "number": "TCK-2026-000002",
+    "customerName": "—",
+    "remaining": 8000,
+    "closedAt": "2026-05-09 10:00:00"
+   },
+   {
+    "number": "TCK-2026-000006",
+    "customerName": "—",
+    "remaining": 500,
+    "closedAt": "2026-02-02 10:00:00"
+   }
+  ],
+  "numberGaps": [
+   {
+    "kind": "sale",
+    "missing": [
+     "VTE-2026-000004"
+    ]
+   },
+   {
+    "kind": "ticket",
+    "missing": [
+     "TCK-2026-000003"
+    ]
+   }
+  ],
+  "employees": [
+   {
+    "userId": 3,
+    "name": "Caissier",
+    "salesCount": 3,
+    "salesTotal": 37000,
+    "refundsProcessed": 2,
+    "refundsProcessedTotal": 5500,
+    "refundedOnOwnSalesTotal": 11000,
+    "refundRate": 29.72972972972973,
+    "creditCount": 1,
+    "creditTotal": 8000,
+    "creditOpen": 8000,
+    "lossCount": 1,
+    "lossValue": 1200,
+    "manualEntryCount": 1,
+    "manualEntryValue": 1600,
+    "cashSessions": 2,
+    "cashVariance": -1000,
+    "cashAlerts": 1,
+    "failedApprovals": 3,
+    "approvalsGiven": 0,
+    "priceChanges": 0,
+    "expenseEdits": 0,
+    "unauthorizedDiscountTotal": 1500,
+    "discountRate": 4.054054054054054,
+    "approvalsRejected": 2,
+    "pointsAdjusted": 40,
+    "ticketsCount": 1,
+    "ticketsTotal": 8000,
+    "lowTickets": 0,
+    "ticketCancels": 0,
+    "flags": [
+     {
+      "code": "refund_rate",
+      "severity": "warning",
+      "value": 29.72972972972973
+     },
+     {
+      "code": "cash_variance",
+      "severity": "danger",
+      "value": -1000
+     },
+     {
+      "code": "rejected_approvals",
+      "severity": "warning",
+      "value": 2
+     },
+     {
+      "code": "loss_rate",
+      "severity": "warning",
+      "value": 3.2432432432432434
+     },
+     {
+      "code": "failed_approvals",
+      "severity": "danger",
+      "value": 3
+     }
+    ],
+    "riskScore": 73,
+    "riskLevel": "high"
+   },
+   {
+    "userId": 2,
+    "name": "Gérant",
+    "salesCount": 1,
+    "salesTotal": 5000,
+    "refundsProcessed": 2,
+    "refundsProcessedTotal": 5500,
+    "refundedOnOwnSalesTotal": 0,
+    "refundRate": 0,
+    "creditCount": 1,
+    "creditTotal": 2000,
+    "creditOpen": 1200,
+    "lossCount": 1,
+    "lossValue": 2000,
+    "manualEntryCount": 1,
+    "manualEntryValue": 8000,
+    "cashSessions": 0,
+    "cashVariance": 0,
+    "cashAlerts": 0,
+    "failedApprovals": 0,
+    "approvalsGiven": 0,
+    "priceChanges": 1,
+    "expenseEdits": 1,
+    "unauthorizedDiscountTotal": 0,
+    "discountRate": 0,
+    "approvalsRejected": 0,
+    "pointsAdjusted": 0,
+    "ticketsCount": 1,
+    "ticketsTotal": 0,
+    "lowTickets": 1,
+    "ticketCancels": 1,
+    "flags": [
+     {
+      "code": "loss_rate",
+      "severity": "warning",
+      "value": 40
+     }
+    ],
+    "riskScore": 24,
+    "riskLevel": "low"
+   },
+   {
+    "userId": 1,
+    "name": "Admin",
+    "salesCount": 0,
+    "salesTotal": 0,
+    "refundsProcessed": 0,
+    "refundsProcessedTotal": 0,
+    "refundedOnOwnSalesTotal": 0,
+    "refundRate": 0,
+    "creditCount": 0,
+    "creditTotal": 0,
+    "creditOpen": 0,
+    "lossCount": 0,
+    "lossValue": 0,
+    "manualEntryCount": 0,
+    "manualEntryValue": 0,
+    "cashSessions": 0,
+    "cashVariance": 0,
+    "cashAlerts": 0,
+    "failedApprovals": 0,
+    "approvalsGiven": 10,
+    "priceChanges": 0,
+    "expenseEdits": 0,
+    "unauthorizedDiscountTotal": 0,
+    "discountRate": 0,
+    "approvalsRejected": 0,
+    "pointsAdjusted": 0,
+    "ticketsCount": 0,
+    "ticketsTotal": 0,
+    "lowTickets": 0,
+    "ticketCancels": 0,
+    "flags": [],
+    "riskScore": 0,
+    "riskLevel": "low"
+   }
+  ],
+  "suppliers": [
+   {
+    "supplierId": 1,
+    "name": "Fournisseur A",
+    "purchasesCount": 2,
+    "purchasesTotal": 21000,
+    "priceAlerts": 1,
+    "awaitingReceipt": 1,
+    "shortfallValue": 2000,
+    "sameUserReceipts": 1,
+    "openDebt": 4000,
+    "flags": [
+     {
+      "code": "supplier_price_alert",
+      "severity": "warning",
+      "value": 1
+     },
+     {
+      "code": "supplier_shortfall",
+      "severity": "danger",
+      "value": 2000
+     },
+     {
+      "code": "supplier_same_user_receipt",
+      "severity": "warning",
+      "value": 1
+     }
+    ]
+   }
+  ],
+  "cashVariances": [
+   {
+    "sessionId": 2,
+    "userId": 3,
+    "closedAt": "2026-05-03 18:00:00",
+    "expected": 10000,
+    "counted": 10000,
+    "difference": 0,
+    "alert": false
+   },
+   {
+    "sessionId": 1,
+    "userId": 3,
+    "closedAt": "2026-05-02 18:00:00",
+    "expected": 10000,
+    "counted": 9000,
+    "difference": -1000,
+    "alert": true
+   }
+  ],
+  "stockCounts": [],
+  "events": [
+   {
+    "at": "2026-05-30 10:00:00",
+    "kind": "manual_entry",
+    "userId": 3,
+    "amount": 1600,
+    "detail": ""
+   },
+   {
+    "at": "2026-05-14 10:00:00",
+    "kind": "expired_writeoff",
+    "userId": 2,
+    "amount": 3000,
+    "detail": "2 lot(s)"
+   },
+   {
+    "at": "2026-05-10 10:00:00",
+    "kind": "credit_approved",
+    "userId": 2,
+    "amount": 2000,
+    "detail": ""
+   },
+   {
+    "at": "2026-05-10 10:00:00",
+    "kind": "expired_sale",
+    "userId": 3,
+    "amount": 700,
+    "detail": "VTE-2026-000003"
+   },
+   {
+    "at": "2026-05-09 10:00:00",
+    "kind": "loss",
+    "userId": 2,
+    "amount": 2000,
+    "detail": "theft"
+   },
+   {
+    "at": "2026-05-09 10:00:00",
+    "kind": "discount",
+    "userId": 3,
+    "amount": 1500,
+    "detail": "VTE-2026-000002"
+   },
+   {
+    "at": "2026-05-07 10:00:00",
+    "kind": "refund",
+    "userId": 2,
+    "amount": 1500,
+    "detail": "VTE-2026-000006 — ancienne vente"
+   },
+   {
+    "at": "2026-05-07 10:00:00",
+    "kind": "manual_entry",
+    "userId": 2,
+    "amount": 8000,
+    "detail": "stock initial"
+   },
+   {
+    "at": "2026-05-06 10:00:00",
+    "kind": "refund",
+    "userId": 3,
+    "amount": 2500,
+    "detail": "VTE-2026-000002 — retour"
+   },
+   {
+    "at": "2026-05-06 10:00:00",
+    "kind": "loss",
+    "userId": 3,
+    "amount": 1200,
+    "detail": "breakage — casse"
+   },
+   {
+    "at": "2026-05-05 10:00:00",
+    "kind": "refund",
+    "userId": 3,
+    "amount": 3000,
+    "detail": "VTE-2026-000002 — erreur"
+   },
+   {
+    "at": "2026-05-04 10:00:00",
+    "kind": "refund",
+    "userId": 2,
+    "amount": 4000,
+    "detail": "VTE-2026-000001 — défaut"
+   },
+   {
+    "at": "2026-05-03 10:00:00",
+    "kind": "price_alert",
+    "userId": 2,
+    "amount": 400,
+    "detail": "ACH-2026-000001"
+   },
+   {
+    "at": "2026-05-02 18:00:00",
+    "kind": "cash_variance",
+    "userId": 3,
+    "amount": -1000,
+    "detail": ""
+   }
+  ]
+ },
+ "wide": {
+  "from": "2026-01-01",
+  "to": "2026-12-31",
+  "alerts": [
+   {
+    "subject": "employee",
+    "id": 3,
+    "name": "Caissier",
+    "code": "cash_variance",
+    "severity": "danger",
+    "value": -1000
+   },
+   {
+    "subject": "employee",
+    "id": 3,
+    "name": "Caissier",
+    "code": "failed_approvals",
+    "severity": "danger",
+    "value": 4
+   },
+   {
+    "subject": "employee",
+    "id": 2,
+    "name": "Gérant",
+    "code": "cash_variance",
+    "severity": "danger",
+    "value": -499
+   },
+   {
+    "subject": "supplier",
+    "id": 1,
+    "name": "Fournisseur A",
+    "code": "supplier_shortfall",
+    "severity": "danger",
+    "value": 2000
+   },
+   {
+    "subject": "shop",
+    "id": 0,
+    "name": "",
+    "code": "unpaid_pickups",
+    "severity": "danger",
+    "value": 8500
+   },
+   {
+    "subject": "shop",
+    "id": 0,
+    "name": "",
+    "code": "number_gaps",
+    "severity": "danger",
+    "value": 4
+   },
+   {
+    "subject": "employee",
+    "id": 3,
+    "name": "Caissier",
+    "code": "refund_rate",
+    "severity": "warning",
+    "value": 21.153846153846153
+   },
+   {
+    "subject": "employee",
+    "id": 3,
+    "name": "Caissier",
+    "code": "rejected_approvals",
+    "severity": "warning",
+    "value": 2
+   },
+   {
+    "subject": "employee",
+    "id": 3,
+    "name": "Caissier",
+    "code": "loss_rate",
+    "severity": "warning",
+    "value": 9.230769230769232
+   },
+   {
+    "subject": "employee",
+    "id": 2,
+    "name": "Gérant",
+    "code": "loss_rate",
+    "severity": "warning",
+    "value": 40
+   },
+   {
+    "subject": "supplier",
+    "id": 1,
+    "name": "Fournisseur A",
+    "code": "supplier_price_alert",
+    "severity": "warning",
+    "value": 1
+   },
+   {
+    "subject": "supplier",
+    "id": 1,
+    "name": "Fournisseur A",
+    "code": "supplier_same_user_receipt",
+    "severity": "warning",
+    "value": 1
+   },
+   {
+    "subject": "supplier",
+    "id": 2,
+    "name": "Fournisseur B",
+    "code": "supplier_price_alert",
+    "severity": "warning",
+    "value": 1
+   },
+   {
+    "subject": "shop",
+    "id": 0,
+    "name": "",
+    "code": "stale_tickets",
+    "severity": "warning",
+    "value": 1
+   }
+  ],
+  "staleTickets": [
+   {
+    "number": "TCK-2026-000001",
+    "readyItems": 1,
+    "value": 3000,
+    "ageDays": "<age>"
+   }
+  ],
+  "unpaidPickups": [
+   {
+    "number": "TCK-2026-000002",
+    "customerName": "—",
+    "remaining": 8000,
+    "closedAt": "2026-05-09 10:00:00"
+   },
+   {
+    "number": "TCK-2026-000006",
+    "customerName": "—",
+    "remaining": 500,
+    "closedAt": "2026-02-02 10:00:00"
+   }
+  ],
+  "numberGaps": [
+   {
+    "kind": "sale",
+    "missing": [
+     "VTE-2026-000004",
+     "VTE-2026-000007",
+     "VTE-2026-000008"
+    ]
+   },
+   {
+    "kind": "ticket",
+    "missing": [
+     "TCK-2026-000003"
+    ]
+   }
+  ],
+  "employees": [
+   {
+    "userId": 3,
+    "name": "Caissier",
+    "salesCount": 4,
+    "salesTotal": 52000,
+    "refundsProcessed": 2,
+    "refundsProcessedTotal": 5500,
+    "refundedOnOwnSalesTotal": 11000,
+    "refundRate": 21.153846153846153,
+    "creditCount": 3,
+    "creditTotal": 9400,
+    "creditOpen": 9400,
+    "lossCount": 2,
+    "lossValue": 4800,
+    "manualEntryCount": 1,
+    "manualEntryValue": 1600,
+    "cashSessions": 3,
+    "cashVariance": -1000,
+    "cashAlerts": 1,
+    "failedApprovals": 4,
+    "approvalsGiven": 0,
+    "priceChanges": 0,
+    "expenseEdits": 0,
+    "unauthorizedDiscountTotal": 1500,
+    "discountRate": 2.8846153846153846,
+    "approvalsRejected": 2,
+    "pointsAdjusted": 40,
+    "ticketsCount": 3,
+    "ticketsTotal": 11500,
+    "lowTickets": 0,
+    "ticketCancels": 0,
+    "flags": [
+     {
+      "code": "refund_rate",
+      "severity": "warning",
+      "value": 21.153846153846153
+     },
+     {
+      "code": "cash_variance",
+      "severity": "danger",
+      "value": -1000
+     },
+     {
+      "code": "rejected_approvals",
+      "severity": "warning",
+      "value": 2
+     },
+     {
+      "code": "loss_rate",
+      "severity": "warning",
+      "value": 9.230769230769232
+     },
+     {
+      "code": "failed_approvals",
+      "severity": "danger",
+      "value": 4
+     }
+    ],
+    "riskScore": 67,
+    "riskLevel": "high"
+   },
+   {
+    "userId": 2,
+    "name": "Gérant",
+    "salesCount": 1,
+    "salesTotal": 5000,
+    "refundsProcessed": 3,
+    "refundsProcessedTotal": 5600,
+    "refundedOnOwnSalesTotal": 100,
+    "refundRate": 2,
+    "creditCount": 1,
+    "creditTotal": 2000,
+    "creditOpen": 1200,
+    "lossCount": 1,
+    "lossValue": 2000,
+    "manualEntryCount": 1,
+    "manualEntryValue": 8000,
+    "cashSessions": 1,
+    "cashVariance": -499,
+    "cashAlerts": 1,
+    "failedApprovals": 0,
+    "approvalsGiven": 0,
+    "priceChanges": 1,
+    "expenseEdits": 1,
+    "unauthorizedDiscountTotal": 0,
+    "discountRate": 0,
+    "approvalsRejected": 0,
+    "pointsAdjusted": 0,
+    "ticketsCount": 1,
+    "ticketsTotal": 0,
+    "lowTickets": 1,
+    "ticketCancels": 1,
+    "flags": [
+     {
+      "code": "cash_variance",
+      "severity": "danger",
+      "value": -499
+     },
+     {
+      "code": "loss_rate",
+      "severity": "warning",
+      "value": 40
+     }
+    ],
+    "riskScore": 48,
+    "riskLevel": "medium"
+   },
+   {
+    "userId": 1,
+    "name": "Admin",
+    "salesCount": 1,
+    "salesTotal": 3000,
+    "refundsProcessed": 1,
+    "refundsProcessedTotal": 500,
+    "refundedOnOwnSalesTotal": 500,
+    "refundRate": 16.666666666666664,
+    "creditCount": 0,
+    "creditTotal": 0,
+    "creditOpen": 0,
+    "lossCount": 0,
+    "lossValue": 0,
+    "manualEntryCount": 0,
+    "manualEntryValue": 0,
+    "cashSessions": 0,
+    "cashVariance": 0,
+    "cashAlerts": 0,
+    "failedApprovals": 0,
+    "approvalsGiven": 10,
+    "priceChanges": 0,
+    "expenseEdits": 0,
+    "unauthorizedDiscountTotal": 0,
+    "discountRate": 0,
+    "approvalsRejected": 0,
+    "pointsAdjusted": 0,
+    "ticketsCount": 0,
+    "ticketsTotal": 0,
+    "lowTickets": 0,
+    "ticketCancels": 0,
+    "flags": [],
+    "riskScore": 20,
+    "riskLevel": "low"
+   }
+  ],
+  "suppliers": [
+   {
+    "supplierId": 1,
+    "name": "Fournisseur A",
+    "purchasesCount": 2,
+    "purchasesTotal": 21000,
+    "priceAlerts": 1,
+    "awaitingReceipt": 1,
+    "shortfallValue": 2000,
+    "sameUserReceipts": 1,
+    "openDebt": 4000,
+    "flags": [
+     {
+      "code": "supplier_price_alert",
+      "severity": "warning",
+      "value": 1
+     },
+     {
+      "code": "supplier_shortfall",
+      "severity": "danger",
+      "value": 2000
+     },
+     {
+      "code": "supplier_same_user_receipt",
+      "severity": "warning",
+      "value": 1
+     }
+    ]
+   },
+   {
+    "supplierId": 2,
+    "name": "Fournisseur B",
+    "purchasesCount": 1,
+    "purchasesTotal": 500,
+    "priceAlerts": 1,
+    "awaitingReceipt": 0,
+    "shortfallValue": 0,
+    "sameUserReceipts": 0,
+    "openDebt": 0,
+    "flags": [
+     {
+      "code": "supplier_price_alert",
+      "severity": "warning",
+      "value": 1
+     }
+    ]
+   }
+  ],
+  "cashVariances": [
+   {
+    "sessionId": 3,
+    "userId": 2,
+    "closedAt": "2026-05-04 18:00:00",
+    "expected": 500,
+    "counted": 1,
+    "difference": -499,
+    "alert": true
+   },
+   {
+    "sessionId": 2,
+    "userId": 3,
+    "closedAt": "2026-05-03 18:00:00",
+    "expected": 10000,
+    "counted": 10000,
+    "difference": 0,
+    "alert": false
+   },
+   {
+    "sessionId": 1,
+    "userId": 3,
+    "closedAt": "2026-05-02 18:00:00",
+    "expected": 10000,
+    "counted": 9000,
+    "difference": -1000,
+    "alert": true
+   },
+   {
+    "sessionId": 4,
+    "userId": 3,
+    "closedAt": "2026-04-01 18:00:00",
+    "expected": 1,
+    "counted": 1,
+    "difference": 0,
+    "alert": false
+   }
+  ],
+  "stockCounts": [],
+  "events": [
+   {
+    "at": "2026-06-30 10:00:00",
+    "kind": "refund",
+    "userId": 2,
+    "amount": 100,
+    "detail": "VTE-2026-000003 — hors période"
+   },
+   {
+    "at": "2026-05-30 10:00:00",
+    "kind": "manual_entry",
+    "userId": 3,
+    "amount": 1600,
+    "detail": ""
+   },
+   {
+    "at": "2026-05-14 10:00:00",
+    "kind": "expired_writeoff",
+    "userId": 2,
+    "amount": 3000,
+    "detail": "2 lot(s)"
+   },
+   {
+    "at": "2026-05-10 10:00:00",
+    "kind": "credit_approved",
+    "userId": 2,
+    "amount": 2000,
+    "detail": ""
+   },
+   {
+    "at": "2026-05-10 10:00:00",
+    "kind": "expired_sale",
+    "userId": 3,
+    "amount": 700,
+    "detail": "VTE-2026-000003"
+   },
+   {
+    "at": "2026-05-09 10:00:00",
+    "kind": "loss",
+    "userId": 2,
+    "amount": 2000,
+    "detail": "theft"
+   },
+   {
+    "at": "2026-05-09 10:00:00",
+    "kind": "discount",
+    "userId": 3,
+    "amount": 1500,
+    "detail": "VTE-2026-000002"
+   },
+   {
+    "at": "2026-05-08 10:00:00",
+    "kind": "refund",
+    "userId": 1,
+    "amount": 500,
+    "detail": "VTE-2026-000009 — autre boutique"
+   },
+   {
+    "at": "2026-05-07 10:00:00",
+    "kind": "refund",
+    "userId": 2,
+    "amount": 1500,
+    "detail": "VTE-2026-000006 — ancienne vente"
+   },
+   {
+    "at": "2026-05-07 10:00:00",
+    "kind": "manual_entry",
+    "userId": 2,
+    "amount": 8000,
+    "detail": "stock initial"
+   },
+   {
+    "at": "2026-05-06 10:00:00",
+    "kind": "refund",
+    "userId": 3,
+    "amount": 2500,
+    "detail": "VTE-2026-000002 — retour"
+   },
+   {
+    "at": "2026-05-06 10:00:00",
+    "kind": "loss",
+    "userId": 3,
+    "amount": 1200,
+    "detail": "breakage — casse"
+   },
+   {
+    "at": "2026-05-05 10:00:00",
+    "kind": "refund",
+    "userId": 3,
+    "amount": 3000,
+    "detail": "VTE-2026-000002 — erreur"
+   },
+   {
+    "at": "2026-05-04 18:00:00",
+    "kind": "cash_variance",
+    "userId": 2,
+    "amount": -499,
+    "detail": ""
+   },
+   {
+    "at": "2026-05-04 10:00:00",
+    "kind": "refund",
+    "userId": 2,
+    "amount": 4000,
+    "detail": "VTE-2026-000001 — défaut"
+   },
+   {
+    "at": "2026-05-03 10:00:00",
+    "kind": "price_alert",
+    "userId": 2,
+    "amount": 400,
+    "detail": "ACH-2026-000001"
+   },
+   {
+    "at": "2026-05-02 18:00:00",
+    "kind": "cash_variance",
+    "userId": 3,
+    "amount": -1000,
+    "detail": ""
+   },
+   {
+    "at": "2026-04-10 10:00:00",
+    "kind": "loss",
+    "userId": 3,
+    "amount": 3600,
+    "detail": "breakage"
+   },
+   {
+    "at": "2026-02-01 10:00:00",
+    "kind": "price_alert",
+    "userId": 1,
+    "amount": 500,
+    "detail": "ACH-2026-000003"
+   }
+  ]
+ }
+}

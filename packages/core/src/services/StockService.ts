@@ -17,6 +17,7 @@ import {
   type StockLossCreatedEventPayload,
   type StockTransferCreatedEventPayload,
 } from "../sync/syncEvents";
+import { localDayEndUtc, localDayStartUtc } from "../domain/localDay";
 
 // Idempotent : crée les emplacements par défaut (Réserve / Surface de vente)
 // d'une boutique s'ils n'existent pas encore, puis retourne leurs ids. Le
@@ -117,7 +118,7 @@ async function getLocationBalance(db: Database, variantId: number, locationId: n
 
 // Valeur au coût d'un mouvement de stock (prix d'achat courant du produit) —
 // sert de base aux plafonds d'approbation.
-async function valueAtCost(db: Database, variantId: number, quantity: number): Promise<number> {
+export async function valueAtCost(db: Database, variantId: number, quantity: number): Promise<number> {
   const row = await db
     .select({ cost: schema.products.purchasePrice })
     .from(schema.productVariants)
@@ -139,8 +140,8 @@ export interface StockMovementFilters {
 // stock — inutile de dupliquer ces événements dans audit_log.
 export async function listStockMovements(db: Database, filters: StockMovementFilters = {}) {
   const conditions = [];
-  if (filters.from) conditions.push(gte(schema.stockMovements.createdAt, `${filters.from.slice(0, 10)} 00:00:00`));
-  if (filters.to) conditions.push(lte(schema.stockMovements.createdAt, `${filters.to.slice(0, 10)} 23:59:59`));
+  if (filters.from) conditions.push(gte(schema.stockMovements.createdAt, localDayStartUtc(filters.from)));
+  if (filters.to) conditions.push(lte(schema.stockMovements.createdAt, localDayEndUtc(filters.to)));
   if (filters.userId) conditions.push(eq(schema.stockMovements.createdBy, filters.userId));
   if (filters.movementType) conditions.push(eq(schema.stockMovements.movementType, filters.movementType));
   if (filters.locationId) conditions.push(eq(schema.stockMovements.locationId, filters.locationId));
@@ -556,7 +557,7 @@ export async function addManualStockEntry(
         movementType: movement.movementType,
         referenceType: movement.referenceType,
       },
-    });
+    }, { actorId: input.userId, approverId: approvedBy });
   });
 
   emitSyncEvent(event);
@@ -649,7 +650,7 @@ export async function recordStockLoss(
         movementType: movement.movementType,
         referenceType: movement.referenceType,
       },
-    });
+    }, { actorId: input.userId, approverId: approvedBy });
   });
 
   emitSyncEvent(event);

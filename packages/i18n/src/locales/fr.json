@@ -223,7 +223,8 @@
     "status": "Statut",
     "report": "Rapport",
     "generating": "Génération...",
-    "noSales": "Aucune vente pour cette sélection."
+    "noSales": "Aucune vente pour cette sélection.",
+    "loadMore": "Afficher plus de ventes"
   },
   "settings": {
     "title": "Configuration",
@@ -378,6 +379,20 @@
       "errors": {
         "noFolderChosen": "Aucun dossier de sauvegarde choisi.",
         "writePermissionDenied": "Permission d'écriture refusée pour le dossier de sauvegarde."
+      },
+      "encryption": {
+        "heading": "Chiffrement des sauvegardes",
+        "hint": "Protège le fichier de sauvegarde par un mot de passe : sans lui, impossible de l'ouvrir (Google Drive, clé USB, téléphone partagé...).",
+        "passphrase": "Mot de passe de chiffrement (8 caractères minimum)",
+        "enable": "Activer le chiffrement",
+        "disable": "Désactiver le chiffrement",
+        "disableConfirm": "Les prochaines sauvegardes ne seront plus chiffrées. Continuer ?",
+        "active": "Chiffrement actif : les sauvegardes sont protégées par votre mot de passe.",
+        "warning": "Notez ce mot de passe en lieu sûr : sans lui, une sauvegarde chiffrée est définitivement illisible (personne ne peut le retrouver).",
+        "tooShort": "Le mot de passe doit faire au moins 8 caractères.",
+        "importPassphrase": "Cette sauvegarde est chiffrée. Mot de passe",
+        "decryptAndRestore": "Déchiffrer et restaurer",
+        "wrongPassphrase": "Mot de passe incorrect, ou fichier abîmé."
       }
     },
     "maintenance": {
@@ -823,7 +838,17 @@
     "packTitle": "Pack Pharmacie",
     "packHint": "Fiche médicament (DCI, dosage, ordonnance), péremption obligatoire, lots périmés non vendables, équivalents, détail des boîtes et traçabilité de lot sont actifs. Tu peux ajouter des catégories de départ (jamais de doublon).",
     "starterInstall": "Installer les catégories de départ",
-    "starterCategories": ["Antalgiques et fièvre", "Antibiotiques", "Antipaludiques", "Anti-inflammatoires", "Vitamines et compléments", "Digestion", "Toux et rhume", "Hygiène et soins", "Matériel médical"],
+    "starterCategories": [
+      "Antalgiques et fièvre",
+      "Antibiotiques",
+      "Antipaludiques",
+      "Anti-inflammatoires",
+      "Vitamines et compléments",
+      "Digestion",
+      "Toux et rhume",
+      "Hygiène et soins",
+      "Matériel médical"
+    ],
     "starterDone": "{{count}} catégorie(s) ajoutée(s).",
     "starterNone": "Les catégories de départ existent déjà.",
     "starterFailed": "L'ajout des catégories a échoué."

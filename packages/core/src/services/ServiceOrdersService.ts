@@ -12,6 +12,7 @@ import { requirePermission, type PermissionSet } from "../domain/permissions";
 import { findOrCreateCustomerByNameAndPhone } from "./CustomersService";
 import { earnPoints } from "./LoyaltyService";
 import { getSettings } from "./SettingsService";
+import { localDayEndUtc, localDayStartUtc } from "../domain/localDay";
 
 // Même algorithme que SalesService.nextSaleNumber/PurchasesService.nextPurchaseNumber
 // (COUNT(*)+1, pas MAX(id)) — compteur simple, cohérent avec le reste de l'app.
@@ -313,8 +314,8 @@ export interface ServiceOrderFilters {
 export async function listServiceOrders(db: Database, filters: ServiceOrderFilters = {}) {
   const conditions = [];
   if (filters.storeId) conditions.push(eq(schema.serviceOrders.storeId, filters.storeId));
-  if (filters.from) conditions.push(gte(schema.serviceOrders.createdAt, `${filters.from.slice(0, 10)} 00:00:00`));
-  if (filters.to) conditions.push(lte(schema.serviceOrders.createdAt, `${filters.to.slice(0, 10)} 23:59:59`));
+  if (filters.from) conditions.push(gte(schema.serviceOrders.createdAt, localDayStartUtc(filters.from)));
+  if (filters.to) conditions.push(lte(schema.serviceOrders.createdAt, localDayEndUtc(filters.to)));
 
   const query = db.select().from(schema.serviceOrders).orderBy(desc(schema.serviceOrders.id));
   return conditions.length > 0 ? query.where(and(...conditions)) : query;

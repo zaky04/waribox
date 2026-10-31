@@ -4,6 +4,7 @@ import { formatMoneyPlain, t } from "@gestion-boutique/i18n";
 import { roundMoney } from "../domain/money";
 import { getControlsReport } from "./ControlsService";
 import { getSalesSummary } from "./ReportsService";
+import { localDayEndUtc, localDayStartUtc } from "../domain/localDay";
 
 // Résumé de fin de journée pour un propriétaire qui n'est pas au comptoir : les
 // chiffres du jour et, surtout, tout ce qui demande son attention (remises,
@@ -44,8 +45,8 @@ function parseMeta(raw: string | null): Record<string, any> {
 
 export async function getDailySummary(db: Database, date: string, storeId?: number): Promise<DailySummary> {
   const day = date.slice(0, 10);
-  const from = `${day} 00:00:00`;
-  const to = `${day} 23:59:59`;
+  const from = localDayStartUtc(day);
+  const to = localDayEndUtc(day);
   const inDay = (at: string) => at >= from && at <= to;
 
   const [sales, orders, refunds, movements, locations, expenses, sessions, audits, variants, products] = await Promise.all([

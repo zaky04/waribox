@@ -145,7 +145,7 @@ export async function insertExpense(
       },
     };
 
-    return { expense, event: buildSyncEvent("expense.created", payload) };
+    return { expense, event: buildSyncEvent("expense.created", payload, { actorId: input.userId, approverId: approvedBy }) };
   });
 
   emitSyncEvent(event);

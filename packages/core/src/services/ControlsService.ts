@@ -1,9 +1,10 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
-import { eq } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, lte, ne, or } from "drizzle-orm";
 import { roundMoney } from "../domain/money";
 import { getStockCountReport } from "./InventoryService";
 import { getSettings } from "./SettingsService";
+import { localDayEndUtc, localDayStartUtc } from "../domain/localDay";
 
 // Tableau de bord "Contrôles" : indicateurs d'anomalies par employé et par
 // fournisseur sur une période — pas une accusation, des signaux à vérifier. Les
@@ -250,21 +251,41 @@ function parseMeta(raw: string | null): Record<string, any> {
 }
 
 export async function getControlsReport(db: Database, range: ControlsRange, storeId?: number): Promise<ControlsReport> {
-  const from = `${range.from.slice(0, 10)} 00:00:00`;
-  const to = `${range.to.slice(0, 10)} 23:59:59`;
+  const from = localDayStartUtc(range.from);
+  const to = localDayEndUtc(range.to);
   const inRange = (at: string) => at >= from && at <= to;
 
   const [users, sales, refunds, credits, serviceOrders, movements, locations, sessions, audits, purchases, purchaseItems, suppliers, debts, variants, products, counts, settings, orderItems, customersAll] =
     await Promise.all([
       db.select().from(schema.users),
-      db.select().from(schema.sales),
-      db.select().from(schema.refunds),
-      db.select().from(schema.customerCredits),
+      // Seules 6 colonnes sont lues, mais de TOUTES les ventes : les remboursements
+      // et les créances de la période peuvent viser une vente plus ancienne, et la
+      // détection des numéros manquants raisonne sur la suite complète.
+      db
+        .select({ id: schema.sales.id, number: schema.sales.number, userId: schema.sales.userId, storeId: schema.sales.storeId, total: schema.sales.total, createdAt: schema.sales.createdAt })
+        .from(schema.sales),
+      // Tout ce qui est « de la période » est filtré par la base (index sur created_at) :
+      // avant, ces tables étaient relues en entier pour être filtrées en JavaScript.
+      db.select().from(schema.refunds).where(and(gte(schema.refunds.createdAt, from), lte(schema.refunds.createdAt, to))),
+      // Créances de la période, plus toutes celles d'un ticket non soldées (tickets retirés avec un solde dû).
+      db
+        .select()
+        .from(schema.customerCredits)
+        .where(
+          or(
+            and(gte(schema.customerCredits.createdAt, from), lte(schema.customerCredits.createdAt, to)),
+            and(isNotNull(schema.customerCredits.serviceOrderId), ne(schema.customerCredits.status, "settled")),
+          ),
+        ),
       db.select().from(schema.serviceOrders),
-      db.select().from(schema.stockMovements),
+      // Seules les pertes et régularisations manuelles comptent ici.
+      db
+        .select()
+        .from(schema.stockMovements)
+        .where(and(gte(schema.stockMovements.createdAt, from), lte(schema.stockMovements.createdAt, to), inArray(schema.stockMovements.movementType, ["loss", "adjustment"]))),
       db.select().from(schema.stockLocations),
-      db.select().from(schema.cashSessions),
-      db.select().from(schema.auditLog),
+      db.select().from(schema.cashSessions).where(and(isNotNull(schema.cashSessions.closedAt), gte(schema.cashSessions.closedAt, from), lte(schema.cashSessions.closedAt, to))),
+      db.select().from(schema.auditLog).where(and(gte(schema.auditLog.createdAt, from), lte(schema.auditLog.createdAt, to))),
       db.select().from(schema.purchases),
       db.select().from(schema.purchaseItems),
       db.select().from(schema.suppliers),
@@ -282,6 +303,11 @@ export async function getControlsReport(db: Database, range: ControlsRange, stor
   const locationStore = new Map(locations.map((l) => [l.id, l.storeId] as const));
   const productById = new Map(products.map((p) => [p.id, p] as const));
   const costByVariant = new Map(variants.map((v) => [v.id, productById.get(v.productId)?.purchasePrice ?? 0] as const));
+  const itemsByOrder = new Map<number, typeof orderItems>();
+  for (const i of orderItems) itemsByOrder.set(i.serviceOrderId, [...(itemsByOrder.get(i.serviceOrderId) ?? []), i]);
+  const itemsByPurchase = new Map<number, typeof purchaseItems>();
+  for (const i of purchaseItems) itemsByPurchase.set(i.purchaseId, [...(itemsByPurchase.get(i.purchaseId) ?? []), i]);
+  const customerNameById = new Map(customersAll.map((c) => [c.id, c.fullName] as const));
   const storeOk = (s: number | null | undefined) => !storeId || s === storeId;
 
   const emps = new Map<number, EmployeeControl>();
@@ -501,7 +527,7 @@ export async function getControlsReport(db: Database, range: ControlsRange, stor
     s.purchasesCount++;
     s.purchasesTotal += p.total;
     if (p.status === "ordered") s.awaitingReceipt++;
-    for (const item of purchaseItems.filter((i) => i.purchaseId === p.id)) {
+    for (const item of itemsByPurchase.get(p.id) ?? []) {
       if (item.priceAlert) {
         s.priceAlerts++;
         events.push({ at: p.createdAt, kind: "price_alert", userId: p.userId, amount: item.unitCost, detail: `${p.number}` });
@@ -559,9 +585,9 @@ export async function getControlsReport(db: Database, range: ControlsRange, stor
   const liveAll = serviceOrders.filter((o) => !o.cancelledAt && storeOk(o.storeId));
   const staleTickets: StaleTicket[] = [];
   const unpaidPickups: UnpaidPickup[] = [];
-  const customerName = (id: number | null) => (id == null ? "—" : (customersAll.find((c) => c.id === id)?.fullName ?? `#${id}`));
+  const customerName = (id: number | null) => (id == null ? "—" : (customerNameById.get(id) ?? `#${id}`));
   for (const o of liveAll) {
-    const items = orderItems.filter((i) => i.serviceOrderId === o.id);
+    const items = itemsByOrder.get(o.id) ?? [];
     const ageDays = Math.floor((nowMs - Date.parse(o.createdAt.replace(" ", "T") + "Z")) / 86400000);
     const ready = items.filter((i) => i.status === "ready");
     if (ready.length > 0 && ageDays >= settings.staleTicketDays) {

@@ -35,6 +35,13 @@ export interface SyncEvent<T = unknown> {
   type: SyncEventType;
   createdAt: string;
   payload: T;
+  // Qui a fait l'action, et quel responsable l'a approuvée (code PIN vérifié) — absents
+  // si personne n'a eu à approuver. Un appareil relié y joint `grantId`, l'autorisation
+  // à usage unique que le Maître a délivrée quand il a vérifié ce PIN : sans elle, le
+  // Maître refuse toute action qui exigeait une approbation (voir workerApproval.ts).
+  actorId?: number | null;
+  approverId?: number | null;
+  grantId?: string;
 }
 
 export interface SyncSaleItemPayload {
@@ -188,11 +195,17 @@ export function onSyncEvent(listener: SyncEventListener): () => void {
   return () => listeners.delete(listener);
 }
 
-export function buildSyncEvent<T>(type: SyncEventType, payload: T): SyncEvent<T> {
+export function buildSyncEvent<T>(
+  type: SyncEventType,
+  payload: T,
+  meta?: { actorId?: number | null; approverId?: number | null },
+): SyncEvent<T> {
   return {
     eventId: crypto.randomUUID(),
     type,
     createdAt: new Date().toISOString(),
     payload,
+    ...(meta?.actorId != null ? { actorId: meta.actorId } : {}),
+    ...(meta?.approverId != null ? { approverId: meta.approverId } : {}),
   };
 }

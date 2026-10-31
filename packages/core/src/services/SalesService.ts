@@ -19,6 +19,7 @@ import { consumeStockFefo, getSellableQuantity } from "./StockService";
 import { buildSyncEvent, emitSyncEvent, type SaleCreatedEventPayload, type SyncStockMovementPayload } from "../sync/syncEvents";
 import { enqueueFneCertification } from "../fne/fneQueue";
 import { emitFneQueued } from "../fne/fneEvents";
+import { localDayEndUtc, localDayStartUtc } from "../domain/localDay";
 
 const nextSaleNumber = (db: Database) => nextDocumentNumber(db, schema.sales, "VTE");
 
@@ -73,6 +74,49 @@ export { computeItemTotal as computeSaleItemTotal };
 export function computeTaxAmount(grossTtc: number, taxRate: number): number {
   if (taxRate <= 0) return 0;
   return grossTtc * (taxRate / (100 + taxRate));
+}
+
+// Part de remise NON couverte par une promotion programmée, calculée côté « serveur »
+// à partir du catalogue et des promotions en cours (jamais sur la foi de l'écran).
+// Partagée avec la revalidation d'une vente reçue d'un appareil relié (workerApproval).
+export async function computeUnauthorizedDiscountForItems(
+  db: Database,
+  settings: { enablePromotions: boolean },
+  items: { variantId: number; quantity: number; unitPrice: number; discount?: number }[],
+  invoiceDiscount: number,
+): Promise<number> {
+  const variantIds = [...new Set(items.map((i) => i.variantId))];
+  const catalogRows = await db
+    .select({
+      variantId: schema.productVariants.id,
+      productId: schema.productVariants.productId,
+      priceOverride: schema.productVariants.priceOverride,
+      salePrice: schema.products.salePrice,
+    })
+    .from(schema.productVariants)
+    .innerJoin(schema.products, eq(schema.products.id, schema.productVariants.productId))
+    .where(inArray(schema.productVariants.id, variantIds));
+  const catalogByVariant = new Map(catalogRows.map((r) => [r.variantId, r] as const));
+  const activePromos = settings.enablePromotions ? await getActivePromotionsWithProducts(db) : [];
+  const productPromoPercent = (productId: number) =>
+    activePromos
+      .filter((p) => p.scope === "product" && p.productIds.includes(productId))
+      .reduce((best, p) => Math.max(best, p.discountPercent), 0);
+  const invoicePromoPercent = activePromos.filter((p) => p.scope === "invoice").reduce((best, p) => Math.max(best, p.discountPercent), 0);
+  return computeUnauthorizedDiscount({
+    lines: items.map((item) => {
+      const row = catalogByVariant.get(item.variantId);
+      return {
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        discount: item.discount,
+        catalogPrice: row ? (row.priceOverride ?? row.salePrice) : item.unitPrice,
+        promoPercent: row ? productPromoPercent(row.productId) : 0,
+      };
+    }),
+    invoiceDiscount,
+    invoicePromoPercent,
+  });
 }
 
 export async function createSale(db: Database, input: CreateSaleInput, actingPermissions: PermissionSet) {
@@ -207,38 +251,7 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
     // (ou de l'échange de points de fidélité) sans l'approbation d'un
     // responsable : on compare le prix vendu au catalogue et la remise aux
     // promotions réellement en cours, côté serveur (jamais sur la foi de l'écran).
-    const variantIds = [...new Set(input.items.map((i) => i.variantId))];
-    const catalogRows = await db
-      .select({
-        variantId: schema.productVariants.id,
-        productId: schema.productVariants.productId,
-        priceOverride: schema.productVariants.priceOverride,
-        salePrice: schema.products.salePrice,
-      })
-      .from(schema.productVariants)
-      .innerJoin(schema.products, eq(schema.products.id, schema.productVariants.productId))
-      .where(inArray(schema.productVariants.id, variantIds));
-    const catalogByVariant = new Map(catalogRows.map((r) => [r.variantId, r] as const));
-    const activePromos = settings.enablePromotions ? await getActivePromotionsWithProducts(db) : [];
-    const productPromoPercent = (productId: number) =>
-      activePromos
-        .filter((p) => p.scope === "product" && p.productIds.includes(productId))
-        .reduce((best, p) => Math.max(best, p.discountPercent), 0);
-    const invoicePromoPercent = activePromos.filter((p) => p.scope === "invoice").reduce((best, p) => Math.max(best, p.discountPercent), 0);
-    const unauthorizedDiscount = computeUnauthorizedDiscount({
-      lines: input.items.map((item) => {
-        const row = catalogByVariant.get(item.variantId);
-        return {
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          discount: item.discount,
-          catalogPrice: row ? (row.priceOverride ?? row.salePrice) : item.unitPrice,
-          promoPercent: row ? productPromoPercent(row.productId) : 0,
-        };
-      }),
-      invoiceDiscount: input.discount ?? 0,
-      invoicePromoPercent,
-    });
+    const unauthorizedDiscount = await computeUnauthorizedDiscountForItems(db, settings, input.items, input.discount ?? 0);
     let discountApprovedBy: number | null = null;
     if (unauthorizedDiscount > 0) {
       discountApprovedBy = await checkApproval(db, {
@@ -449,7 +462,7 @@ export async function createSale(db: Database, input: CreateSaleInput, actingPer
       loyaltyEarn: loyaltyEarnEvent,
     };
 
-    return { sale, event: buildSyncEvent("sale.created", payload), fneEnabled: settings.fneEnabled };
+    return { sale, event: buildSyncEvent("sale.created", payload, { actorId: input.userId, approverId: verifiedApproverId }), fneEnabled: settings.fneEnabled };
   });
 
   emitSyncEvent(event);
@@ -472,12 +485,15 @@ export interface SaleFilters {
   storeId?: number;
   customerId?: number;
   paymentMethod?: string;
+  // Pagination (les plus récentes d'abord) : sans `limit`, tout est renvoyé.
+  limit?: number;
+  offset?: number;
 }
 
 export async function listSales(db: Database, filters: SaleFilters = {}) {
   const conditions = [];
-  if (filters.from) conditions.push(gte(schema.sales.createdAt, `${filters.from.slice(0, 10)} 00:00:00`));
-  if (filters.to) conditions.push(lte(schema.sales.createdAt, `${filters.to.slice(0, 10)} 23:59:59`));
+  if (filters.from) conditions.push(gte(schema.sales.createdAt, localDayStartUtc(filters.from)));
+  if (filters.to) conditions.push(lte(schema.sales.createdAt, localDayEndUtc(filters.to)));
   if (filters.userId) conditions.push(eq(schema.sales.userId, filters.userId));
   if (filters.paymentStatus) conditions.push(eq(schema.sales.paymentStatus, filters.paymentStatus));
   if (filters.search) conditions.push(like(schema.sales.number, `%${filters.search}%`));
@@ -485,25 +501,24 @@ export async function listSales(db: Database, filters: SaleFilters = {}) {
   if (filters.customerId) conditions.push(eq(schema.sales.customerId, filters.customerId));
 
   // Le mode de paiement vit sur `payments` (referenceType='sale'), pas sur
-  // `sales` — résolu ici en deux requêtes plutôt qu'une jointure pour rester
-  // dans le style du reste du fichier (pas de leftJoin ailleurs dans ce
-  // service). Un tableau vide ici veut dire "aucune vente ne correspond".
+  // `sales` : sous-requête plutôt que d'envoyer des milliers d'identifiants
+  // (SQLite limite le nombre de paramètres d'une requête).
   if (filters.paymentMethod) {
-    const paymentRows = await db
-      .select({ referenceId: schema.payments.referenceId })
-      .from(schema.payments)
-      .where(and(eq(schema.payments.referenceType, "sale"), eq(schema.payments.method, filters.paymentMethod)));
-    if (paymentRows.length === 0) return [];
     conditions.push(
       inArray(
         schema.sales.id,
-        paymentRows.map((p) => p.referenceId),
+        db
+          .select({ referenceId: schema.payments.referenceId })
+          .from(schema.payments)
+          .where(and(eq(schema.payments.referenceType, "sale"), eq(schema.payments.method, filters.paymentMethod))),
       ),
     );
   }
 
-  const query = db.select().from(schema.sales).orderBy(desc(schema.sales.id));
-  return conditions.length > 0 ? query.where(and(...conditions)) : query;
+  let query = db.select().from(schema.sales).orderBy(desc(schema.sales.id)).$dynamic();
+  if (conditions.length > 0) query = query.where(and(...conditions));
+  if (filters.limit != null) query = query.limit(filters.limit).offset(filters.offset ?? 0);
+  return query;
 }
 
 export async function listSaleItems(db: Database, saleId: number) {
@@ -524,6 +539,17 @@ export async function getSalePayment(db: Database, saleId: number) {
 // Charge tous les paiements de vente en une fois (utilisé par les vues qui
 // affichent une liste de ventes et ont besoin du mode de paiement de chacune
 // sans faire une requête par ligne).
-export async function listSalePayments(db: Database) {
-  return db.select().from(schema.payments).where(eq(schema.payments.referenceType, "sale"));
+// `saleIds` restreint aux ventes affichées (une page) au lieu de tout l'historique.
+export async function listSalePayments(db: Database, saleIds?: number[]) {
+  if (!saleIds) return db.select().from(schema.payments).where(eq(schema.payments.referenceType, "sale"));
+  const rows: (typeof schema.payments.$inferSelect)[] = [];
+  for (let i = 0; i < saleIds.length; i += 500) {
+    rows.push(
+      ...(await db
+        .select()
+        .from(schema.payments)
+        .where(and(eq(schema.payments.referenceType, "sale"), inArray(schema.payments.referenceId, saleIds.slice(i, i + 500))))),
+    );
+  }
+  return rows;
 }
