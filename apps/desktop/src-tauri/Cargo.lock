@@ -1404,7 +1404,6 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-android-fs",
  "tauri-plugin-dialog",
- "tauri-plugin-fs",
  "tauri-plugin-http",
  "tauri-plugin-opener",
  "tauri-plugin-process",

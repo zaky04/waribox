@@ -9,7 +9,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         // Mode réseau local — serveur Master (voir network.rs) + découverte
         // mDNS côté Worker (voir discovery.rs). Enregistrés sur toutes les

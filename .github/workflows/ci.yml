@@ -1,0 +1,37 @@
+name: CI
+
+# Vérifie à chaque push sur main et à chaque pull request : compilation de tout le monorepo, tests, et
+# absence d'avis de sécurité sur les dépendances de PRODUCTION. Le code Rust (apps/desktop) n'est pas compilé
+# ici : il demande les bibliothèques système de Tauri ; `cargo test --lib` se lance en local (voir CLAUDE.md).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  js:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # version lue dans "packageManager" (package.json)
+
+      # Node 22 : les tests du cœur utilisent `node:sqlite` (base SQLite en mémoire), disponible sans option depuis 22.13.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Compilation et tests
+        run: pnpm exec turbo run build test
+
+      - name: Audit des dépendances de production
+        run: pnpm audit --prod

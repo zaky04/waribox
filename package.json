@@ -1,9 +1,9 @@
 {
   "name": "gestion-boutique",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.6",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "packageManager": "pnpm@9.15.0",
   "scripts": {
@@ -25,7 +25,12 @@
   "pnpm": {
     "overrides": {
       "dompurify": ">=3.4.17",
-      "shell-quote": ">=1.11.0"
+      "shell-quote": ">=1.11.0",
+      "fast-uri": ">=3.1.7",
+      "nanoid@<3.3.18": ">=3.3.18",
+      "source-map-js": ">=1.2.2",
+      "brace-expansion@>=2.0.0 <3": ">=2.1.6",
+      "brace-expansion@>=4.0.0": ">=5.0.11"
     }
   }
 }
