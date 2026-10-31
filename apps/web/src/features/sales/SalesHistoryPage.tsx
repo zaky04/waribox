@@ -23,6 +23,7 @@ import { FilterBar } from "../../components/FilterBar";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import { inputStyle, pageStyle, primaryButtonStyle, tableStyle, tdStyle, thStyle } from "../../components/sharedStyles";
 import { saveGeneratedFile } from "../../lib/saveFile";
+import { formatDateTime } from "../../lib/dateTime";
 
 type Sale = typeof schema.sales.$inferSelect;
 type Payment = typeof schema.payments.$inferSelect;
@@ -294,7 +295,7 @@ export function SalesHistoryPage() {
             {sales.map((sale) => (
               <tr key={sale.id}>
                 <td style={tdStyle}>{sale.number}</td>
-                <td style={tdStyle}>{sale.createdAt}</td>
+                <td style={tdStyle}>{formatDateTime(sale.createdAt)}</td>
                 <td style={tdStyle}>{customerName(sale.customerId) ?? "—"}</td>
                 {multiStoreEnabled && <td style={tdStyle}>{storeName(sale.storeId)}</td>}
                 <td style={tdStyle}>{userName(sale.userId)}</td>

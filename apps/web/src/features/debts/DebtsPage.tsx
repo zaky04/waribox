@@ -22,6 +22,7 @@ import {
 } from "../../components/sharedStyles";
 import { useApproval } from "../approval/ApprovalProvider";
 import { useAuth } from "../auth/useAuth";
+import { formatDateTime } from "../../lib/dateTime";
 
 type Debt = typeof schema.supplierDebts.$inferSelect;
 type Supplier = typeof schema.suppliers.$inferSelect;
@@ -155,7 +156,7 @@ export function DebtsPage() {
           <tbody>
             {visibleDebts.map((debt) => (
               <tr key={debt.id}>
-                <td style={tdStyle}>{debt.createdAt}</td>
+                <td style={tdStyle}>{formatDateTime(debt.createdAt)}</td>
                 <td style={tdStyle}>{supplierName(debt.supplierId)}</td>
                 <td style={tdStyle}>{purchaseNumber(debt.purchaseId)}</td>
                 <td style={tdStyle}>{articleSummary(debt.purchaseId)}</td>

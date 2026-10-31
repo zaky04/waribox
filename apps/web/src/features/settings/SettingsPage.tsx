@@ -58,6 +58,7 @@ import { resizeImageToDataUrl } from "./imageUtils";
 import { ServiceTariffsSection } from "./ServiceTariffsSection";
 import { SyscohadaAccountsSection } from "./SyscohadaAccountsSection";
 import { isDesktopTauriRuntime } from "./tauriRuntime";
+import { formatDateTime } from "../../lib/dateTime";
 
 type Backup = typeof schema.backups.$inferSelect;
 
@@ -1917,7 +1918,7 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
             <tbody>
               {backups.slice(0, 10).map((b) => (
                 <tr key={b.id}>
-                  <td style={tdStyle}>{b.createdAt}</td>
+                  <td style={tdStyle}>{formatDateTime(b.createdAt)}</td>
                   <td style={tdStyle}>{DESTINATION_LABELS[b.destination as BackupDestination] ?? b.destination}</td>
                   <td style={tdStyle}>
                     <span style={badgeStyle(b.status === "success" ? "ok" : "warning")}>

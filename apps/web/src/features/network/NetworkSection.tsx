@@ -9,6 +9,7 @@ import { useDeviceRoleStore } from "../../stores/deviceRole";
 import { BarcodeCameraScanner, isCameraScanSupported } from "../sales/BarcodeCameraScanner";
 import { isDesktopTauriRuntime } from "../settings/tauriRuntime";
 import { useNetwork } from "./NetworkProvider";
+import { formatDateTime } from "../../lib/dateTime";
 
 const secondaryButtonStyle = {
   background: "transparent",
@@ -286,7 +287,7 @@ function WorkerView() {
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
             {rejected.map((entry) => (
               <li key={entry.id} style={{ marginBottom: 6 }}>
-                <code>{entry.event.type}</code> — {entry.event.createdAt.slice(0, 16).replace("T", " ")} — {entry.reason}{" "}
+                <code>{entry.event.type}</code> — {formatDateTime(entry.event.createdAt)} — {entry.reason}{" "}
                 <button style={secondaryButtonStyle} onClick={() => void retryRejected(entry.id)}>
                   {t("network.worker.retry")}
                 </button>{" "}

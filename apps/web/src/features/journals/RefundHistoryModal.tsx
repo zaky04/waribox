@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { cardStyle } from "../../components/sharedStyles";
+import { formatDateTime } from "../../lib/dateTime";
 
 type Sale = typeof schema.sales.$inferSelect;
 type Refund = typeof schema.refunds.$inferSelect;
@@ -82,7 +83,7 @@ export function RefundHistoryModal({
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-                <strong>{refund.createdAt}</strong>
+                <strong>{formatDateTime(refund.createdAt)}</strong>
                 <strong>{formatAmount(refund.total)}</strong>
               </div>
               <p style={{ margin: "4px 0", color: "var(--color-text-muted)" }}>

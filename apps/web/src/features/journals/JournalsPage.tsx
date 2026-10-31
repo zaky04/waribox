@@ -24,6 +24,7 @@ import { FilterBar } from "../../components/FilterBar";
 import { inputStyle, pageStyle, primaryButtonStyle, tableStyle, tdStyle, thStyle } from "../../components/sharedStyles";
 import { RefundHistoryModal } from "./RefundHistoryModal";
 import { RefundModal } from "./RefundModal";
+import { formatDateTime } from "../../lib/dateTime";
 
 type Sale = typeof schema.sales.$inferSelect;
 type StockMovement = typeof schema.stockMovements.$inferSelect;
@@ -398,7 +399,7 @@ export function JournalsPage() {
                 {filteredSales.map((sale) => (
                   <tr key={sale.id}>
                     <td style={tdStyle}>{sale.number}</td>
-                    <td style={tdStyle}>{sale.createdAt}</td>
+                    <td style={tdStyle}>{formatDateTime(sale.createdAt)}</td>
                     <td style={tdStyle}>{customerName(sale.customerId) ?? "—"}</td>
                     <td style={tdStyle}>{sale.saleMode === "pos" ? t("journals.sales.modePos") : t("journals.sales.modeForm")}</td>
                     {multiStoreEnabled && <td style={tdStyle}>{storeName(sale.storeId)}</td>}
@@ -550,7 +551,7 @@ export function JournalsPage() {
               <tbody>
                 {filteredMovements.map((m) => (
                   <tr key={m.id}>
-                    <td style={tdStyle}>{m.createdAt}</td>
+                    <td style={tdStyle}>{formatDateTime(m.createdAt)}</td>
                     <td style={tdStyle}>{variantLabel(m.variantId)}</td>
                     <td style={tdStyle}>{locationName(m.locationId)}</td>
                     <td style={tdStyle}>{MOVEMENT_TYPE_LABELS[m.movementType] ?? m.movementType}</td>
@@ -635,7 +636,7 @@ export function JournalsPage() {
               <tbody>
                 {auditEntries.map((entry) => (
                   <tr key={entry.id}>
-                    <td style={tdStyle}>{entry.createdAt}</td>
+                    <td style={tdStyle}>{formatDateTime(entry.createdAt)}</td>
                     <td style={tdStyle}>{userName(entry.userId)}</td>
                     <td style={tdStyle}>{ACTION_LABELS[entry.action] ?? entry.action}</td>
                     <td style={tdStyle}>

@@ -65,9 +65,10 @@ const LOYALTY_BOUND_SAFETY_FACTOR = 3;
 
 class SyncValidationError extends Error {}
 
-function assertSync(condition: boolean, message: string): asserts condition {
+// Le message est une fonction : le texte (traduit) n'est construit que si la vérification échoue.
+function assertSync(condition: boolean, message: () => string): asserts condition {
   if (!condition) {
-    throw new SyncValidationError(`Sync: événement rejeté — ${message}`);
+    throw new SyncValidationError(t("syncChecks.rejected", { message: message() }));
   }
 }
 
@@ -77,12 +78,12 @@ function approxEqual(a: number, b: number, epsilon = AMOUNT_EPSILON): boolean {
 
 async function assertUserExists(db: Database, userId: number): Promise<void> {
   const row = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.id, userId)).get();
-  assertSync(!!row, `utilisateur ${userId} introuvable localement`);
+  assertSync(!!row, () => t("syncChecks.userMissing", { userId }));
 }
 
 async function assertStoreExists(db: Database, storeId: number): Promise<void> {
   const row = await db.select({ id: schema.stores.id }).from(schema.stores).where(eq(schema.stores.id, storeId)).get();
-  assertSync(!!row, `boutique ${storeId} introuvable localement`);
+  assertSync(!!row, () => t("syncChecks.storeMissing", { storeId }));
 }
 
 async function assertVariantExists(db: Database, variantId: number): Promise<void> {
@@ -91,7 +92,7 @@ async function assertVariantExists(db: Database, variantId: number): Promise<voi
     .from(schema.productVariants)
     .where(eq(schema.productVariants.id, variantId))
     .get();
-  assertSync(!!row, `variante ${variantId} introuvable localement`);
+  assertSync(!!row, () => t("syncChecks.variantMissing", { variantId }));
 }
 
 async function assertLocationExists(db: Database, locationId: number): Promise<void> {
@@ -100,13 +101,13 @@ async function assertLocationExists(db: Database, locationId: number): Promise<v
     .from(schema.stockLocations)
     .where(eq(schema.stockLocations.id, locationId))
     .get();
-  assertSync(!!row, `emplacement de stock ${locationId} introuvable localement`);
+  assertSync(!!row, () => t("syncChecks.locationMissing", { locationId }));
 }
 
 async function resolveCustomerId(db: Database, syncId: string): Promise<number> {
   const row = await db.select({ id: schema.customers.id }).from(schema.customers).where(eq(schema.customers.syncId, syncId)).get();
   if (!row) {
-    throw new Error(`Sync: client introuvable pour syncId ${syncId} — événement reçu hors ordre ?`);
+    throw new Error(t("coreErrors.network.syncCustomerMissing", { syncId }));
   }
   return row.id;
 }
@@ -114,7 +115,7 @@ async function resolveCustomerId(db: Database, syncId: string): Promise<number> 
 async function resolveBatchId(db: Database, syncId: string): Promise<number> {
   const row = await db.select({ id: schema.stockBatches.id }).from(schema.stockBatches).where(eq(schema.stockBatches.syncId, syncId)).get();
   if (!row) {
-    throw new Error(`Sync: lot de stock introuvable pour syncId ${syncId} — événement reçu hors ordre ?`);
+    throw new Error(t("coreErrors.network.syncBatchMissing", { syncId }));
   }
   return row.id;
 }
@@ -145,10 +146,10 @@ async function insertMovement(
  * contrainte que côté émetteur, voir SalesService.createSale).
  */
 async function validateSaleCreated(db: Database, payload: SaleCreatedEventPayload, customerId: number | null): Promise<void> {
-  assertSync(Number.isInteger(payload.sale.userId), "userId de vente manquant/invalide");
+  assertSync(Number.isInteger(payload.sale.userId), () => t("syncChecks.saleUserInvalid"));
   await assertUserExists(db, payload.sale.userId);
   if (payload.sale.storeId != null) await assertStoreExists(db, payload.sale.storeId);
-  assertSync(payload.items.length > 0, "vente sans ligne");
+  assertSync(payload.items.length > 0, () => t("syncChecks.saleNoLine"));
 
   let itemsTotal = 0;
   let subtotal = 0;
@@ -156,13 +157,13 @@ async function validateSaleCreated(db: Database, payload: SaleCreatedEventPayloa
   const consumedByVariant = new Map<number, number>();
 
   for (const item of payload.items) {
-    assertSync(item.quantity > 0, `quantité invalide pour la variante ${item.variantId}`);
-    assertSync(item.unitPrice >= 0, `prix unitaire invalide pour la variante ${item.variantId}`);
-    assertSync(item.discount >= 0, `remise de ligne invalide pour la variante ${item.variantId}`);
+    assertSync(item.quantity > 0, () => t("syncChecks.quantityInvalid", { variantId: item.variantId }));
+    assertSync(item.unitPrice >= 0, () => t("syncChecks.unitPriceInvalid", { variantId: item.variantId }));
+    assertSync(item.discount >= 0, () => t("syncChecks.lineDiscountInvalid", { variantId: item.variantId }));
     await assertVariantExists(db, item.variantId);
 
     const expectedItemTotal = computeSaleItemTotal(item);
-    assertSync(approxEqual(item.total, expectedItemTotal), `total de ligne incohérent pour la variante ${item.variantId}`);
+    assertSync(approxEqual(item.total, expectedItemTotal), () => t("syncChecks.lineTotalMismatch", { variantId: item.variantId }));
 
     subtotal += item.quantity * item.unitPrice;
     itemsTotal += expectedItemTotal;
@@ -170,18 +171,18 @@ async function validateSaleCreated(db: Database, payload: SaleCreatedEventPayloa
     consumedByVariant.set(item.variantId, (consumedByVariant.get(item.variantId) ?? 0) + item.quantity);
   }
 
-  assertSync(approxEqual(payload.sale.subtotal, subtotal), "sous-total incohérent avec les lignes");
-  assertSync(approxEqual(payload.sale.taxTotal, taxTotal), "TVA incohérente avec les lignes");
-  assertSync(payload.sale.discount >= 0, "remise globale négative");
-  assertSync(payload.sale.discount <= itemsTotal + AMOUNT_EPSILON, "remise supérieure au total des lignes");
+  assertSync(approxEqual(payload.sale.subtotal, subtotal), () => t("syncChecks.subtotalMismatch"));
+  assertSync(approxEqual(payload.sale.taxTotal, taxTotal), () => t("syncChecks.taxMismatch"));
+  assertSync(payload.sale.discount >= 0, () => t("syncChecks.discountNegative"));
+  assertSync(payload.sale.discount <= itemsTotal + AMOUNT_EPSILON, () => t("syncChecks.discountTooHigh"));
   const expectedTotal = Math.max(0, itemsTotal - payload.sale.discount);
-  assertSync(approxEqual(payload.sale.total, expectedTotal), "total de vente incohérent avec les lignes");
+  assertSync(approxEqual(payload.sale.total, expectedTotal), () => t("syncChecks.saleTotalMismatch"));
 
-  assertSync(payload.stockMovements.length > 0, "vente sans mouvement de stock associé");
+  assertSync(payload.stockMovements.length > 0, () => t("syncChecks.saleNoMovement"));
   const movedByVariant = new Map<number, number>();
   for (const movement of payload.stockMovements) {
-    assertSync(movement.movementType === "sale", "type de mouvement inattendu pour une vente");
-    assertSync(movement.quantityDelta < 0, "un mouvement de vente doit décrémenter le stock");
+    assertSync(movement.movementType === "sale", () => t("syncChecks.saleMovementType"));
+    assertSync(movement.quantityDelta < 0, () => t("syncChecks.saleMovementSign"));
     await assertVariantExists(db, movement.variantId);
     await assertLocationExists(db, movement.locationId);
     movedByVariant.set(movement.variantId, (movedByVariant.get(movement.variantId) ?? 0) - movement.quantityDelta);
@@ -189,21 +190,21 @@ async function validateSaleCreated(db: Database, payload: SaleCreatedEventPayloa
   for (const [variantId, quantity] of consumedByVariant) {
     assertSync(
       approxEqual(movedByVariant.get(variantId) ?? 0, quantity, 0.01),
-      `stock décrémenté (${movedByVariant.get(variantId) ?? 0}) incohérent avec la quantité vendue (${quantity}) pour la variante ${variantId}`,
+      () => t("syncChecks.stockVsQuantity", { moved: movedByVariant.get(variantId) ?? 0, quantity, variantId }),
     );
   }
 
   if (payload.payment) {
-    assertSync(payload.payment.amount > 0, "montant de paiement invalide");
+    assertSync(payload.payment.amount > 0, () => t("syncChecks.paymentAmountInvalid"));
   }
 
   if (payload.credit) {
-    assertSync(customerId != null, "créance sans client résolu");
-    assertSync(payload.credit.originalAmount > 0, "montant de créance invalide");
-    assertSync(payload.credit.remainingBalance >= 0, "solde de créance négatif");
-    assertSync(payload.credit.remainingBalance <= payload.credit.originalAmount + AMOUNT_EPSILON, "solde de créance supérieur au montant d'origine");
+    assertSync(customerId != null, () => t("syncChecks.creditNoCustomer"));
+    assertSync(payload.credit.originalAmount > 0, () => t("syncChecks.creditAmountInvalid"));
+    assertSync(payload.credit.remainingBalance >= 0, () => t("syncChecks.creditBalanceNegative"));
+    assertSync(payload.credit.remainingBalance <= payload.credit.originalAmount + AMOUNT_EPSILON, () => t("syncChecks.creditBalanceTooHigh"));
     const expectedCredit = expectedTotal - (payload.payment?.amount ?? 0);
-    assertSync(approxEqual(payload.credit.originalAmount, expectedCredit), "montant de créance incohérent avec le total payé");
+    assertSync(approxEqual(payload.credit.originalAmount, expectedCredit), () => t("syncChecks.creditAmountMismatch"));
   }
 
   const settings = await db.select().from(schema.businessSettings).where(eq(schema.businessSettings.id, 1)).get();
@@ -211,19 +212,19 @@ async function validateSaleCreated(db: Database, payload: SaleCreatedEventPayloa
   const maxMultiplier = Math.max(1, settings?.loyaltyTierSilverMultiplier ?? 1, settings?.loyaltyTierGoldMultiplier ?? 1);
 
   if (payload.loyaltyEarn) {
-    assertSync(customerId != null, "points gagnés sans client résolu");
-    assertSync(payload.loyaltyEarn.pointsDelta > 0, "points gagnés non positifs");
+    assertSync(customerId != null, () => t("syncChecks.earnNoCustomer"));
+    assertSync(payload.loyaltyEarn.pointsDelta > 0, () => t("syncChecks.earnNotPositive"));
     const bound = expectedTotal * ratio * maxMultiplier * LOYALTY_BOUND_SAFETY_FACTOR;
-    assertSync(payload.loyaltyEarn.pointsDelta <= bound + AMOUNT_EPSILON, "points gagnés sans rapport avec le montant de la vente");
+    assertSync(payload.loyaltyEarn.pointsDelta <= bound + AMOUNT_EPSILON, () => t("syncChecks.earnUnrelated"));
   }
 
   if (payload.loyaltyRedeem) {
-    assertSync(customerId != null, "points rachetés sans client résolu");
-    assertSync(payload.loyaltyRedeem.pointsDelta < 0, "points rachetés doivent réduire le solde");
+    assertSync(customerId != null, () => t("syncChecks.redeemNoCustomer"));
+    assertSync(payload.loyaltyRedeem.pointsDelta < 0, () => t("syncChecks.redeemMustReduce"));
     const customer = customerId != null ? await db.select().from(schema.customers).where(eq(schema.customers.id, customerId)).get() : undefined;
     assertSync(
       !!customer && Math.abs(payload.loyaltyRedeem.pointsDelta) <= customer.loyaltyPoints + AMOUNT_EPSILON,
-      "points rachetés supérieurs au solde actuel du client",
+      () => t("syncChecks.redeemOverBalance"),
     );
   }
 }
@@ -357,16 +358,16 @@ async function applyStockEntryCreated(db: Database, payload: StockEntryCreatedEv
     .get();
   if (existing) return;
 
-  assertSync(payload.movement.movementType === "adjustment", "type de mouvement inattendu pour une entrée de stock");
-  assertSync(payload.movement.referenceType === "manual", "référence inattendue pour une entrée de stock manuelle");
-  assertSync(payload.movement.quantityDelta > 0, "une entrée de stock doit incrémenter le stock");
+  assertSync(payload.movement.movementType === "adjustment", () => t("syncChecks.entryMovementType"));
+  assertSync(payload.movement.referenceType === "manual", () => t("syncChecks.entryReference"));
+  assertSync(payload.movement.quantityDelta > 0, () => t("syncChecks.entrySign"));
   await assertVariantExists(db, payload.movement.variantId);
   await assertLocationExists(db, payload.movement.locationId);
   if (payload.batch) {
-    assertSync(payload.batch.quantity > 0, "quantité de lot invalide");
-    assertSync(approxEqual(payload.batch.quantity, payload.movement.quantityDelta, 0.01), "quantité de lot incohérente avec le mouvement");
-    assertSync(payload.batch.variantId === payload.movement.variantId, "variante de lot incohérente avec le mouvement");
-    assertSync(payload.batch.locationId === payload.movement.locationId, "emplacement de lot incohérent avec le mouvement");
+    assertSync(payload.batch.quantity > 0, () => t("syncChecks.batchQuantityInvalid"));
+    assertSync(approxEqual(payload.batch.quantity, payload.movement.quantityDelta, 0.01), () => t("syncChecks.batchQuantityMismatch"));
+    assertSync(payload.batch.variantId === payload.movement.variantId, () => t("syncChecks.batchVariantMismatch"));
+    assertSync(payload.batch.locationId === payload.movement.locationId, () => t("syncChecks.batchLocationMismatch"));
   }
 
   if (payload.batch) {
@@ -398,8 +399,8 @@ async function applyStockLossCreated(db: Database, payload: StockLossCreatedEven
     .get();
   if (existing) return;
 
-  assertSync(payload.movement.movementType === "loss", "type de mouvement inattendu pour une perte de stock");
-  assertSync(payload.movement.quantityDelta < 0, "une perte de stock doit décrémenter le stock");
+  assertSync(payload.movement.movementType === "loss", () => t("syncChecks.lossMovementType"));
+  assertSync(payload.movement.quantityDelta < 0, () => t("syncChecks.lossSign"));
   await assertVariantExists(db, payload.movement.variantId);
   await assertLocationExists(db, payload.movement.locationId);
 
@@ -415,23 +416,23 @@ async function applyStockTransferCreated(db: Database, payload: StockTransferCre
       .get();
     if (existing) continue;
 
-    assertSync(leg.sourceMovement.movementType === "transfer", "type de mouvement inattendu pour la source d'un transfert");
-    assertSync(leg.destMovement.movementType === "transfer", "type de mouvement inattendu pour la destination d'un transfert");
-    assertSync(leg.sourceMovement.quantityDelta < 0, "la source d'un transfert doit décrémenter le stock");
-    assertSync(leg.destMovement.quantityDelta > 0, "la destination d'un transfert doit incrémenter le stock");
+    assertSync(leg.sourceMovement.movementType === "transfer", () => t("syncChecks.transferSourceType"));
+    assertSync(leg.destMovement.movementType === "transfer", () => t("syncChecks.transferDestType"));
+    assertSync(leg.sourceMovement.quantityDelta < 0, () => t("syncChecks.transferSourceSign"));
+    assertSync(leg.destMovement.quantityDelta > 0, () => t("syncChecks.transferDestSign"));
     assertSync(
       approxEqual(-leg.sourceMovement.quantityDelta, leg.destMovement.quantityDelta, 0.01),
-      "quantités de transfert incohérentes entre source et destination",
+      () => t("syncChecks.transferQuantities"),
     );
-    assertSync(leg.sourceMovement.variantId === leg.destMovement.variantId, "variante incohérente entre source et destination du transfert");
-    assertSync(leg.sourceMovement.locationId !== leg.destMovement.locationId, "un transfert doit changer d'emplacement");
+    assertSync(leg.sourceMovement.variantId === leg.destMovement.variantId, () => t("syncChecks.transferVariantMismatch"));
+    assertSync(leg.sourceMovement.locationId !== leg.destMovement.locationId, () => t("syncChecks.transferSameLocation"));
     await assertVariantExists(db, leg.sourceMovement.variantId);
     await assertLocationExists(db, leg.sourceMovement.locationId);
     await assertLocationExists(db, leg.destMovement.locationId);
     if (leg.destBatch) {
-      assertSync(approxEqual(leg.destBatch.quantity, leg.destMovement.quantityDelta, 0.01), "quantité de lot de destination incohérente avec le mouvement");
-      assertSync(leg.destBatch.variantId === leg.destMovement.variantId, "variante de lot de destination incohérente");
-      assertSync(leg.destBatch.locationId === leg.destMovement.locationId, "emplacement de lot de destination incohérent");
+      assertSync(approxEqual(leg.destBatch.quantity, leg.destMovement.quantityDelta, 0.01), () => t("syncChecks.transferBatchQuantity"));
+      assertSync(leg.destBatch.variantId === leg.destMovement.variantId, () => t("syncChecks.transferBatchVariant"));
+      assertSync(leg.destBatch.locationId === leg.destMovement.locationId, () => t("syncChecks.transferBatchLocation"));
     }
 
     if (leg.destBatch) {
@@ -459,7 +460,7 @@ async function applyStockTransferCreated(db: Database, payload: StockTransferCre
 }
 
 async function applyStockBreakdownCreated(db: Database, payload: StockBreakdownCreatedEventPayload): Promise<void> {
-  assertSync(payload.unitsPerParent > 0, "contenance invalide pour un détail de boîte");
+  assertSync(payload.unitsPerParent > 0, () => t("syncChecks.packUnitsInvalid"));
   for (const leg of payload.legs) {
     const existing = await db
       .select({ id: schema.stockMovements.id })
@@ -468,15 +469,15 @@ async function applyStockBreakdownCreated(db: Database, payload: StockBreakdownC
       .get();
     if (existing) continue;
 
-    assertSync(leg.sourceMovement.movementType === "adjustment" && leg.destMovement.movementType === "adjustment", "type de mouvement inattendu pour un détail de boîte");
-    assertSync(leg.sourceMovement.quantityDelta < 0, "la boîte ouverte doit décrémenter le stock");
-    assertSync(leg.destMovement.quantityDelta > 0, "les unités détaillées doivent incrémenter le stock");
+    assertSync(leg.sourceMovement.movementType === "adjustment" && leg.destMovement.movementType === "adjustment", () => t("syncChecks.packMovementType"));
+    assertSync(leg.sourceMovement.quantityDelta < 0, () => t("syncChecks.packSourceSign"));
+    assertSync(leg.destMovement.quantityDelta > 0, () => t("syncChecks.packDestSign"));
     assertSync(
       approxEqual(-leg.sourceMovement.quantityDelta * payload.unitsPerParent, leg.destMovement.quantityDelta, 0.01),
-      "quantités incohérentes entre boîtes ouvertes et unités détaillées",
+      () => t("syncChecks.packQuantities"),
     );
-    assertSync(leg.sourceMovement.locationId === leg.destMovement.locationId, "un détail de boîte reste au même emplacement");
-    assertSync(leg.sourceMovement.variantId !== leg.destMovement.variantId, "la boîte et son détail doivent être deux variantes");
+    assertSync(leg.sourceMovement.locationId === leg.destMovement.locationId, () => t("syncChecks.packSameLocation"));
+    assertSync(leg.sourceMovement.variantId !== leg.destMovement.variantId, () => t("syncChecks.packTwoVariants"));
     await assertLocationExists(db, leg.sourceMovement.locationId);
     // Le lien boîte → détail doit exister dans le catalogue local, avec la même contenance.
     const child = await db
@@ -486,10 +487,10 @@ async function applyStockBreakdownCreated(db: Database, payload: StockBreakdownC
       .get();
     assertSync(
       !!child && child.parentVariantId === leg.sourceMovement.variantId && approxEqual(child.unitsPerParent ?? 0, payload.unitsPerParent, 0.0001),
-      "présentation détaillée inconnue ou différente localement",
+      () => t("syncChecks.packChildUnknown"),
     );
-    assertSync(approxEqual(leg.destBatch.quantity, leg.destMovement.quantityDelta, 0.01), "quantité de lot détaillé incohérente avec le mouvement");
-    assertSync(leg.destBatch.variantId === leg.destMovement.variantId && leg.destBatch.locationId === leg.destMovement.locationId, "lot détaillé incohérent avec le mouvement");
+    assertSync(approxEqual(leg.destBatch.quantity, leg.destMovement.quantityDelta, 0.01), () => t("syncChecks.packBatchQuantity"));
+    assertSync(leg.destBatch.variantId === leg.destMovement.variantId && leg.destBatch.locationId === leg.destMovement.locationId, () => t("syncChecks.packBatchMismatch"));
 
     const existingBatch = await db
       .select({ id: schema.stockBatches.id })
@@ -516,8 +517,8 @@ async function applyExpenseCreated(db: Database, payload: ExpenseCreatedEventPay
   const existing = await db.select({ id: schema.expenses.id }).from(schema.expenses).where(eq(schema.expenses.syncId, payload.expense.syncId)).get();
   if (existing) return;
 
-  assertSync(payload.expense.amount > 0, "montant de dépense invalide");
-  assertSync(approxEqual(payload.expense.amount, payload.payment.amount), "paiement miroir incohérent avec la dépense");
+  assertSync(payload.expense.amount > 0, () => t("syncChecks.expenseAmountInvalid"));
+  assertSync(approxEqual(payload.expense.amount, payload.payment.amount), () => t("syncChecks.expensePaymentMismatch"));
   if (payload.expense.userId != null) await assertUserExists(db, payload.expense.userId);
   if (payload.expense.storeId != null) await assertStoreExists(db, payload.expense.storeId);
 

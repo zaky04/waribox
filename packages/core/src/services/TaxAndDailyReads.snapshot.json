@@ -1,0 +1,258 @@
+{
+ "TVA mars": {
+  "totalTaxCollected": 165,
+  "salesTaxTotal": 450,
+  "refundsTaxTotal": 285,
+  "taxableRevenue": 2080,
+  "byDay": [
+   {
+    "date": "2026-03-01",
+    "taxCollected": 180
+   },
+   {
+    "date": "2026-03-02",
+    "taxCollected": 165
+   },
+   {
+    "date": "2026-03-05",
+    "taxCollected": -180
+   }
+  ]
+ },
+ "TVA mars boutique": {
+  "totalTaxCollected": 90,
+  "salesTaxTotal": 360,
+  "refundsTaxTotal": 270,
+  "taxableRevenue": 1590,
+  "byDay": [
+   {
+    "date": "2026-03-01",
+    "taxCollected": 180
+   },
+   {
+    "date": "2026-03-02",
+    "taxCollected": 90
+   },
+   {
+    "date": "2026-03-05",
+    "taxCollected": -180
+   }
+  ]
+ },
+ "TVA mars autre boutique": {
+  "totalTaxCollected": 75,
+  "salesTaxTotal": 90,
+  "refundsTaxTotal": 15,
+  "taxableRevenue": 490,
+  "byDay": [
+   {
+    "date": "2026-03-02",
+    "taxCollected": 75
+   }
+  ]
+ },
+ "TVA un jour": {
+  "totalTaxCollected": 165,
+  "salesTaxTotal": 270,
+  "refundsTaxTotal": 105,
+  "taxableRevenue": 2080,
+  "byDay": [
+   {
+    "date": "2026-03-02",
+    "taxCollected": 165
+   }
+  ]
+ },
+ "TVA février": {
+  "totalTaxCollected": 360,
+  "salesTaxTotal": 360,
+  "refundsTaxTotal": 0,
+  "taxableRevenue": 2360,
+  "byDay": [
+   {
+    "date": "2026-02-15",
+    "taxCollected": 360
+   }
+  ]
+ },
+ "TVA vide": {
+  "totalTaxCollected": 0,
+  "salesTaxTotal": 0,
+  "refundsTaxTotal": 0,
+  "taxableRevenue": 0,
+  "byDay": []
+ },
+ "résumé jour": {
+  "date": "2026-03-02",
+  "salesCount": 3,
+  "salesTotal": 2080,
+  "ticketsCount": 2,
+  "ticketsTotal": 1600,
+  "refundsCount": 2,
+  "refundsTotal": 690,
+  "discountCount": 2,
+  "discountTotal": 350,
+  "lossCount": 2,
+  "lossValue": 1200,
+  "entryCount": 1,
+  "entryValue": 2000,
+  "expensesCount": 2,
+  "expensesTotal": 300,
+  "cashSessionsClosed": 2,
+  "cashVariance": -150,
+  "ticketsCancelled": 1,
+  "approvalsCount": 3,
+  "alertsCount": 4,
+  "dangerAlerts": 1
+ },
+ "résumé jour boutique": {
+  "date": "2026-03-02",
+  "salesCount": 2,
+  "salesTotal": 1590,
+  "ticketsCount": 1,
+  "ticketsTotal": 700,
+  "refundsCount": 2,
+  "refundsTotal": 690,
+  "discountCount": 2,
+  "discountTotal": 350,
+  "lossCount": 1,
+  "lossValue": 800,
+  "entryCount": 1,
+  "entryValue": 2000,
+  "expensesCount": 1,
+  "expensesTotal": 200,
+  "cashSessionsClosed": 1,
+  "cashVariance": -100,
+  "ticketsCancelled": 1,
+  "approvalsCount": 3,
+  "alertsCount": 4,
+  "dangerAlerts": 1
+ },
+ "résumé jour autre boutique": {
+  "date": "2026-03-02",
+  "salesCount": 1,
+  "salesTotal": 490,
+  "ticketsCount": 1,
+  "ticketsTotal": 900,
+  "refundsCount": 2,
+  "refundsTotal": 690,
+  "discountCount": 2,
+  "discountTotal": 350,
+  "lossCount": 1,
+  "lossValue": 400,
+  "entryCount": 0,
+  "entryValue": 0,
+  "expensesCount": 1,
+  "expensesTotal": 100,
+  "cashSessionsClosed": 1,
+  "cashVariance": -50,
+  "ticketsCancelled": 1,
+  "approvalsCount": 3,
+  "alertsCount": 4,
+  "dangerAlerts": 1
+ },
+ "résumé lendemain": {
+  "date": "2026-03-03",
+  "salesCount": 0,
+  "salesTotal": 0,
+  "ticketsCount": 1,
+  "ticketsTotal": 100,
+  "refundsCount": 0,
+  "refundsTotal": 0,
+  "discountCount": 1,
+  "discountTotal": 999,
+  "lossCount": 1,
+  "lossValue": 2800,
+  "entryCount": 0,
+  "entryValue": 0,
+  "expensesCount": 1,
+  "expensesTotal": 50,
+  "cashSessionsClosed": 1,
+  "cashVariance": -99,
+  "ticketsCancelled": 0,
+  "approvalsCount": 0,
+  "alertsCount": 4,
+  "dangerAlerts": 1
+ },
+ "résumé jour vide": {
+  "date": "2026-03-10",
+  "salesCount": 0,
+  "salesTotal": 0,
+  "ticketsCount": 0,
+  "ticketsTotal": 0,
+  "refundsCount": 0,
+  "refundsTotal": 0,
+  "discountCount": 0,
+  "discountTotal": 0,
+  "lossCount": 0,
+  "lossValue": 0,
+  "entryCount": 0,
+  "entryValue": 0,
+  "expensesCount": 0,
+  "expensesTotal": 0,
+  "cashSessionsClosed": 0,
+  "cashVariance": 0,
+  "ticketsCancelled": 0,
+  "approvalsCount": 0,
+  "alertsCount": 4,
+  "dangerAlerts": 1
+ },
+ "vérification": {
+  "items": [
+   {
+    "kind": "ticket",
+    "number": "TCK-R-1",
+    "at": "2026-03-02 10:00:00",
+    "total": 700,
+    "customerName": "Avec Tel",
+    "phone": "0700000001"
+   },
+   {
+    "kind": "sale",
+    "number": "VTE-R-4",
+    "at": "2026-02-15 10:00:00",
+    "total": 2360,
+    "customerName": "Avec Tel",
+    "phone": "0700000001"
+   },
+   {
+    "kind": "sale",
+    "number": "VTE-R-1",
+    "at": "2026-03-01 10:00:00",
+    "total": 1180,
+    "customerName": "Avec Tel",
+    "phone": "0700000001"
+   }
+  ],
+  "anonymousPercent": 63
+ },
+ "vérification boutique": {
+  "items": [
+   {
+    "kind": "sale",
+    "number": "VTE-R-4",
+    "at": "2026-02-15 10:00:00",
+    "total": 2360,
+    "customerName": "Avec Tel",
+    "phone": "0700000001"
+   },
+   {
+    "kind": "ticket",
+    "number": "TCK-R-1",
+    "at": "2026-03-02 10:00:00",
+    "total": 700,
+    "customerName": "Avec Tel",
+    "phone": "0700000001"
+   },
+   {
+    "kind": "sale",
+    "number": "VTE-R-1",
+    "at": "2026-03-01 10:00:00",
+    "total": 1180,
+    "customerName": "Avec Tel",
+    "phone": "0700000001"
+   }
+  ],
+  "anonymousPercent": 50
+ }
+}

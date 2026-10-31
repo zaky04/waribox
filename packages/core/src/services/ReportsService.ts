@@ -490,18 +490,26 @@ export async function getTaxCollected(
   storeId?: number,
 ): Promise<TaxCollectedSummary> {
   const normalized = normalizeRange(range);
-  const [sales, refunds] = await Promise.all([listSales(db), db.select().from(schema.refunds)]);
-
-  const salesInRange = sales.filter(
-    (s) => inRange(s.createdAt, normalized) && (!storeId || s.storeId === storeId),
-  );
-  const salesById = new Map(sales.map((s) => [s.id, s] as const));
+  // Filtré par la base (index sur created_at) : avant, toutes les ventes et tous les remboursements étaient relus.
+  const saleConditions = [gte(schema.sales.createdAt, normalized.from), lte(schema.sales.createdAt, normalized.to)];
+  if (storeId) saleConditions.push(eq(schema.sales.storeId, storeId));
+  const [salesInRange, refundsInPeriod] = await Promise.all([
+    db.select().from(schema.sales).where(and(...saleConditions)),
+    db
+      .select()
+      .from(schema.refunds)
+      .where(and(gte(schema.refunds.createdAt, normalized.from), lte(schema.refunds.createdAt, normalized.to))),
+  ]);
   // Un remboursement n'a pas de storeId propre — on remonte à la vente
   // d'origine, dont il hérite forcément la boutique (voir RefundsService).
-  const refundsInRange = refunds.filter(
-    (r) =>
-      inRange(r.createdAt, normalized) && (!storeId || salesById.get(r.saleId)?.storeId === storeId),
-  );
+  let refundsInRange = refundsInPeriod;
+  if (storeId) {
+    const originals = await inChunks([...new Set(refundsInPeriod.map((r) => r.saleId))], (ids) =>
+      db.select({ id: schema.sales.id, storeId: schema.sales.storeId }).from(schema.sales).where(inArray(schema.sales.id, ids)),
+    );
+    const storeBySale = new Map(originals.map((x) => [x.id, x.storeId] as const));
+    refundsInRange = refundsInPeriod.filter((r) => storeBySale.get(r.saleId) === storeId);
+  }
 
   const salesTaxTotal = salesInRange.reduce((sum, s) => sum + s.taxTotal, 0);
   const refundsTaxTotal = refundsInRange.reduce((sum, r) => sum + r.taxTotal, 0);

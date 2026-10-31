@@ -53,6 +53,7 @@ import {
 } from "../../components/sharedStyles";
 import { saveGeneratedFile } from "../../lib/saveFile";
 import { useAuth } from "../auth/useAuth";
+import { formatDateTime } from "../../lib/dateTime";
 
 type SubTab = "sales" | "margins" | "cashflow" | "tax" | "cash" | "service_orders";
 
@@ -257,9 +258,9 @@ export function ReportsPage() {
 
   const cashSessionRows: CashSessionReportRow[] = cashSessions.map((s) => ({
     userName: userName(s.userId),
-    openedAt: s.openedAt,
+    openedAt: formatDateTime(s.openedAt),
     openingAmount: s.openingAmount,
-    closedAt: s.closedAt,
+    closedAt: s.closedAt ? formatDateTime(s.closedAt) : null,
     closingAmount: s.closingAmount,
     expectedAmount: s.expectedAmount,
     difference: s.closingAmount != null && s.expectedAmount != null ? s.closingAmount - s.expectedAmount : null,
@@ -666,10 +667,10 @@ export function ReportsPage() {
               <tbody>
                 {cashSessionRows.map((r, i) => (
                   <tr key={i}>
-                    <td style={tdStyle}>{r.openedAt}</td>
+                    <td style={tdStyle}>{formatDateTime(r.openedAt)}</td>
                     <td style={tdStyle}>{r.userName}</td>
                     <td style={tdStyle}>{formatAmount(r.openingAmount)}</td>
-                    <td style={tdStyle}>{r.closedAt ?? t("reports.inProgress")}</td>
+                    <td style={tdStyle}>{formatDateTime(r.closedAt) || t("reports.inProgress")}</td>
                     <td style={tdStyle}>{r.closingAmount != null ? formatAmount(r.closingAmount) : "—"}</td>
                     <td style={tdStyle}>{r.expectedAmount != null ? formatAmount(r.expectedAmount) : "—"}</td>
                     <td
@@ -714,7 +715,7 @@ export function ReportsPage() {
                 {serviceOrders.map((order) => (
                   <tr key={order.id}>
                     <td style={tdStyle}>{order.number}</td>
-                    <td style={tdStyle}>{order.createdAt}</td>
+                    <td style={tdStyle}>{formatDateTime(order.createdAt)}</td>
                     <td style={tdStyle}>{customerName(order.customerId) ?? "—"}</td>
                     <td style={tdStyle}>{formatAmount(order.total)}</td>
                     <td style={tdStyle}>{PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus}</td>

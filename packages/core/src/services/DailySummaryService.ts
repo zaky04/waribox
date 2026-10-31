@@ -3,6 +3,7 @@ import { schema } from "@gestion-boutique/database";
 import { formatMoneyPlain, t } from "@gestion-boutique/i18n";
 import { roundMoney } from "../domain/money";
 import { getControlsReport } from "./ControlsService";
+import { and, asc, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
 import { getSalesSummary } from "./ReportsService";
 import { localDayEndUtc, localDayStartUtc } from "../domain/localDay";
 
@@ -49,15 +50,19 @@ export async function getDailySummary(db: Database, date: string, storeId?: numb
   const to = localDayEndUtc(day);
   const inDay = (at: string) => at >= from && at <= to;
 
+  // Tout est filtré par la base sur la journée : avant, chaque table était relue en entier.
   const [sales, orders, refunds, movements, locations, expenses, sessions, audits, variants, products] = await Promise.all([
     getSalesSummary(db, { from: day, to: day }, storeId),
-    db.select().from(schema.serviceOrders),
-    db.select().from(schema.refunds),
-    db.select().from(schema.stockMovements),
+    db.select().from(schema.serviceOrders).where(and(gte(schema.serviceOrders.createdAt, from), lte(schema.serviceOrders.createdAt, to))),
+    db.select().from(schema.refunds).where(and(gte(schema.refunds.createdAt, from), lte(schema.refunds.createdAt, to))),
+    db
+      .select()
+      .from(schema.stockMovements)
+      .where(and(gte(schema.stockMovements.createdAt, from), lte(schema.stockMovements.createdAt, to), inArray(schema.stockMovements.movementType, ["loss", "adjustment"]))),
     db.select().from(schema.stockLocations),
-    db.select().from(schema.expenses),
-    db.select().from(schema.cashSessions),
-    db.select().from(schema.auditLog),
+    db.select().from(schema.expenses).where(eq(schema.expenses.expenseDate, day)),
+    db.select().from(schema.cashSessions).where(and(isNotNull(schema.cashSessions.closedAt), gte(schema.cashSessions.closedAt, from), lte(schema.cashSessions.closedAt, to))),
+    db.select().from(schema.auditLog).where(and(gte(schema.auditLog.createdAt, from), lte(schema.auditLog.createdAt, to))),
     db.select().from(schema.productVariants),
     db.select().from(schema.products),
   ]);
@@ -180,11 +185,16 @@ export async function getVerificationSample(
   const count = options.count ?? 5;
   const random = options.random ?? Math.random;
   const since = new Date(Date.now() - days * 86400000).toISOString().replace("T", " ").slice(0, 19);
-  const [sales, orders, customers] = await Promise.all([
-    db.select().from(schema.sales),
-    db.select().from(schema.serviceOrders),
-    db.select().from(schema.customers),
+  // Seules les opérations de la période sont lues (puis les clients qu'elles désignent).
+  const [sales, orders] = await Promise.all([
+    db.select().from(schema.sales).where(gte(schema.sales.createdAt, since)).orderBy(asc(schema.sales.id)),
+    db.select().from(schema.serviceOrders).where(gte(schema.serviceOrders.createdAt, since)).orderBy(asc(schema.serviceOrders.id)),
   ]);
+  const customerIds = [...new Set([...sales, ...orders].map((x) => x.customerId).filter((id): id is number => id != null))];
+  const customers: (typeof schema.customers.$inferSelect)[] = [];
+  for (let i = 0; i < customerIds.length; i += 500) {
+    customers.push(...(await db.select().from(schema.customers).where(inArray(schema.customers.id, customerIds.slice(i, i + 500)))));
+  }
   const customerById = new Map(customers.map((c) => [c.id, c] as const));
   const storeOk = (s: number | null | undefined) => !options.storeId || s === options.storeId;
 

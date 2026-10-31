@@ -21,6 +21,7 @@ import { amountStyle, cardStyle, inputStyle, pageStyle, primaryButtonStyle, tabl
 import { formatAmount, formatMoney } from "../../lib/format";
 import { useApproval } from "../approval/ApprovalProvider";
 import { useAuth } from "../auth/useAuth";
+import { formatDateTime } from "../../lib/dateTime";
 
 type Location = typeof schema.stockLocations.$inferSelect;
 type StockCount = typeof schema.stockCounts.$inferSelect;
@@ -306,7 +307,7 @@ export function InventoryPage() {
                 {history.map((c) => (
                   <tr key={c.id}>
                     <td style={tdStyle}>#{c.id}</td>
-                    <td style={tdStyle}>{c.closedAt}</td>
+                    <td style={tdStyle}>{formatDateTime(c.closedAt)}</td>
                     <td style={tdStyle}>
                       <button style={{ ...primaryButtonStyle, padding: "4px 12px" }} onClick={() => void openReport(c.id)}>
                         {t("inventory.viewReport")}

@@ -26,6 +26,7 @@ import {
 import { openExternalUrl } from "../../lib/openExternalUrl";
 import { openWhatsApp } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
+import { formatDateTime } from "../../lib/dateTime";
 
 type Credit = typeof schema.customerCredits.$inferSelect;
 type Customer = typeof schema.customers.$inferSelect;
@@ -209,7 +210,7 @@ export function CreditsPage() {
               const phone = customerPhone(credit.customerId);
               return (
                 <tr key={credit.id}>
-                  <td style={tdStyle}>{credit.createdAt}</td>
+                  <td style={tdStyle}>{formatDateTime(credit.createdAt)}</td>
                   <td style={tdStyle}>{customerName(credit.customerId)}</td>
                   <td style={tdStyle}>{referenceNumber(credit)}</td>
                   <td style={tdStyle}>{articleSummary(credit)}</td>

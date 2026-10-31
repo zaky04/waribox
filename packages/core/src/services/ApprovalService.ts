@@ -134,7 +134,7 @@ async function approverWithinLimit(db: Database, approverId: number, kind: Appro
 export async function assertCanDecide(db: Database, userId: number, kind: ApprovalKind, amount: number): Promise<void> {
   const approver = await loadApprover(db, userId);
   if (!approver || !canApprove(approver.perms, kind) || !withinApproveLimit(approver.limit, kind, amount)) {
-    throw new Error("décision de synchronisation refusée : approbateur non autorisé");
+    throw new Error(t("coreErrors.network.syncApproverNotAllowed"));
   }
 }
 

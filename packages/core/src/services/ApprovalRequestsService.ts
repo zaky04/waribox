@@ -121,7 +121,7 @@ async function ensureRequestFromSnapshot(db: Database, snap: ApprovalRequestSnap
   if (existing) return existing;
   if (snap.requestedBy != null) {
     const user = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.id, snap.requestedBy)).get();
-    if (!user) throw new Error("demande de synchronisation : demandeur inconnu");
+    if (!user) throw new Error(t("coreErrors.network.syncRequesterUnknown"));
   }
   return db
     .insert(schema.approvalRequests)
@@ -152,7 +152,7 @@ export async function applyApprovalRequestCreated(db: Database, payload: Approva
 export async function applyApprovalRequestDecided(db: Database, payload: ApprovalRequestDecidedEventPayload): Promise<void> {
   const request = await ensureRequestFromSnapshot(db, payload.request);
   if (request.status !== "pending") return;
-  if (request.requestedBy === payload.decidedBy) throw new Error("décision de synchronisation : le demandeur ne peut pas trancher sa demande");
+  if (request.requestedBy === payload.decidedBy) throw new Error(t("coreErrors.network.syncRequesterCannotDecide"));
   await assertCanDecide(db, payload.decidedBy, request.kind as ApprovalKind, request.amount);
   const data = request.payload ? (JSON.parse(request.payload) as Record<string, any>) : {};
   await applyStockDecisionEffects(db, request, data, payload.approve, payload.decidedBy);

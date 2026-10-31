@@ -8,6 +8,7 @@ import { formatAmount } from "../../lib/format";
 import { useDeviceRoleStore } from "../../stores/deviceRole";
 import { useAuth } from "../auth/useAuth";
 import { useNetwork } from "../network/NetworkProvider";
+import { formatDateTime } from "../../lib/dateTime";
 
 type Request = typeof schema.approvalRequests.$inferSelect;
 
@@ -181,7 +182,7 @@ export function ApprovalsPage() {
                     <strong>{r.summary}</strong>
                   </div>
                   <div style={{ fontSize: 12.5, color: "var(--color-text-muted)", margin: "4px 0" }}>
-                    {t("approvalRequests.by", { name: nameOf(r.requestedBy), date: r.createdAt.slice(0, 16) })} —{" "}
+                    {t("approvalRequests.by", { name: nameOf(r.requestedBy), date: formatDateTime(r.createdAt) })} —{" "}
                     {r.kind === "stock" ? t("approvalRequests.effectNow") : t("approvalRequests.blocked")}
                   </div>
                   {!withinApproveLimit(user?.limitApprove, r.kind as ApprovalKind, r.amount) ? (
@@ -243,7 +244,7 @@ export function ApprovalsPage() {
               <tbody>
                 {mine.map((r) => (
                   <tr key={r.id}>
-                    <td style={tdStyle}>{r.createdAt.slice(0, 16)}</td>
+                    <td style={tdStyle}>{formatDateTime(r.createdAt)}</td>
                     <td style={tdStyle}>
                       {unseenIds.has(r.id) && <span style={{ ...badgeStyle("info"), marginRight: 6 }}>{t("approvalRequests.new")}</span>}
                       {r.summary}

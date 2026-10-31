@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { cardStyle, inputStyle, primaryButtonStyle, tableStyle, tdStyle, thStyle } from "../../components/sharedStyles";
 import { openWhatsApp } from "../../lib/whatsapp";
+import { formatLocalDate } from "../../lib/dateTime";
 
 interface Props {
   businessName?: string;
@@ -113,7 +114,7 @@ export function LotTracePanel({ businessName, countryCode }: Props) {
                   {trace.sales.map((s) => (
                     <tr key={s.saleId}>
                       <td style={tdStyle}>{s.number}</td>
-                      <td style={tdStyle}>{s.createdAt.slice(0, 10)}</td>
+                      <td style={tdStyle}>{formatLocalDate(s.createdAt)}</td>
                       <td style={tdStyle}>{s.productName}</td>
                       <td style={tdStyle}>{s.quantity}</td>
                       <td style={tdStyle}>{s.customerName ?? t("pharmacy.traceAnonymous")}</td>

@@ -1,6 +1,7 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { eq, like, sql } from "drizzle-orm";
+import { t } from "@gestion-boutique/i18n";
 
 // Numérotation des documents (VTE-2026-000123, ACH-…, DEV-…, TCK-…).
 //
@@ -42,5 +43,5 @@ export async function uniqueSaleNumber(db: Database, number: string, syncId: str
     const candidate = `${number}-${tag.slice(0, length)}`;
     if (!(await taken(candidate))) return candidate;
   }
-  throw new Error(`numéro de vente déjà utilisé : ${number}`);
+  throw new Error(t("coreErrors.network.saleNumberTaken", { number }));
 }

@@ -24,6 +24,7 @@ import { amountStyle, badgeStyle, cardStyle, inputStyle, pageStyle, primaryButto
 import { formatAmount, formatMoney } from "../../lib/format";
 import { buildWhatsAppLink, isWhatsAppNumberUsable } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
+import { formatDateTime } from "../../lib/dateTime";
 
 function isoDay(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -458,7 +459,7 @@ export function ControlsPage() {
             <tbody>
               {report?.cashVariances.map((c) => (
                 <tr key={c.sessionId}>
-                  <td style={tdStyle}>{c.closedAt}</td>
+                  <td style={tdStyle}>{formatDateTime(c.closedAt)}</td>
                   <td style={tdStyle}>{nameOf(c.userId)}</td>
                   <td style={{ ...tdStyle, ...amountStyle }}>{formatAmount(c.expected)}</td>
                   <td style={{ ...tdStyle, ...amountStyle }}>{formatAmount(c.counted)}</td>
@@ -496,7 +497,7 @@ export function ControlsPage() {
               <tbody>
                 {report.stockCounts.map((c) => (
                   <tr key={c.countId}>
-                    <td style={tdStyle}>{c.closedAt}</td>
+                    <td style={tdStyle}>{formatDateTime(c.closedAt)}</td>
                     <td style={tdStyle}>{nameOf(c.closedBy)}</td>
                     <td style={{ ...tdStyle, ...amountStyle, color: c.missingValue > 0 ? "var(--color-danger)" : undefined }}>{formatMoney(c.missingValue)}</td>
                     <td style={{ ...tdStyle, ...amountStyle }}>{formatMoney(c.surplusValue)}</td>

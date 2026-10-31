@@ -35,6 +35,7 @@ import { IconX } from "../../components/icons";
 import { saveGeneratedFile } from "../../lib/saveFile";
 import { useApproval } from "../approval/ApprovalProvider";
 import { useAuth } from "../auth/useAuth";
+import { formatDateTime } from "../../lib/dateTime";
 
 function timestampForFilename(): string {
   const now = new Date();
@@ -686,7 +687,7 @@ export function PurchasesPage() {
                   {p.number}
                   {p.invoiceReference ? <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{p.invoiceReference}</div> : null}
                 </td>
-                <td style={tdStyle}>{p.createdAt}</td>
+                <td style={tdStyle}>{formatDateTime(p.createdAt)}</td>
                 <td style={tdStyle}>{supplierName(p.supplierId)}</td>
                 <td style={tdStyle}>{formatAmount(p.total)}</td>
                 <td style={tdStyle}>
