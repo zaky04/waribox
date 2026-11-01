@@ -546,14 +546,18 @@
       "retry": "Retry",
       "retryAll": "Retry all",
       "discard": "Discard",
-      "applyError": "An event received from the Master could not be applied here: {{message}}"
+      "applyError": "An event received from the Master could not be applied here: {{message}}",
+      "manualIdentifyError": "Could not reach this Master with this information (wrong address, port or token)."
     },
     "banner": {
       "connected": "Linked device — connected to Master “{{master}}”",
       "offline": "Linked device — offline: your sales are kept and will be sent when the network is back",
       "rules": "The catalog and stock come from the Master. Purchases, refunds, stock counts and corrections are done on the Master. Credit and debt payments, service tickets, quotes and the cash drawer stay on this device (not shared yet).",
       "applyError": "A change from the Master could not be applied: {{reason}}"
-    }
+    },
+    "joinConfirm": "Joining a network replaces ALL the data on this device (products, customers, sales, stock...) with the Master's. A safety copy will be saved first. Continue?",
+    "switchMasterConfirm": "This device was linked to another Master. Linking to this one replaces all of its data with this Master's. A safety copy will be saved first. Continue?",
+    "joinBackupFailed": "The safety copy could not be saved. Replace this device's data anyway?"
   },
   "storesSection": {
     "heading": "Stores",

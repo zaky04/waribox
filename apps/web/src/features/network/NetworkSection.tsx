@@ -10,6 +10,9 @@ import { BarcodeCameraScanner, isCameraScanSupported } from "../sales/BarcodeCam
 import { isDesktopTauriRuntime } from "../settings/tauriRuntime";
 import { useNetwork } from "./NetworkProvider";
 import { formatDateTime } from "../../lib/dateTime";
+import { getPairedMasterId } from "@gestion-boutique/core";
+import { confirmReplaceLocalData } from "./joinSafety";
+import { identifyMaster } from "./lanScan";
 
 const secondaryButtonStyle = {
   background: "transparent",
@@ -23,6 +26,7 @@ const secondaryButtonStyle = {
 
 function RoleChoice() {
   const { t } = useTranslation();
+  const db = useDatabase();
   const { deviceName, setDeviceName } = useDeviceIdentityStore();
   const { setRole } = useDeviceRoleStore();
   const desktop = isDesktopTauriRuntime();
@@ -53,7 +57,10 @@ function RoleChoice() {
             border: "1px solid var(--color-border)",
             boxShadow: "none",
           }}
-          onClick={() => setRole("worker")}
+          onClick={async () => {
+            // Se relier remplace les données de l'appareil : prévenir et sauvegarder d'abord.
+            if (await confirmReplaceLocalData(db, t, "network.joinConfirm")) setRole("worker");
+          }}
         >
           {t("network.joinNetwork")}
         </button>
@@ -186,22 +193,29 @@ function MasterView() {
 
 function ManualEntryForm({ onSubmit }: { onSubmit: (payload: MasterPairingPayload) => void }) {
   const { t } = useTranslation();
+  const { deviceId, deviceName } = useDeviceIdentityStore();
   const [host, setHost] = useState("");
   const [port, setPort] = useState("");
   const [token, setToken] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const portNumber = Number(port);
     if (!host.trim() || !Number.isInteger(portNumber) || portNumber <= 0 || !token.trim()) {
       setFormError(t("network.worker.manualEntryError"));
       return;
     }
     setFormError(null);
+    // On demande d'abord au Maître qui il est : son identité décide si cet appareil change de Maître.
+    const identity = await identifyMaster(host.trim(), portNumber, token.trim(), deviceId, deviceName);
+    if (!identity) {
+      setFormError(t("network.worker.manualIdentifyError"));
+      return;
+    }
     onSubmit(
       new MasterPairingPayload({
-        masterId: "manual",
-        masterName: t("network.worker.manualMasterName"),
+        masterId: identity.masterId,
+        masterName: identity.masterName || t("network.worker.manualMasterName"),
         host: host.trim(),
         port: portNumber,
         token: token.trim(),
@@ -255,10 +269,18 @@ function WorkerView() {
   } = useNetwork().worker;
   const [scanning, setScanning] = useState(false);
 
+  // Se relier à un AUTRE Maître que celui dont l'état est ici remplace les données de l'appareil : prévenir et
+  // sauvegarder d'abord (même Maître : rien à confirmer).
+  const requestConnect = async (payload: MasterPairingPayload) => {
+    const paired = await getPairedMasterId(db);
+    if (paired !== null && paired !== payload.masterId && !(await confirmReplaceLocalData(db, t, "network.switchMasterConfirm"))) return;
+    connect(payload);
+  };
+
   const handleDetected = (raw: string) => {
     const payload = MasterPairingPayload.tryDecode(raw);
     setScanning(false);
-    if (payload) connect(payload);
+    if (payload) void requestConnect(payload);
   };
 
   const handleLeaveRole = () => {
@@ -326,7 +348,7 @@ function WorkerView() {
               </button>
             )}
           </div>
-          <ManualEntryForm onSubmit={connect} />
+          <ManualEntryForm onSubmit={(payload) => void requestConnect(payload)} />
         </div>
       )}
 

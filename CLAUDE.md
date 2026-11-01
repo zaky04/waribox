@@ -264,7 +264,9 @@ progressivement page par page plutôt qu'en un seul passage sur tout le code.
 - **Mode réseau Maître / Appareil relié** : le Maître fait foi pour le catalogue et le stock ; l'appareil
   relié les reçoit (empreintes, alignement du stock) et ne les modifie pas. Seuls ventes, dépenses,
   mouvements de stock et demandes d'approbation sont répliqués ; le reste est bloqué ou reste local sur
-  l'appareil relié (bandeau). Jamais testé sur deux appareils physiques. Voir `packages/core/src/sync/` et
+  l'appareil relié (bandeau). Se relier REMPLACE les données de l'appareil (`resetBusinessData`, copie de
+  sécurité d'abord) ; la progression de synchro est liée à l'identité du Maître (`getHelloSeq`).
+  Jamais testé sur deux appareils physiques. Voir `packages/core/src/sync/` et
   les entrées du 2026-09-04 à 2026-10-31 du journal.
 - **Android** : `pnpm android:sync` après tout `tauri android init` (réapplique `MainActivity.kt` et le
   trafic non chiffré vers le Maître) ; `gen/` est ignoré par git.

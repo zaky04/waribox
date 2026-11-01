@@ -2,8 +2,8 @@ import type { Database } from "@gestion-boutique/database";
 import { withTransaction } from "@gestion-boutique/database";
 import { WsMessage, WsMessageTypes } from "@gestion-boutique/network";
 import { applyRemoteSyncEvent } from "./applyRemoteEvents";
-import { applyCatalogSnapshot, rebaseStock, type CatalogSnapshot, type StockBalance } from "./snapshot";
-import { getCatalogHashes, getLastAppliedSeq, listPendingOutbox, setCatalogHashes, setLastAppliedSeq } from "./syncStore";
+import { applyCatalogSnapshot, rebaseStock, resetBusinessData, type CatalogSnapshot, type StockBalance } from "./snapshot";
+import { clearOutbox, getCatalogHashes, getLastAppliedSeq, getPairedMasterId, listPendingOutbox, setCatalogHashes, setLastAppliedSeq, setPairedMasterId } from "./syncStore";
 import type { SyncEvent } from "./syncEvents";
 
 // Côté appareil relié : réception de ce que le Maître envoie (événements, état du catalogue et du stock).
@@ -118,12 +118,23 @@ export function createWorkerSync(deps: WorkerSyncDeps) {
     if (!snapshot) return;
 
     if (message.payload.mode === "full") {
-      // Premier appairage : on repart de l'état du Maître.
+      // Premier appairage, changement de Maître, ou Maître revenu en arrière (restauré) : on repart de l'état du
+      // Maître. Les données locales sont effacées (identifiants incompatibles). Les événements encore à envoyer
+      // sont gardés si c'est le MÊME Maître (ils lui seront acceptés), sinon abandonnés.
+      const masterId = typeof message.payload.masterId === "string" ? message.payload.masterId : null;
       await withTransaction(async () => {
+        const paired = await getPairedMasterId(db);
+        const sameMaster = masterId !== null && (paired === masterId || (paired === null && (await getLastAppliedSeq(db)) !== null));
+        if (!sameMaster) await clearOutbox(db);
+        await resetBusinessData(db);
         await applyCatalogSnapshot(db, snapshot);
         await setLastAppliedSeq(db, asOfSeq);
+        if (masterId !== null) await setPairedMasterId(db, masterId);
       });
+      failed.length = 0;
       highestSeq = asOfSeq;
+      refreshWanted = false;
+      deps.onApplyError?.(null);
       return;
     }
 

@@ -1,6 +1,7 @@
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, getTableName, inArray, is, sql } from "drizzle-orm";
+import { SQLiteTable } from "drizzle-orm/sqlite-core";
 import { REMOTE_PIN_HASH } from "../auth/pin";
 import { DEVICE_LOCAL_SETTINGS } from "../domain/relayGuard";
 import { getCatalogHashes, setCatalogHashes } from "./syncStore";
@@ -160,6 +161,25 @@ export async function buildCatalogSnapshot(db: Database, options: BuildSnapshotO
   }
   if (options.includeStock) snapshot.stockBalances = await computeStockBalances(db);
   return snapshot;
+}
+
+/**
+ * Efface les données métier de CET appareil avant d'y installer l'état complet d'un Maître : un appareil qui avait
+ * un historique Solo (ou venait d'un autre réseau) n'a pas les mêmes identifiants que ce Maître — les mélanger
+ * rattacherait d'anciennes ventes à d'autres produits, et les clés étrangères refuseraient de supprimer un utilisateur
+ * encore référencé. Sont conservés : l'infrastructure de synchronisation (`__*`), l'historique des sauvegardes, et
+ * la ligne de réglages (dont les réglages propres à l'appareil, voir DEVICE_LOCAL_SETTINGS).
+ * À appeler dans une transaction : les contrôles de clés étrangères sont reportés à sa validation.
+ */
+export async function resetBusinessData(db: Database): Promise<void> {
+  await db.run(sql`PRAGMA defer_foreign_keys = ON`);
+  const keep = new Set(["business_settings", "backups"]);
+  for (const value of Object.values(schema)) {
+    if (!is(value, SQLiteTable)) continue;
+    const name = getTableName(value);
+    if (name.startsWith("__") || keep.has(name)) continue;
+    await db.delete(value).run();
+  }
 }
 
 async function replaceAll(db: Database, table: Parameters<Database["delete"]>[0], rows: Record<string, unknown>[]): Promise<void> {

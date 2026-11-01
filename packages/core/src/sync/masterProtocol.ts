@@ -90,18 +90,26 @@ export function createMasterProtocol(deps: MasterProtocolDeps) {
       await send(connectionId, message.errorReply("INVALID_HELLO", "deviceId/deviceName requis"));
       return;
     }
-    workers.set(connectionId, { connectionId, deviceId, deviceName });
-    notifyWorkers();
-    await send(
-      connectionId,
+    const helloAck = () =>
       new WsMessage({
         type: WsMessageTypes.helloAck,
         payload: { masterId, masterName, protocolVersion: 1, accepted: true },
         correlationId: message.correlationId,
-      }),
-    );
-    // Jamais synchronisé : instantané complet ; déjà connu : rattrapage du manqué.
-    if (typeof lastSyncSeq !== "number") {
+      });
+    // Sonde (balayage du réseau, saisie manuelle) : elle veut seulement savoir QUEL Maître répond. Elle n'est pas
+    // enregistrée comme appareil relié et ne reçoit ni instantané ni événements.
+    if (message.payload.probe === true) {
+      await send(connectionId, helloAck());
+      return;
+    }
+    workers.set(connectionId, { connectionId, deviceId, deviceName });
+    notifyWorkers();
+    await send(connectionId, helloAck());
+    // Jamais synchronisé : instantané complet ; déjà connu : rattrapage du manqué. Un numéro de progression
+    // SUPÉRIEUR à notre dernier numéro est impossible pour un appareil qui nous suit : c'est que ce Maître a été
+    // restauré/réinitialisé depuis (il renumérote à partir d'un point plus bas) — l'appareil manquerait tous les
+    // événements entre les deux numéros. On lui renvoie alors l'état complet.
+    if (typeof lastSyncSeq !== "number" || lastSyncSeq > (await getMaxSyncSeq(db))) {
       await sendSnapshot(connectionId, undefined, true);
     } else {
       for (const { seq, event } of await listSyncLogSince(db, lastSyncSeq)) {
@@ -119,7 +127,7 @@ export function createMasterProtocol(deps: MasterProtocolDeps) {
       connectionId,
       new WsMessage({
         type: WsMessageTypes.snapshotResponse,
-        payload: { snapshot, asOfSeq, mode: first ? "full" : "refresh" },
+        payload: { snapshot, asOfSeq, mode: first ? "full" : "refresh", masterId },
         correlationId: request?.correlationId,
       }),
     );

@@ -135,3 +135,41 @@ export async function setCatalogHashes(db: Database, hashes: Record<string, stri
   if (existing) await db.update(schema.syncState).set({ value }).where(eq(schema.syncState.key, CATALOG_HASHES_KEY)).run();
   else await db.insert(schema.syncState).values({ key: CATALOG_HASHES_KEY, value }).run();
 }
+
+const PAIRED_MASTER_KEY = "pairedMasterId";
+
+/** Appareil relié : identité du Maître dont l'état a été reçu en dernier (null = jamais relié). */
+export async function getPairedMasterId(db: Database): Promise<string | null> {
+  const row = await db.select().from(schema.syncState).where(eq(schema.syncState.key, PAIRED_MASTER_KEY)).get();
+  return row ? row.value : null;
+}
+
+export async function setPairedMasterId(db: Database, masterId: string): Promise<void> {
+  const existing = await db.select().from(schema.syncState).where(eq(schema.syncState.key, PAIRED_MASTER_KEY)).get();
+  if (existing) await db.update(schema.syncState).set({ value: masterId }).where(eq(schema.syncState.key, PAIRED_MASTER_KEY)).run();
+  else await db.insert(schema.syncState).values({ key: PAIRED_MASTER_KEY, value: masterId }).run();
+}
+
+/**
+ * Numéro de progression à annoncer à CE Maître dans `hello`. Un numéro n'a de sens que pour le Maître qui l'a
+ * attribué : s'il s'agit d'un autre, l'appareil se présente comme « jamais synchronisé » (null) et reçoit l'état
+ * complet. Un appareil relié avant l'existence de cette identité (progression connue, Maître inconnu) est supposé
+ * relié à ce Maître-ci.
+ */
+export async function getHelloSeq(db: Database, masterId: string): Promise<number | null> {
+  const last = await getLastAppliedSeq(db);
+  // Ancienne saisie manuelle : le Maître n'avait pas d'identité connue (« manual »). On suppose le même Maître.
+  if (masterId === "manual") return last;
+  const paired = await getPairedMasterId(db);
+  if (paired === null) {
+    if (last === null) return null;
+    await setPairedMasterId(db, masterId);
+    return last;
+  }
+  return paired === masterId ? last : null;
+}
+
+/** Vide la file d'envoi (événements créés pour un autre Maître : ils n'y seraient jamais acceptés). */
+export async function clearOutbox(db: Database): Promise<void> {
+  await db.delete(schema.syncOutbox).run();
+}

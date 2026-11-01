@@ -99,7 +99,7 @@ export function probeHost(
       socket.send(
         new WsMessage({
           type: WsMessageTypes.hello,
-          payload: { deviceId, deviceName, role: "worker", protocolVersion: 1, token },
+          payload: { deviceId, deviceName, role: "worker", protocolVersion: 1, token, probe: true },
         }).encode(),
       );
     };
@@ -158,4 +158,59 @@ export async function scanForMaster(
     if (foundIndex !== -1) return batch[foundIndex] ?? null;
   }
   return null;
+}
+
+/**
+ * Demande à un Maître qui il est (identité + nom) sans s'y relier : sert à la saisie manuelle, où l'on ne connaît que
+ * l'adresse, le port et le jeton. Sans l'identité, impossible de savoir si cet appareil change de Maître.
+ * Renvoie null si l'adresse ne répond pas, ou si le jeton est refusé.
+ */
+export function identifyMaster(
+  host: string,
+  port: number,
+  token: string,
+  deviceId: string,
+  deviceName: string,
+  timeoutMs = 5000,
+): Promise<{ masterId: string; masterName: string } | null> {
+  return new Promise((resolve) => {
+    let socket: WebSocket;
+    let settled = false;
+    const finish = (value: { masterId: string; masterName: string } | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        socket.close();
+      } catch {
+        // déjà fermé
+      }
+      resolve(value);
+    };
+    try {
+      socket = new WebSocket(`ws://${host}:${port}`);
+    } catch {
+      resolve(null);
+      return;
+    }
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    socket.onopen = () => {
+      socket.send(new WsMessage({ type: WsMessageTypes.hello, payload: { deviceId, deviceName, role: "worker", protocolVersion: 1, token, probe: true } }).encode());
+    };
+    socket.onmessage = (event) => {
+      if (typeof event.data !== "string") return;
+      try {
+        const message = WsMessage.decode(event.data);
+        if (message.type === WsMessageTypes.helloAck && message.payload.accepted === true && typeof message.payload.masterId === "string") {
+          finish({ masterId: message.payload.masterId, masterName: typeof message.payload.masterName === "string" ? message.payload.masterName : "" });
+        } else if (message.type === WsMessageTypes.error || message.type === WsMessageTypes.helloAck) {
+          finish(null);
+        }
+      } catch {
+        // trame illisible : on attend la suivante ou le délai
+      }
+    };
+    socket.onerror = () => finish(null);
+    socket.onclose = () => finish(null);
+  });
 }

@@ -546,14 +546,18 @@
       "retry": "Réessayer",
       "retryAll": "Tout réessayer",
       "discard": "Abandonner",
-      "applyError": "Un événement reçu du Maître n'a pas pu être appliqué ici : {{message}}"
+      "applyError": "Un événement reçu du Maître n'a pas pu être appliqué ici : {{message}}",
+      "manualIdentifyError": "Impossible de joindre ce Maître avec ces informations (adresse, port ou jeton incorrects)."
     },
     "banner": {
       "connected": "Appareil relié — connecté au Maître « {{master}} »",
       "offline": "Appareil relié — hors connexion : vos ventes sont gardées et seront envoyées au retour du réseau",
       "rules": "Le catalogue et le stock viennent du Maître. Achats, remboursements, inventaires et corrections se font sur le Maître. Règlements de créances et de dettes, tickets de service, devis et caisse restent sur cet appareil (pas encore partagés).",
       "applyError": "Un changement venu du Maître n'a pas pu être appliqué : {{reason}}"
-    }
+    },
+    "joinConfirm": "Rejoindre un réseau remplace TOUTES les données de cet appareil (produits, clients, ventes, stock...) par celles du Maître. Une copie de sécurité va d'abord être enregistrée. Continuer ?",
+    "switchMasterConfirm": "Cet appareil était relié à un autre Maître. Se relier à celui-ci remplace toutes ses données par celles de ce Maître. Une copie de sécurité va d'abord être enregistrée. Continuer ?",
+    "joinBackupFailed": "La copie de sécurité n'a pas pu être enregistrée. Remplacer quand même les données de cet appareil ?"
   },
   "storesSection": {
     "heading": "Boutiques",

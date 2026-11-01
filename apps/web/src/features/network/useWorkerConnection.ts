@@ -4,7 +4,7 @@ import {
   createWorkerSync,
   discardRejectedOutbox,
   enqueueOutbox,
-  getLastAppliedSeq,
+  getHelloSeq,
   listPendingOutbox,
   listRejectedOutbox,
   markOutboxRejected,
@@ -175,7 +175,8 @@ export function useWorkerConnection(db: Database, deviceId: string, deviceName: 
 
       socket.onopen = () => {
         void (async () => {
-          const lastSyncSeq = await getLastAppliedSeq(db);
+          // Numéro de progression valable pour CE Maître seulement (sinon : état complet, voir getHelloSeq).
+          const lastSyncSeq = await getHelloSeq(db, payload.masterId);
           socket.send(
             new WsMessage({
               type: WsMessageTypes.hello,
