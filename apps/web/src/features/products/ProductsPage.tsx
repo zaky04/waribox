@@ -15,8 +15,9 @@ import {
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
 import { buildLabelSheetPdf } from "@gestion-boutique/printer";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { fileToThumbnail } from "../../lib/imageThumb";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
@@ -79,6 +80,10 @@ export function ProductsPage() {
   const [dosageForm, setDosageForm] = useState("");
   const [laboratory, setLaboratory] = useState("");
   const [requiresPrescription, setRequiresPrescription] = useState(false);
+  // Vignette du produit ; `imageTouched` évite de renvoyer au service une photo qu'on n'a pas changée.
+  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  const [imageTouched, setImageTouched] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   // Nouvelle présentation détaillée (ex. plaquette de 10) d'un produit en édition.
   const [presName, setPresName] = useState("");
   const [presUnits, setPresUnits] = useState("");
@@ -137,6 +142,8 @@ export function ProductsPage() {
     setDosageForm("");
     setLaboratory("");
     setRequiresPrescription(false);
+    setImageDataUrl(null);
+    setImageTouched(false);
     setError(null);
     setShowForm(false);
   };
@@ -195,8 +202,21 @@ export function ProductsPage() {
     setDosageForm(product.dosageForm ?? "");
     setLaboratory(product.laboratory ?? "");
     setRequiresPrescription(product.requiresPrescription);
+    setImageDataUrl(product.imageDataUrl ?? null);
+    setImageTouched(false);
     setError(null);
     setShowForm(true);
+  };
+
+  const handlePhotoChosen = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      setImageDataUrl(await fileToThumbnail(file));
+      setImageTouched(true);
+      setError(null);
+    } catch {
+      setError(t("products.photoError"));
+    }
   };
 
   const handleSubmit = async () => {
@@ -230,6 +250,7 @@ export function ProductsPage() {
           dosageForm,
           laboratory,
           requiresPrescription,
+          imageDataUrl: imageTouched ? imageDataUrl : undefined,
           updatedBy: user?.id,
           approval: a,
         }, permissions));
@@ -253,6 +274,7 @@ export function ProductsPage() {
           dosageForm,
           laboratory,
           requiresPrescription,
+          imageDataUrl,
           createdBy: user?.id,
         }, permissions);
       }
@@ -391,6 +413,45 @@ export function ProductsPage() {
             {t("products.trackExpiry")}
           </label>
 
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            {imageDataUrl ? (
+              <img src={imageDataUrl} alt="" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: "var(--radius-md)", border: "1px solid var(--color-border)" }} />
+            ) : (
+              <span aria-hidden="true" style={{ width: 64, height: 64, borderRadius: "var(--radius-md)", border: "1px dashed var(--color-border)", display: "inline-block" }} />
+            )}
+            <div style={{ display: "grid", gap: 4 }}>
+              <strong style={{ fontSize: 14 }}>{t("products.photo")}</strong>
+              <span style={{ color: "var(--color-text-muted)", fontSize: 12.5 }}>{t("products.photoHint")}</span>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button type="button" onClick={() => photoInputRef.current?.click()} style={{ ...primaryButtonStyle, padding: "6px 12px", fontSize: 13 }}>
+                  {t("products.photoChoose")}
+                </button>
+                {imageDataUrl && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImageDataUrl(null);
+                      setImageTouched(true);
+                    }}
+                    style={{ padding: "6px 12px", fontSize: 13, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)", borderRadius: "var(--radius-md)", cursor: "pointer" }}
+                  >
+                    {t("products.photoRemove")}
+                  </button>
+                )}
+              </div>
+            </div>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                void handlePhotoChosen(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+          </div>
+
           {isPharmacy && (
             <fieldset style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: 12, display: "grid", gap: 12 }}>
               <legend style={{ padding: "0 6px", fontWeight: 600 }}>{t("pharmacy.drugSheet")}</legend>
@@ -513,6 +574,9 @@ export function ProductsPage() {
               return (
                 <tr key={product.id}>
                   <td style={tdStyle}>
+                    {product.imageDataUrl && (
+                      <img src={product.imageDataUrl} alt="" style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4, verticalAlign: "middle", marginRight: 8 }} />
+                    )}
                     {product.name}
                     {(product.dci || product.dosage) && (
                       <div style={{ color: "var(--color-text-muted)", fontSize: 12 }}>

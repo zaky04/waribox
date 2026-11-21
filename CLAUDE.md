@@ -268,6 +268,10 @@ progressivement page par page plutôt qu'en un seul passage sur tout le code.
   sécurité d'abord) ; la progression de synchro est liée à l'identité du Maître (`getHelloSeq`).
   Jamais testé sur deux appareils physiques. Voir `packages/core/src/sync/` et
   les entrées du 2026-09-04 à 2026-10-31 du journal.
+- **Caisse simplifiée** : troisième mode de la page Ventes ([SimpleCashScreen.tsx](apps/web/src/features/sales/SimpleCashScreen.tsx))
+  qui ne fait qu'afficher le panier de `SalesPage` ; un employé peut y être verrouillé (`users.simple_cash_only`).
+  Les photos produit sont des vignettes en base (`products.image_data_url`, ≤ 60 000 caractères, validées par
+  `cleanProductImage`). Voix = synthèse du système, facultative, français/anglais.
 - **Android** : `pnpm android:sync` après tout `tauri android init` (réapplique `MainActivity.kt` et le
   trafic non chiffré vers le Maître) ; `gen/` est ignoré par git.
 - **Limites connues, assumées** : le journal SYSCOHADA et quelques rapports relisent encore des tables entières

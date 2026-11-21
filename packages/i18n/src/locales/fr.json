@@ -203,7 +203,8 @@
     "stampPaid": "PAYÉ",
     "exactAmount": "Exact",
     "removeOne": "Retirer un exemplaire",
-    "addOne": "Ajouter un exemplaire"
+    "addOne": "Ajouter un exemplaire",
+    "modeSimple": "Simple"
   },
   "salesHistory": {
     "title": "Historique des ventes",
@@ -1034,7 +1035,12 @@
       "saveFailed": "Impossible d'enregistrer le produit.",
       "labelsQuantityRequired": "Indique une quantité d'étiquettes pour au moins un produit.",
       "labelsFailed": "Impossible de générer les étiquettes."
-    }
+    },
+    "photo": "Photo du produit",
+    "photoChoose": "Prendre ou choisir une photo",
+    "photoRemove": "Retirer la photo",
+    "photoHint": "Elle apparaît sur la tuile de la caisse simplifiée.",
+    "photoError": "Impossible de lire cette image."
   },
   "debts": {
     "title": "Dettes",
@@ -1209,7 +1215,9 @@
       "limitFormat": "Un plafond doit être vide ou un nombre positif.",
       "pinsDiffer": "Le PIN de déverrouillage et le PIN d'approbation doivent être différents."
     },
-    "approvalPin": "PIN d'approbation (6 à 8 chiffres, différent du précédent, optionnel)"
+    "approvalPin": "PIN d'approbation (6 à 8 chiffres, différent du précédent, optionnel)",
+    "simpleCashOnly": "Caisse simplifiée (employé assisté)",
+    "simpleCashOnlyHint": "Sa caisse est verrouillée sur l'écran simplifié : grosses tuiles, espèces ou mobile uniquement, sans remise, crédit ni points."
   },
   "quotes": {
     "title": "Devis",
@@ -1596,7 +1604,8 @@
     },
     "products": {
       "notFound": "Produit introuvable.",
-      "variantNotFound": "Variante introuvable."
+      "variantNotFound": "Variante introuvable.",
+      "imageInvalid": "La photo du produit n'est pas valide (image trop lourde ou format non pris en charge)."
     },
     "promotions": {
       "nameRequired": "Le nom de la promotion est requis.",
@@ -2646,5 +2655,28 @@
     "transferQuantities": "quantités de transfert incohérentes entre source et destination",
     "packQuantities": "quantités incohérentes entre boîtes ouvertes et unités détaillées",
     "packChildUnknown": "présentation détaillée inconnue ou différente localement"
+  },
+  "simpleCash": {
+    "pay": "Payer",
+    "back": "Modifier",
+    "total": "Total",
+    "empty": "Touchez un produit",
+    "remove": "Retirer",
+    "clientGives": "Le client donne",
+    "otherAmount": "Autre montant",
+    "notEnough": "Le client doit donner au moins le total.",
+    "changeToGive": "À rendre",
+    "rest": "+ {{amount}}",
+    "mobileHint": "Vérifiez que l'argent est bien arrivé sur le téléphone, puis validez.",
+    "confirm": "Valider la vente",
+    "prescription": "Ce produit demande une ordonnance : utilisez la caisse normale ou appelez le responsable.",
+    "voiceOn": "Activer la voix",
+    "voiceOff": "Couper la voix",
+    "hear": "Écouter",
+    "sayTotal": "Total : {{amount}}",
+    "sayChange": "À rendre : {{amount}}",
+    "sayExact": "Le compte est bon",
+    "thanks": "Merci",
+    "voiceOnPhrase": "La voix est activée"
   }
 }

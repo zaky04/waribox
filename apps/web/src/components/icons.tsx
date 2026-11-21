@@ -310,3 +310,39 @@ export const IconFullscreenExit = (p: IconProps) => (
     <polyline points="4 15 9 15 9 20" />
   </Svg>
 );
+
+// Caisse simplifiée : espèces, téléphone (mobile money), voix.
+export const IconBanknote = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="2.5" y="6" width="19" height="12" rx="2" />
+    <circle cx="12" cy="12" r="2.6" />
+    <path d="M6 9.5v.01M18 14.5v.01" />
+  </Svg>
+);
+
+export const IconPhone = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="7" y="2.5" width="10" height="19" rx="2.2" />
+    <path d="M11 18.5h2" />
+  </Svg>
+);
+
+export const IconSpeaker = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5H4z" />
+    <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />
+  </Svg>
+);
+
+export const IconSpeakerOff = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5H4z" />
+    <path d="m16 9.5 5 5M21 9.5l-5 5" />
+  </Svg>
+);
+
+export const IconTrash = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l.8 12.5h9.4L17.5 7M10 11v5M14 11v5" />
+  </Svg>
+);

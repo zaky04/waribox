@@ -46,6 +46,7 @@ import { usePrinter } from "../printer/usePrinter";
 import { BarcodeCameraScanner, isCameraScanSupported } from "./BarcodeCameraScanner";
 import { CloseCashSessionPanel } from "./CloseCashSessionPanel";
 import { OpenCashSessionScreen } from "./OpenCashSessionScreen";
+import { SimpleCashScreen } from "./SimpleCashScreen";
 import { useBarcodeScanner } from "./useBarcodeScanner";
 import { useCashSession } from "./useCashSession";
 
@@ -77,6 +78,19 @@ function productMonogram(name: string): string {
   return letters[0]!.toUpperCase() + (letters[1]?.toLowerCase() ?? "");
 }
 
+type SalesMode = "pos" | "form" | "simple";
+const SALES_MODE_KEY = "waribox-sales-mode";
+
+// Mode choisi sur cet appareil (préférence locale, comme la langue ou le thème) ; la caisse normale par défaut.
+function loadSalesMode(): SalesMode {
+  try {
+    const stored = localStorage.getItem(SALES_MODE_KEY);
+    return stored === "form" || stored === "simple" ? stored : "pos";
+  } catch {
+    return "pos";
+  }
+}
+
 export function SalesPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
@@ -93,7 +107,19 @@ export function SalesPage() {
     ...(canSellOnCredit ? [{ value: "credit" as const, label: t("sales.paymentMethods.credit") }] : []),
   ];
 
-  const [mode, setMode] = useState<"pos" | "form">("pos");
+  // Un employé « assisté » est verrouillé sur la caisse simplifiée (réglage du patron dans Utilisateurs) ; les
+  // autres choisissent, et l'appareil se souvient de leur choix.
+  const lockedSimple = !!user?.simpleCashOnly;
+  const [chosenMode, setChosenMode] = useState<SalesMode>(loadSalesMode);
+  const mode: SalesMode = lockedSimple ? "simple" : chosenMode;
+  const setMode = (next: SalesMode) => {
+    setChosenMode(next);
+    try {
+      localStorage.setItem(SALES_MODE_KEY, next);
+    } catch {
+      // stockage indisponible : le choix ne survit simplement pas au rechargement
+    }
+  };
   const [products, setProducts] = useState<Product[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -380,7 +406,7 @@ export function SalesPage() {
         userId: user.id,
         customerId: customerId ? Number(customerId) : null,
         newCustomerName: customerId ? undefined : newCustomerName,
-        saleMode: mode,
+        saleMode: mode === "simple" ? "pos" : mode,
         items: cart.map((line) => {
           const percent = lineDiscount(line.productId).percent;
           return {
@@ -468,6 +494,15 @@ export function SalesPage() {
     }
   };
 
+  // La caisse simplifiée n'a ni client enregistré, ni points de fidélité : ce qui aurait été saisi dans la caisse
+  // normale juste avant ne doit pas s'appliquer sans que l'employé le voie.
+  useEffect(() => {
+    if (mode !== "simple") return;
+    setCustomerId("");
+    setNewCustomerName("");
+    setRedeemPointsInput("");
+  }, [mode]);
+
   if (session === undefined) {
     return <div style={{ padding: 24 }}>{t("sales.loading")}</div>;
   }
@@ -525,8 +560,9 @@ export function SalesPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1>{t("sales.title")}</h1>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {!lockedSimple && (
           <div role="group" style={{ display: "flex", border: "1px solid var(--color-text)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
-            {(["pos", "form"] as const).map((m) => (
+            {(["pos", "form", "simple"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setMode(m)}
@@ -542,10 +578,11 @@ export function SalesPage() {
                   cursor: "pointer",
                 }}
               >
-                {m === "pos" ? t("sales.modePos") : t("sales.modeForm")}
+                {m === "pos" ? t("sales.modePos") : m === "form" ? t("sales.modeForm") : t("sales.modeSimple")}
               </button>
             ))}
           </div>
+          )}
           <button
             onClick={() => setShowPrinterPanel((v) => !v)}
             style={{ background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)", borderRadius: "var(--radius-md)", padding: "0 16px" }}
@@ -658,529 +695,583 @@ export function SalesPage() {
 
       {printError && <p style={{ color: "var(--color-danger)" }}>{printError}</p>}
 
-      <div className="cart-layout-grid">
-        <div>
-          {mode === "pos" ? (
-            <>
-              <input
-                style={inputStyle}
-                placeholder={t("sales.searchProductPlaceholder")}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-                <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("sales.scanHint")}</p>
-                {isCameraScanSupported() && (
-                  <button
-                    onClick={() => setShowCameraScanner(true)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "4px 10px",
-                      borderRadius: 6,
-                      border: "1px solid var(--color-border)",
-                      background: "transparent",
-                      color: "var(--color-text)",
-                      fontSize: 13,
-                      cursor: "pointer",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    <IconCamera size={14} />
-                    {t("sales.scanCamera")}
-                  </button>
-                )}
-              </div>
-              {showCameraScanner && (
-                <BarcodeCameraScanner
-                  onDetected={(code) => {
-                    setShowCameraScanner(false);
-                    handleBarcodeScan(code);
-                  }}
-                  onClose={() => setShowCameraScanner(false)}
-                />
-              )}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
-                  gap: 12,
-                  marginTop: 16,
-                }}
-              >
-                {saleTiles.map((tile) => {
-                  const { product, variant } = tile;
-                  const inCart = cart.filter((line) => line.variantId === variant.id).reduce((sum, line) => sum + line.quantity, 0);
-                  return (
-                    <button
-                      key={tile.key}
-                      onClick={() => addVariantToCart(variant, product)}
-                      style={{
-                        position: "relative",
-                        display: "flex",
-                        flexDirection: "column",
-                        padding: 0,
-                        textAlign: "left",
-                        border: "1px solid var(--color-border)",
-                        borderRadius: "var(--radius-md)",
-                        background: "var(--color-bg-elevated)",
-                        color: "var(--color-text)",
-                        overflow: "hidden",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <span
-                        aria-hidden="true"
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          height: 76,
-                          background: `var(--tint-${(product.id % 5) + 1})`,
-                          fontSize: 32,
-                          fontWeight: 700,
-                          letterSpacing: "-0.02em",
-                        }}
-                      >
-                        {productMonogram(product.name)}
-                      </span>
-                      <span style={{ display: "flex", flexDirection: "column", gap: 4, padding: "10px 12px 12px" }}>
-                        <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.25, minHeight: 35 }}>{tile.label}</span>
-                        <span style={{ ...amountStyle, fontSize: 15, fontWeight: 600 }}>{formatMoney(tile.price)}</span>
-                      </span>
-                      {inCart > 0 && (
-                        <span
-                          style={{
-                            ...amountStyle,
-                            position: "absolute",
-                            top: 8,
-                            right: 8,
-                            minWidth: 24,
-                            height: 24,
-                            boxSizing: "border-box",
-                            padding: "0 7px",
-                            borderRadius: 4,
-                            background: "var(--color-text)",
-                            color: "var(--color-bg)",
-                            fontSize: 13,
-                            fontWeight: 600,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          ×{inCart}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <div style={cardStyle}>
-              <label>
-                {t("sales.addItem")}
-                <SearchableSelect
-                  value=""
-                  onChange={(id) => {
-                    const product = products.find((p) => p.id === Number(id));
-                    if (product) addToCart(product);
-                  }}
-                  options={products.map((p) => ({ value: String(p.id), label: p.name }))}
-                  emptyLabel={t("sales.chooseProduct")}
-                  placeholder={t("sales.searchProductPlaceholder")}
-                />
-              </label>
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          <div>
-            <TicketEdge position="top" />
-            <div
-              style={{
-                background: "var(--color-ticket)",
-                borderLeft: "1px solid var(--color-border)",
-                borderRight: "1px solid var(--color-border)",
-                padding: "14px 20px 18px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-                fontSize: 14,
+      {mode === "simple" ? (
+        <>
+          <SimpleCashScreen
+            tiles={saleTiles.map((tile) => ({
+              key: tile.key,
+              label: tile.label,
+              price: tile.price,
+              imageDataUrl: tile.product.imageDataUrl ?? null,
+              tint: (tile.product.id % 5) + 1,
+              initials: productMonogram(tile.product.name),
+              inCart: cart.filter((line) => line.variantId === tile.variant.id).reduce((sum, line) => sum + line.quantity, 0),
+              onAdd: () => addVariantToCart(tile.variant, tile.product),
+            }))}
+            search={search}
+            onSearch={setSearch}
+            lines={cart.map((line) => ({
+              variantId: line.variantId,
+              name: line.productName,
+              quantity: line.quantity,
+              total: line.quantity * line.unitPrice * (1 - lineDiscount(line.productId).percent / 100),
+            }))}
+            total={total}
+            onIncrease={(variantId) => {
+              const line = cart.find((l) => l.variantId === variantId);
+              if (line) updateQuantity(variantId, line.quantity + 1);
+            }}
+            onDecrease={(variantId) => {
+              const line = cart.find((l) => l.variantId === variantId);
+              if (line) updateQuantity(variantId, line.quantity - 1);
+            }}
+            onRemove={removeLine}
+            paymentMethod={paymentMethod}
+            onPaymentMethod={handlePaymentMethodChange}
+            cashReceived={cashReceived}
+            onCashReceived={setCashReceived}
+            needsPrescription={cartNeedsPrescription}
+            error={checkoutError}
+            checkingOut={checkingOut}
+            onCheckout={handleCheckout}
+            onCamera={isCameraScanSupported() ? () => setShowCameraScanner(true) : null}
+            lastSaleNumber={lastSaleNumber}
+          />
+          {showCameraScanner && (
+            <BarcodeCameraScanner
+              onDetected={(code) => {
+                setShowCameraScanner(false);
+                handleBarcodeScan(code);
               }}
-            >
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{t("sales.cart")}</h2>
-              <div style={{ borderBottom: "1px dashed var(--color-rule-strong)", margin: "6px 0 4px" }} />
-
-              {activePromotions.length > 0 && (
-                <div
-                  style={{
-                    border: "1px dashed var(--color-rule-strong)",
-                    borderRadius: "var(--radius-md)",
-                    padding: 10,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 4,
-                  }}
-                >
-                  <strong style={{ fontSize: 13 }}>{t("sales.activePromotions")}</strong>
-                  {activePromotions.map((promo) => (
-                    <label key={promo.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                      <input
-                        type="checkbox"
-                        checked={checkedPromotionIds.has(promo.id)}
-                        onChange={() => togglePromotion(promo.id)}
-                      />
-                      {promo.name} — -{promo.discountPercent}% (
-                      {promo.scope === "product" ? t("sales.promoScopeProduct") : t("sales.promoScopeInvoice")})
-                    </label>
-                  ))}
-                </div>
-              )}
-
-              {cart.length === 0 ? (
-                <p
-                  style={{
-                    margin: "10px 0",
-                    textAlign: "center",
-                    fontFamily: "var(--font-hand)",
-                    fontSize: 22,
-                    fontWeight: 600,
-                    color: "var(--color-text-muted)",
-                  }}
-                >
-                  {t("sales.emptyCart")}
-                </p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", maxHeight: 300, overflowY: "auto" }}>
-                  {cart.map((line) => {
-                    const lineGross = line.quantity * line.unitPrice;
-                    const promo = lineDiscount(line.productId);
-                    const lineDiscountAmount = lineGross * (promo.percent / 100);
-                    const stepper = {
-                      width: 26,
-                      height: 26,
-                      padding: 0,
-                      border: "1px solid var(--color-rule-strong)",
-                      borderRadius: 4,
-                      background: "transparent",
-                      color: "var(--color-text)",
-                      fontSize: 15,
-                      lineHeight: 1,
-                      cursor: "pointer",
-                    } as const;
-                    return (
-                      <div key={line.variantId} style={{ padding: "5px 0" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <button
-                            type="button"
-                            aria-label={t("sales.removeOne")}
-                            style={stepper}
-                            onClick={() =>
-                              line.quantity > 1
-                                ? updateQuantity(line.variantId, line.quantity - 1)
-                                : removeLine(line.variantId)
-                            }
-                          >
-                            −
-                          </button>
-                          <span style={{ ...amountStyle, minWidth: 22, textAlign: "center", fontSize: 13, fontWeight: 600 }}>
-                            {line.quantity}
-                          </span>
-                          <button
-                            type="button"
-                            aria-label={t("sales.addOne")}
-                            style={stepper}
-                            onClick={() => updateQuantity(line.variantId, line.quantity + 1)}
-                          >
-                            +
-                          </button>
-                          <span style={{ fontSize: 14, fontWeight: 500, marginLeft: 4, minWidth: 0, overflowWrap: "anywhere" }}>
-                            {line.productName}
-                          </span>
-                          <span
-                            style={{ flexGrow: 1, minWidth: 8, borderBottom: "2px dotted var(--color-dot)", transform: "translateY(-3px)" }}
-                          />
-                          <span style={{ ...amountStyle, fontSize: 14, fontWeight: 500 }}>
-                            {formatAmount(lineGross - lineDiscountAmount)}
-                          </span>
-                          {products.find((p) => p.id === line.productId)?.dci && (
-                            <button
-                              type="button"
-                              title={t("pharmacy.equivalents")}
-                              onClick={() => void showEquivalents(line.productId)}
-                              style={{ ...stepper, width: "auto", padding: "0 6px", fontSize: 12 }}
-                            >
-                              {t("pharmacy.equivalentsShort")}
-                            </button>
-                          )}
-                        </div>
-                        {promo.percent > 0 && (
-                          <div style={{ color: "var(--color-success)", fontSize: 12, marginLeft: 92 }}>
-                            {t("sales.promo")}
-                            {promo.name ? ` ${promo.name}` : ""} -{promo.percent}%
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {equivalents && (
-                <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: 8, margin: "6px 0", fontSize: 13 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <strong>{t("pharmacy.equivalentsFor", { name: equivalents.sourceName })}</strong>
-                    <button type="button" onClick={() => setEquivalents(null)} style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}>
-                      ✕
-                    </button>
-                  </div>
-                  {equivalents.items.length === 0 ? (
-                    <p style={{ margin: "4px 0 0", color: "var(--color-text-muted)" }}>{t("pharmacy.noEquivalent")}</p>
-                  ) : (
-                    equivalents.items.map((e) => (
-                      <div key={e.product.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0" }}>
-                        <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
-                          {e.product.name}
-                          <span style={{ color: "var(--color-text-muted)" }}> — {formatAmount(e.product.salePrice)}</span>
-                        </span>
-                        <span style={{ color: e.sellableStock > 0 ? "var(--color-success)" : "var(--color-danger)" }}>
-                          {e.sellableStock > 0 ? t("pharmacy.inStock", { count: e.sellableStock }) : t("pharmacy.outOfStock")}
-                        </span>
-                        <button
-                          type="button"
-                          disabled={e.sellableStock <= 0}
-                          onClick={() => addToCart(e.product)}
-                          style={{ ...primaryButtonStyle, padding: "2px 10px", fontSize: 12 }}
-                        >
-                          {t("pharmacy.addEquivalent")}
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-
-              <div style={{ borderBottom: "1px dashed var(--color-rule-strong)", margin: "8px 0 4px" }} />
-              {[
-                { label: t("sales.subtotal"), value: formatAmount(subtotal), show: true, color: undefined },
-                { label: t("sales.tax"), value: formatAmount(taxTotal), show: true, color: undefined },
-                {
-                  label: t("sales.productPromoDiscount"),
-                  value: "-" + formatAmount(productPromoDiscount),
-                  show: productPromoDiscount > 0,
-                  color: "var(--color-success)",
-                },
-                {
-                  label: t("sales.invoicePromoDiscount") + (checkedInvoicePromo ? " " + checkedInvoicePromo.name : ""),
-                  value: "-" + formatAmount(invoicePromoDiscount),
-                  show: invoicePromoDiscount > 0,
-                  color: "var(--color-success)",
-                },
-                {
-                  label: t("sales.loyaltyDiscount"),
-                  value: "-" + formatAmount(redemptionDiscount),
-                  show: redemptionDiscount > 0,
-                  color: "var(--color-success)",
-                },
-              ]
-                .filter((row) => row.show)
-                .map((row) => (
-                  <div
-                    key={row.label}
-                    style={{ display: "flex", alignItems: "baseline", gap: 8, color: row.color ?? "var(--color-text-muted)" }}
-                  >
-                    <span>{row.label}</span>
-                    <span style={{ flexGrow: 1, borderBottom: "2px dotted var(--color-dot)" }} />
-                    <span style={amountStyle}>{row.value}</span>
-                  </div>
-                ))}
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 6 }}>
-                <span style={{ fontSize: 16, fontWeight: 700 }}>{t("sales.totalLabel")}</span>
-                <span style={{ ...amountStyle, fontSize: 34, fontWeight: 600, letterSpacing: "-0.02em" }}>
-                  {formatMoney(total)}
-                </span>
-              </div>
-            </div>
-            <TicketEdge position="bottom" />
-          </div>
-
-          <div style={{ ...cardStyle, marginTop: 0 }}>
-            {cartNeedsPrescription && (
-              <div style={{ border: "1px solid var(--color-warning)", borderRadius: "var(--radius-md)", padding: 10, display: "grid", gap: 8 }}>
-                <strong style={{ color: "var(--color-warning)", fontSize: 13 }}>{t("pharmacy.prescriptionTitle")}</strong>
-                <label>
-                  {t("pharmacy.prescriptionRef")}
-                  <input style={inputStyle} value={prescriptionRef} onChange={(e) => setPrescriptionRef(e.target.value)} />
-                </label>
-                <label>
-                  {t("pharmacy.prescriber")}
-                  <input style={inputStyle} value={prescriber} onChange={(e) => setPrescriber(e.target.value)} />
-                </label>
-              </div>
-            )}
-
-            <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("sales.customerOptionalHint")}</p>
-
-            <label>
-              {t("sales.registeredCustomer")}
-              <SearchableSelect
-                value={customerId}
-                onChange={(id) => {
-                  setCustomerId(id);
-                  setRedeemPointsInput("");
-                }}
-                options={customers.map((c) => ({ value: String(c.id), label: c.fullName }))}
-                emptyLabel={t("sales.noCustomer")}
-                placeholder={t("sales.searchCustomerPlaceholder")}
-              />
-            </label>
-
-            {selectedCustomer && maxRedeemablePoints > 0 && (
-              <label>
-                {t("sales.loyaltyPoints")} ({selectedCustomer.loyaltyPoints} {t("sales.loyaltyPointsAvailable")}{" "}
-                {formatAmount(maxRedeemablePoints)} {t("sales.pts")}
+              onClose={() => setShowCameraScanner(false)}
+            />
+          )}
+        </>
+      ) : (
+        <div className="cart-layout-grid">
+          <div>
+            {mode === "pos" ? (
+              <>
                 <input
                   style={inputStyle}
-                  type="number"
-                  min={0}
-                  max={maxRedeemablePoints}
-                  value={redeemPointsInput}
-                  onChange={(e) => setRedeemPointsInput(e.target.value)}
-                  placeholder="0"
+                  placeholder={t("sales.searchProductPlaceholder")}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
                 />
-                {redeemPointsValue > 0 && (
-                  <span style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-                    {t("sales.pointsReductionLabel")} {formatAmount(redemptionDiscount)}
-                  </span>
-                )}
-              </label>
-            )}
-            {!customerId && (
-              <label>
-                {t("sales.orCustomerName")}
-                {needsCustomerIdentification ? t("sales.requiredForCredit") : t("sales.optional")}
-                <input
-                  style={{
-                    ...inputStyle,
-                    border:
-                      needsCustomerIdentification && !newCustomerName.trim()
-                        ? "1px solid var(--color-danger)"
-                        : inputStyle.border,
-                  }}
-                  value={newCustomerName}
-                  onChange={(e) => setNewCustomerName(e.target.value)}
-                  placeholder={t("sales.customerNamePlaceholder")}
-                />
-              </label>
-            )}
-
-            <div role="group" aria-label={t("sales.paymentMethod")}>
-              <div style={{ fontSize: 14, marginBottom: 6 }}>{t("sales.paymentMethod")}</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6 }}>
-                {paymentMethods.map((m) => (
-                  <button
-                    key={m.value}
-                    type="button"
-                    aria-pressed={paymentMethod === m.value}
-                    onClick={() => handlePaymentMethodChange(m.value)}
-                    style={{
-                      height: 40,
-                      border: "1px solid var(--color-text)",
-                      borderRadius: "var(--radius-md)",
-                      background: paymentMethod === m.value ? "var(--color-text)" : "transparent",
-                      color: paymentMethod === m.value ? "var(--color-bg)" : "var(--color-text)",
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: "pointer",
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                  <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("sales.scanHint")}</p>
+                  {isCameraScanSupported() && (
+                    <button
+                      onClick={() => setShowCameraScanner(true)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "4px 10px",
+                        borderRadius: 6,
+                        border: "1px solid var(--color-border)",
+                        background: "transparent",
+                        color: "var(--color-text)",
+                        fontSize: 13,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <IconCamera size={14} />
+                      {t("sales.scanCamera")}
+                    </button>
+                  )}
+                </div>
+                {showCameraScanner && (
+                  <BarcodeCameraScanner
+                    onDetected={(code) => {
+                      setShowCameraScanner(false);
+                      handleBarcodeScan(code);
                     }}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <label>
-              {t("sales.amountPaid")}
-              <input
-                style={{ ...inputStyle, ...amountStyle }}
-                type="number" step="any"
-                value={amountPaid}
-                onChange={(e) => setAmountPaid(e.target.value)}
-                placeholder={total.toFixed(0)}
-              />
-            </label>
-
-            {paymentMethod === "cash" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <label>
-                  {t("sales.cashReceived")}
-                  <input
-                    style={{ ...inputStyle, ...amountStyle, textAlign: "right", fontSize: 20, fontWeight: 600 }}
-                    type="number" step="any"
-                    value={cashReceived}
-                    onChange={(e) => setCashReceived(e.target.value)}
-                    placeholder={total.toFixed(0)}
+                    onClose={() => setShowCameraScanner(false)}
                   />
-                </label>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {[null, ...getCurrency().cashQuickAmounts].map((bill) => {
-                    const value = bill === null ? total : bill;
-                    const selected = total > 0 && Number(cashReceived) === value;
+                )}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                    gap: 12,
+                    marginTop: 16,
+                  }}
+                >
+                  {saleTiles.map((tile) => {
+                    const { product, variant } = tile;
+                    const inCart = cart.filter((line) => line.variantId === variant.id).reduce((sum, line) => sum + line.quantity, 0);
                     return (
                       <button
-                        key={bill ?? "exact"}
-                        type="button"
-                        onClick={() => setCashReceived(String(Math.round(value * 100) / 100))}
+                        key={tile.key}
+                        onClick={() => addVariantToCart(variant, product)}
                         style={{
-                          ...amountStyle,
-                          height: 34,
-                          padding: "0 12px",
-                          border: "1px solid var(--color-rule-strong)",
+                          position: "relative",
+                          display: "flex",
+                          flexDirection: "column",
+                          padding: 0,
+                          textAlign: "left",
+                          border: "1px solid var(--color-border)",
                           borderRadius: "var(--radius-md)",
-                          background: selected ? "var(--color-text)" : "var(--color-bg-elevated)",
-                          color: selected ? "var(--color-bg)" : "var(--color-text)",
-                          fontSize: 13,
-                          fontWeight: 500,
+                          background: "var(--color-bg-elevated)",
+                          color: "var(--color-text)",
+                          overflow: "hidden",
                           cursor: "pointer",
                         }}
                       >
-                        {bill === null ? t("sales.exactAmount") : formatAmount(bill).replace(/[.,]00$/, "")}
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            height: 76,
+                            background: `var(--tint-${(product.id % 5) + 1})`,
+                            fontSize: 32,
+                            fontWeight: 700,
+                            letterSpacing: "-0.02em",
+                          }}
+                        >
+                          {productMonogram(product.name)}
+                        </span>
+                        <span style={{ display: "flex", flexDirection: "column", gap: 4, padding: "10px 12px 12px" }}>
+                          <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.25, minHeight: 35 }}>{tile.label}</span>
+                          <span style={{ ...amountStyle, fontSize: 15, fontWeight: 600 }}>{formatMoney(tile.price)}</span>
+                        </span>
+                        {inCart > 0 && (
+                          <span
+                            style={{
+                              ...amountStyle,
+                              position: "absolute",
+                              top: 8,
+                              right: 8,
+                              minWidth: 24,
+                              height: 24,
+                              boxSizing: "border-box",
+                              padding: "0 7px",
+                              borderRadius: 4,
+                              background: "var(--color-text)",
+                              color: "var(--color-bg)",
+                              fontSize: 13,
+                              fontWeight: 600,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            ×{inCart}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
                 </div>
-                {cashReceived !== "" && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      border: "2px solid var(--color-accent)",
-                      borderRadius: "var(--radius-md)",
-                      padding: "10px 14px",
-                      color: "var(--color-accent)",
+              </>
+            ) : (
+              <div style={cardStyle}>
+                <label>
+                  {t("sales.addItem")}
+                  <SearchableSelect
+                    value=""
+                    onChange={(id) => {
+                      const product = products.find((p) => p.id === Number(id));
+                      if (product) addToCart(product);
                     }}
-                  >
-                    <span style={{ fontSize: 15, fontWeight: 700 }}>{t("sales.changeDue")}</span>
-                    <span style={{ ...amountStyle, fontSize: 26, fontWeight: 600 }}>{formatMoney(changeDue)}</span>
-                  </div>
-                )}
+                    options={products.map((p) => ({ value: String(p.id), label: p.name }))}
+                    emptyLabel={t("sales.chooseProduct")}
+                    placeholder={t("sales.searchProductPlaceholder")}
+                  />
+                </label>
               </div>
             )}
+          </div>
 
-            {checkoutError && <p style={{ color: "var(--color-danger)" }}>{checkoutError}</p>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <div>
+              <TicketEdge position="top" />
+              <div
+                style={{
+                  background: "var(--color-ticket)",
+                  borderLeft: "1px solid var(--color-border)",
+                  borderRight: "1px solid var(--color-border)",
+                  padding: "14px 20px 18px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                  fontSize: 14,
+                }}
+              >
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{t("sales.cart")}</h2>
+                <div style={{ borderBottom: "1px dashed var(--color-rule-strong)", margin: "6px 0 4px" }} />
 
-            <button style={{ ...primaryButtonStyle, height: 56, fontSize: 18 }} onClick={handleCheckout} disabled={checkingOut}>
-              {checkingOut ? t("sales.checkingOut") : t("sales.checkout")}
-            </button>
+                {activePromotions.length > 0 && (
+                  <div
+                    style={{
+                      border: "1px dashed var(--color-rule-strong)",
+                      borderRadius: "var(--radius-md)",
+                      padding: 10,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                    }}
+                  >
+                    <strong style={{ fontSize: 13 }}>{t("sales.activePromotions")}</strong>
+                    {activePromotions.map((promo) => (
+                      <label key={promo.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                        <input
+                          type="checkbox"
+                          checked={checkedPromotionIds.has(promo.id)}
+                          onChange={() => togglePromotion(promo.id)}
+                        />
+                        {promo.name} — -{promo.discountPercent}% (
+                        {promo.scope === "product" ? t("sales.promoScopeProduct") : t("sales.promoScopeInvoice")})
+                      </label>
+                    ))}
+                  </div>
+                )}
+
+                {cart.length === 0 ? (
+                  <p
+                    style={{
+                      margin: "10px 0",
+                      textAlign: "center",
+                      fontFamily: "var(--font-hand)",
+                      fontSize: 22,
+                      fontWeight: 600,
+                      color: "var(--color-text-muted)",
+                    }}
+                  >
+                    {t("sales.emptyCart")}
+                  </p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", maxHeight: 300, overflowY: "auto" }}>
+                    {cart.map((line) => {
+                      const lineGross = line.quantity * line.unitPrice;
+                      const promo = lineDiscount(line.productId);
+                      const lineDiscountAmount = lineGross * (promo.percent / 100);
+                      const stepper = {
+                        width: 26,
+                        height: 26,
+                        padding: 0,
+                        border: "1px solid var(--color-rule-strong)",
+                        borderRadius: 4,
+                        background: "transparent",
+                        color: "var(--color-text)",
+                        fontSize: 15,
+                        lineHeight: 1,
+                        cursor: "pointer",
+                      } as const;
+                      return (
+                        <div key={line.variantId} style={{ padding: "5px 0" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <button
+                              type="button"
+                              aria-label={t("sales.removeOne")}
+                              style={stepper}
+                              onClick={() =>
+                                line.quantity > 1
+                                  ? updateQuantity(line.variantId, line.quantity - 1)
+                                  : removeLine(line.variantId)
+                              }
+                            >
+                              −
+                            </button>
+                            <span style={{ ...amountStyle, minWidth: 22, textAlign: "center", fontSize: 13, fontWeight: 600 }}>
+                              {line.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={t("sales.addOne")}
+                              style={stepper}
+                              onClick={() => updateQuantity(line.variantId, line.quantity + 1)}
+                            >
+                              +
+                            </button>
+                            <span style={{ fontSize: 14, fontWeight: 500, marginLeft: 4, minWidth: 0, overflowWrap: "anywhere" }}>
+                              {line.productName}
+                            </span>
+                            <span
+                              style={{ flexGrow: 1, minWidth: 8, borderBottom: "2px dotted var(--color-dot)", transform: "translateY(-3px)" }}
+                            />
+                            <span style={{ ...amountStyle, fontSize: 14, fontWeight: 500 }}>
+                              {formatAmount(lineGross - lineDiscountAmount)}
+                            </span>
+                            {products.find((p) => p.id === line.productId)?.dci && (
+                              <button
+                                type="button"
+                                title={t("pharmacy.equivalents")}
+                                onClick={() => void showEquivalents(line.productId)}
+                                style={{ ...stepper, width: "auto", padding: "0 6px", fontSize: 12 }}
+                              >
+                                {t("pharmacy.equivalentsShort")}
+                              </button>
+                            )}
+                          </div>
+                          {promo.percent > 0 && (
+                            <div style={{ color: "var(--color-success)", fontSize: 12, marginLeft: 92 }}>
+                              {t("sales.promo")}
+                              {promo.name ? ` ${promo.name}` : ""} -{promo.percent}%
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {equivalents && (
+                  <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: 8, margin: "6px 0", fontSize: 13 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <strong>{t("pharmacy.equivalentsFor", { name: equivalents.sourceName })}</strong>
+                      <button type="button" onClick={() => setEquivalents(null)} style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer" }}>
+                        ✕
+                      </button>
+                    </div>
+                    {equivalents.items.length === 0 ? (
+                      <p style={{ margin: "4px 0 0", color: "var(--color-text-muted)" }}>{t("pharmacy.noEquivalent")}</p>
+                    ) : (
+                      equivalents.items.map((e) => (
+                        <div key={e.product.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0" }}>
+                          <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
+                            {e.product.name}
+                            <span style={{ color: "var(--color-text-muted)" }}> — {formatAmount(e.product.salePrice)}</span>
+                          </span>
+                          <span style={{ color: e.sellableStock > 0 ? "var(--color-success)" : "var(--color-danger)" }}>
+                            {e.sellableStock > 0 ? t("pharmacy.inStock", { count: e.sellableStock }) : t("pharmacy.outOfStock")}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={e.sellableStock <= 0}
+                            onClick={() => addToCart(e.product)}
+                            style={{ ...primaryButtonStyle, padding: "2px 10px", fontSize: 12 }}
+                          >
+                            {t("pharmacy.addEquivalent")}
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                <div style={{ borderBottom: "1px dashed var(--color-rule-strong)", margin: "8px 0 4px" }} />
+                {[
+                  { label: t("sales.subtotal"), value: formatAmount(subtotal), show: true, color: undefined },
+                  { label: t("sales.tax"), value: formatAmount(taxTotal), show: true, color: undefined },
+                  {
+                    label: t("sales.productPromoDiscount"),
+                    value: "-" + formatAmount(productPromoDiscount),
+                    show: productPromoDiscount > 0,
+                    color: "var(--color-success)",
+                  },
+                  {
+                    label: t("sales.invoicePromoDiscount") + (checkedInvoicePromo ? " " + checkedInvoicePromo.name : ""),
+                    value: "-" + formatAmount(invoicePromoDiscount),
+                    show: invoicePromoDiscount > 0,
+                    color: "var(--color-success)",
+                  },
+                  {
+                    label: t("sales.loyaltyDiscount"),
+                    value: "-" + formatAmount(redemptionDiscount),
+                    show: redemptionDiscount > 0,
+                    color: "var(--color-success)",
+                  },
+                ]
+                  .filter((row) => row.show)
+                  .map((row) => (
+                    <div
+                      key={row.label}
+                      style={{ display: "flex", alignItems: "baseline", gap: 8, color: row.color ?? "var(--color-text-muted)" }}
+                    >
+                      <span>{row.label}</span>
+                      <span style={{ flexGrow: 1, borderBottom: "2px dotted var(--color-dot)" }} />
+                      <span style={amountStyle}>{row.value}</span>
+                    </div>
+                  ))}
+                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 6 }}>
+                  <span style={{ fontSize: 16, fontWeight: 700 }}>{t("sales.totalLabel")}</span>
+                  <span style={{ ...amountStyle, fontSize: 34, fontWeight: 600, letterSpacing: "-0.02em" }}>
+                    {formatMoney(total)}
+                  </span>
+                </div>
+              </div>
+              <TicketEdge position="bottom" />
+            </div>
+
+            <div style={{ ...cardStyle, marginTop: 0 }}>
+              {cartNeedsPrescription && (
+                <div style={{ border: "1px solid var(--color-warning)", borderRadius: "var(--radius-md)", padding: 10, display: "grid", gap: 8 }}>
+                  <strong style={{ color: "var(--color-warning)", fontSize: 13 }}>{t("pharmacy.prescriptionTitle")}</strong>
+                  <label>
+                    {t("pharmacy.prescriptionRef")}
+                    <input style={inputStyle} value={prescriptionRef} onChange={(e) => setPrescriptionRef(e.target.value)} />
+                  </label>
+                  <label>
+                    {t("pharmacy.prescriber")}
+                    <input style={inputStyle} value={prescriber} onChange={(e) => setPrescriber(e.target.value)} />
+                  </label>
+                </div>
+              )}
+
+              <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>{t("sales.customerOptionalHint")}</p>
+
+              <label>
+                {t("sales.registeredCustomer")}
+                <SearchableSelect
+                  value={customerId}
+                  onChange={(id) => {
+                    setCustomerId(id);
+                    setRedeemPointsInput("");
+                  }}
+                  options={customers.map((c) => ({ value: String(c.id), label: c.fullName }))}
+                  emptyLabel={t("sales.noCustomer")}
+                  placeholder={t("sales.searchCustomerPlaceholder")}
+                />
+              </label>
+
+              {selectedCustomer && maxRedeemablePoints > 0 && (
+                <label>
+                  {t("sales.loyaltyPoints")} ({selectedCustomer.loyaltyPoints} {t("sales.loyaltyPointsAvailable")}{" "}
+                  {formatAmount(maxRedeemablePoints)} {t("sales.pts")}
+                  <input
+                    style={inputStyle}
+                    type="number"
+                    min={0}
+                    max={maxRedeemablePoints}
+                    value={redeemPointsInput}
+                    onChange={(e) => setRedeemPointsInput(e.target.value)}
+                    placeholder="0"
+                  />
+                  {redeemPointsValue > 0 && (
+                    <span style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
+                      {t("sales.pointsReductionLabel")} {formatAmount(redemptionDiscount)}
+                    </span>
+                  )}
+                </label>
+              )}
+              {!customerId && (
+                <label>
+                  {t("sales.orCustomerName")}
+                  {needsCustomerIdentification ? t("sales.requiredForCredit") : t("sales.optional")}
+                  <input
+                    style={{
+                      ...inputStyle,
+                      border:
+                        needsCustomerIdentification && !newCustomerName.trim()
+                          ? "1px solid var(--color-danger)"
+                          : inputStyle.border,
+                    }}
+                    value={newCustomerName}
+                    onChange={(e) => setNewCustomerName(e.target.value)}
+                    placeholder={t("sales.customerNamePlaceholder")}
+                  />
+                </label>
+              )}
+
+              <div role="group" aria-label={t("sales.paymentMethod")}>
+                <div style={{ fontSize: 14, marginBottom: 6 }}>{t("sales.paymentMethod")}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6 }}>
+                  {paymentMethods.map((m) => (
+                    <button
+                      key={m.value}
+                      type="button"
+                      aria-pressed={paymentMethod === m.value}
+                      onClick={() => handlePaymentMethodChange(m.value)}
+                      style={{
+                        height: 40,
+                        border: "1px solid var(--color-text)",
+                        borderRadius: "var(--radius-md)",
+                        background: paymentMethod === m.value ? "var(--color-text)" : "transparent",
+                        color: paymentMethod === m.value ? "var(--color-bg)" : "var(--color-text)",
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label>
+                {t("sales.amountPaid")}
+                <input
+                  style={{ ...inputStyle, ...amountStyle }}
+                  type="number" step="any"
+                  value={amountPaid}
+                  onChange={(e) => setAmountPaid(e.target.value)}
+                  placeholder={total.toFixed(0)}
+                />
+              </label>
+
+              {paymentMethod === "cash" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <label>
+                    {t("sales.cashReceived")}
+                    <input
+                      style={{ ...inputStyle, ...amountStyle, textAlign: "right", fontSize: 20, fontWeight: 600 }}
+                      type="number" step="any"
+                      value={cashReceived}
+                      onChange={(e) => setCashReceived(e.target.value)}
+                      placeholder={total.toFixed(0)}
+                    />
+                  </label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {[null, ...getCurrency().cashQuickAmounts].map((bill) => {
+                      const value = bill === null ? total : bill;
+                      const selected = total > 0 && Number(cashReceived) === value;
+                      return (
+                        <button
+                          key={bill ?? "exact"}
+                          type="button"
+                          onClick={() => setCashReceived(String(Math.round(value * 100) / 100))}
+                          style={{
+                            ...amountStyle,
+                            height: 34,
+                            padding: "0 12px",
+                            border: "1px solid var(--color-rule-strong)",
+                            borderRadius: "var(--radius-md)",
+                            background: selected ? "var(--color-text)" : "var(--color-bg-elevated)",
+                            color: selected ? "var(--color-bg)" : "var(--color-text)",
+                            fontSize: 13,
+                            fontWeight: 500,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {bill === null ? t("sales.exactAmount") : formatAmount(bill).replace(/[.,]00$/, "")}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {cashReceived !== "" && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        border: "2px solid var(--color-accent)",
+                        borderRadius: "var(--radius-md)",
+                        padding: "10px 14px",
+                        color: "var(--color-accent)",
+                      }}
+                    >
+                      <span style={{ fontSize: 15, fontWeight: 700 }}>{t("sales.changeDue")}</span>
+                      <span style={{ ...amountStyle, fontSize: 26, fontWeight: 600 }}>{formatMoney(changeDue)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {checkoutError && <p style={{ color: "var(--color-danger)" }}>{checkoutError}</p>}
+
+              <button style={{ ...primaryButtonStyle, height: 56, fontSize: 18 }} onClick={handleCheckout} disabled={checkingOut}>
+                {checkingOut ? t("sales.checkingOut") : t("sales.checkout")}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </main>
   );
 }

@@ -61,6 +61,7 @@ export function UsersPage() {
   const [limitPoints, setLimitPoints] = useState("");
   const [limitTicket, setLimitTicket] = useState("");
   const [limitApprove, setLimitApprove] = useState("");
+  const [simpleCashOnly, setSimpleCashOnly] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [impersonateError, setImpersonateError] = useState<string | null>(null);
@@ -105,6 +106,8 @@ export function UsersPage() {
     setLimitExpense("");
     setLimitPoints("");
     setLimitTicket("");
+    setLimitApprove("");
+    setSimpleCashOnly(false);
     setOverrides({});
     setEditingUserId(null);
     setError(null);
@@ -135,6 +138,7 @@ export function UsersPage() {
     setLimitPoints(target.limitPoints == null ? "" : String(target.limitPoints));
     setLimitTicket(target.limitTicket == null ? "" : String(target.limitTicket));
     setLimitApprove(target.limitApprove == null ? "" : String(target.limitApprove));
+    setSimpleCashOnly(target.simpleCashOnly);
     setError(null);
     setShowForm(true);
   };
@@ -212,6 +216,7 @@ export function UsersPage() {
             limitPoints: limits.limitPoints,
             limitTicket: limits.limitTicket,
             limitApprove: limits.limitApprove,
+            simpleCashOnly,
           },
           user?.permissions ?? {},
           user?.id,
@@ -237,6 +242,7 @@ export function UsersPage() {
             limitPoints: limits.limitPoints,
             limitTicket: limits.limitTicket,
             limitApprove: limits.limitApprove,
+            simpleCashOnly,
             createdBy: user?.id,
           },
           user?.permissions ?? {},
@@ -433,6 +439,12 @@ export function UsersPage() {
             <input style={inputStyle} type="number" step="any" min={0} value={limitApprove} onChange={(e) => setLimitApprove(e.target.value)} />
           </label>
           <p style={{ color: "var(--color-text-muted)", fontSize: 12.5, margin: 0 }}>{t("approvalRoles.limitApproveHint")}</p>
+
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input type="checkbox" checked={simpleCashOnly} onChange={(e) => setSimpleCashOnly(e.target.checked)} />
+            {t("users.simpleCashOnly")}
+          </label>
+          <p style={{ color: "var(--color-text-muted)", fontSize: 12.5, margin: 0 }}>{t("users.simpleCashOnlyHint")}</p>
 
           {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 

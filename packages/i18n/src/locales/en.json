@@ -203,7 +203,8 @@
     "stampPaid": "PAID",
     "exactAmount": "Exact",
     "removeOne": "Remove one",
-    "addOne": "Add one"
+    "addOne": "Add one",
+    "modeSimple": "Simple"
   },
   "salesHistory": {
     "title": "Sales History",
@@ -1034,7 +1035,12 @@
       "saveFailed": "Could not save the product.",
       "labelsQuantityRequired": "Enter a label quantity for at least one product.",
       "labelsFailed": "Could not generate the labels."
-    }
+    },
+    "photo": "Product photo",
+    "photoChoose": "Take or choose a photo",
+    "photoRemove": "Remove photo",
+    "photoHint": "It appears on the simple till's tile.",
+    "photoError": "This image could not be read."
   },
   "debts": {
     "title": "Debts",
@@ -1209,7 +1215,9 @@
       "limitFormat": "A limit must be empty or a positive number.",
       "pinsDiffer": "The unlock PIN and the approval PIN must be different."
     },
-    "approvalPin": "Approval PIN (6 to 8 digits, different from the unlock PIN, optional)"
+    "approvalPin": "Approval PIN (6 to 8 digits, different from the unlock PIN, optional)",
+    "simpleCashOnly": "Simple till (assisted employee)",
+    "simpleCashOnlyHint": "Their till is locked on the simple screen: big tiles, cash or mobile only, no discount, credit or points."
   },
   "quotes": {
     "title": "Quotes",
@@ -1596,7 +1604,8 @@
     },
     "products": {
       "notFound": "Product not found.",
-      "variantNotFound": "Variant not found."
+      "variantNotFound": "Variant not found.",
+      "imageInvalid": "The product photo is not valid (image too large or unsupported format)."
     },
     "promotions": {
       "nameRequired": "The promotion name is required.",
@@ -2646,5 +2655,28 @@
     "transferQuantities": "transfer quantities differ between source and destination",
     "packQuantities": "quantities differ between opened packs and broken-down units",
     "packChildUnknown": "broken-down presentation unknown or different locally"
+  },
+  "simpleCash": {
+    "pay": "Pay",
+    "back": "Edit",
+    "total": "Total",
+    "empty": "Tap a product",
+    "remove": "Remove",
+    "clientGives": "Customer gives",
+    "otherAmount": "Other amount",
+    "notEnough": "The customer must give at least the total.",
+    "changeToGive": "Change to give",
+    "rest": "+ {{amount}}",
+    "mobileHint": "Check that the money has arrived on the phone, then confirm.",
+    "confirm": "Confirm sale",
+    "prescription": "This product needs a prescription: use the standard till or call the manager.",
+    "voiceOn": "Turn voice on",
+    "voiceOff": "Turn voice off",
+    "hear": "Listen",
+    "sayTotal": "Total: {{amount}}",
+    "sayChange": "Change to give: {{amount}}",
+    "sayExact": "Exact amount",
+    "thanks": "Thank you",
+    "voiceOnPhrase": "Voice is on"
   }
 }
