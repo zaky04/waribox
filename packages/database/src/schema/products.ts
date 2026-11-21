@@ -33,6 +33,9 @@ export const products = sqliteTable("products", {
   laboratory: text("laboratory"),
   // Délivrance sur ordonnance : la vente exige alors une référence d'ordonnance.
   requiresPrescription: integer("requires_prescription", { mode: "boolean" }).notNull().default(false),
+  // Vignette du produit (URL de données data:image/…, réduite par l'interface) : montrée sur les tuiles de la
+  // caisse simplifiée. NULL = pas de photo (la tuile garde son monogramme coloré).
+  imageDataUrl: text("image_data_url"),
 });
 
 export const productVariants = sqliteTable("product_variants", {

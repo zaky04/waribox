@@ -45,6 +45,8 @@ export interface AuthenticatedUser {
   limitTicket: number | null;
   // Montant max que cette personne peut approuver (null = illimité).
   limitApprove: number | null;
+  // Caisse verrouillée sur l'écran simplifié (employé « assisté »).
+  simpleCashOnly: boolean;
   // Vrai si un code PIN de déverrouillage est défini (jamais le hash).
   hasPin: boolean;
   // Vrai si un PIN d'approbation est défini (secret distinct du précédent).
@@ -76,6 +78,7 @@ async function toAuthenticatedUser(
     limitPoints: user.limitPoints,
     limitTicket: user.limitTicket,
     limitApprove: user.limitApprove,
+    simpleCashOnly: user.simpleCashOnly,
     hasPin: !!user.pinHash,
     hasApprovalPin: !!user.approvalPinHash,
     permissionOverrides: parseOverrides(user.permissionOverrides),
@@ -110,6 +113,7 @@ export async function createUser(
     limitPoints?: number | null;
     limitTicket?: number | null;
     limitApprove?: number | null;
+    simpleCashOnly?: boolean;
     permissionOverrides?: PermissionOverrides;
     createdBy?: number;
   },
@@ -167,6 +171,7 @@ export async function createUser(
       limitPoints: input.limitPoints,
       limitTicket: input.limitTicket,
       limitApprove: input.limitApprove,
+      simpleCashOnly: input.simpleCashOnly ?? false,
       permissionOverrides: input.permissionOverrides && Object.keys(input.permissionOverrides).length > 0 ? JSON.stringify(input.permissionOverrides) : null,
     })
     .returning()
@@ -391,6 +396,7 @@ export interface UpdateUserInput {
   limitPoints?: number | null;
   limitTicket?: number | null;
   limitApprove?: number | null;
+  simpleCashOnly?: boolean;
   // Nouveau code PIN (4 chiffres) — nécessaire pour qu'un responsable puisse
   // approuver des actions.
   pin?: string;
@@ -430,6 +436,7 @@ export async function updateUser(
   if (input.limitPoints !== undefined) updates.limitPoints = input.limitPoints;
   if (input.limitTicket !== undefined) updates.limitTicket = input.limitTicket;
   if (input.limitApprove !== undefined) updates.limitApprove = input.limitApprove;
+  if (input.simpleCashOnly !== undefined) updates.simpleCashOnly = input.simpleCashOnly;
   const before = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get();
   if (input.pin) {
     assertValidPin(input.pin);

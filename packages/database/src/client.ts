@@ -472,6 +472,14 @@ export const MIGRATIONS: Migration[] = [
     id: 22,
     statements: ["UPDATE business_settings SET approval_refund_threshold = 0 WHERE approval_refund_threshold IS NULL"],
   },
+  // Caisse simplifiée : vignette produit et verrouillage d'un employé sur l'écran simplifié.
+  {
+    id: 23,
+    statements: [
+      "ALTER TABLE products ADD COLUMN image_data_url TEXT",
+      "ALTER TABLE users ADD COLUMN simple_cash_only INTEGER NOT NULL DEFAULT 0",
+    ],
+  },
 ];
 
 async function runMigrations(): Promise<void> {

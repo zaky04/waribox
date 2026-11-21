@@ -9,6 +9,8 @@ export * from "./domain/stock";
 export * from "./domain/expiry";
 export * from "./domain/pharmacy";
 export * from "./domain/focusPolicy";
+export * from "./domain/simpleCash";
+export * from "./domain/productImage";
 export * from "./services/AccountingService";
 export * from "./services/ApprovalService";
 export * from "./services/ApprovalRequestsService";

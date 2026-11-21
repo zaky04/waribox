@@ -26,15 +26,21 @@ export interface CurrencyPreset {
   mobileMoneyLabel?: { fr: string; en: string };
   // Coupures proposées en boutons rapides à l'encaissement en espèces.
   cashQuickAmounts: number[];
+  // Billets et pièces en circulation (du plus grand au plus petit) : sert à dessiner le rendu de monnaie.
+  denominations: number[];
+  // Au-delà de cette valeur, une coupure est un billet (en dessous ou égal : une pièce) — pour dessiner le rendu.
+  coinsUpTo: number;
+  // Nom de la devise tel qu'on le prononce (« deux mille francs CFA »), pour la voix du mode simplifié.
+  spokenName: { fr: string; en: string };
 }
 
 const NBSP = " ";
 
 export const CURRENCY_PRESETS: CurrencyPreset[] = [
-  { code: "XOF", symbol: "F", decimals: 0, symbolPosition: "after", thousands: NBSP, decimal: ",", cfaZone: true, cashQuickAmounts: [500, 1000, 2000, 5000, 10000, 20000, 50000] },
-  { code: "XAF", symbol: "F", decimals: 0, symbolPosition: "after", thousands: NBSP, decimal: ",", cfaZone: true, cashQuickAmounts: [500, 1000, 2000, 5000, 10000, 20000, 50000] },
+  { code: "XOF", coinsUpTo: 500, denominations: [10000, 5000, 2000, 1000, 500, 250, 200, 100, 50, 25, 10, 5], spokenName: { fr: "francs CFA", en: "CFA francs" }, symbol: "F", decimals: 0, symbolPosition: "after", thousands: NBSP, decimal: ",", cfaZone: true, cashQuickAmounts: [500, 1000, 2000, 5000, 10000, 20000, 50000] },
+  { code: "XAF", coinsUpTo: 500, denominations: [10000, 5000, 2000, 1000, 500, 250, 200, 100, 50, 25, 10, 5], spokenName: { fr: "francs CFA", en: "CFA francs" }, symbol: "F", decimals: 0, symbolPosition: "after", thousands: NBSP, decimal: ",", cfaZone: true, cashQuickAmounts: [500, 1000, 2000, 5000, 10000, 20000, 50000] },
   {
-    code: "NGN",
+    code: "NGN", coinsUpTo: 5, denominations: [1000, 500, 200, 100, 50, 20, 10, 5], spokenName: { fr: "nairas", en: "naira" },
     cashQuickAmounts: [100, 200, 500, 1000],
     symbol: "₦",
     decimals: 2,
@@ -47,7 +53,7 @@ export const CURRENCY_PRESETS: CurrencyPreset[] = [
     mobileMoneyLabel: { fr: "Virement / mobile", en: "Transfer / mobile" },
   },
   {
-    code: "GHS",
+    code: "GHS", coinsUpTo: 2, denominations: [200, 100, 50, 20, 10, 5, 2, 1], spokenName: { fr: "cedis", en: "cedis" },
     cashQuickAmounts: [5, 10, 20, 50, 100, 200],
     symbol: "₵",
     decimals: 2,
@@ -59,7 +65,7 @@ export const CURRENCY_PRESETS: CurrencyPreset[] = [
     suggestedVatRate: 15,
   },
   {
-    code: "EUR",
+    code: "EUR", coinsUpTo: 2, denominations: [500, 200, 100, 50, 20, 10, 5, 2, 1], spokenName: { fr: "euros", en: "euros" },
     cashQuickAmounts: [5, 10, 20, 50, 100, 200],
     symbol: "€",
     decimals: 2,
@@ -71,7 +77,7 @@ export const CURRENCY_PRESETS: CurrencyPreset[] = [
     mobileMoneyLabel: { fr: "Virement / autre", en: "Transfer / other" },
   },
   {
-    code: "USD",
+    code: "USD", coinsUpTo: 1, denominations: [100, 50, 20, 10, 5, 1], spokenName: { fr: "dollars", en: "dollars" },
     cashQuickAmounts: [1, 5, 10, 20, 50, 100],
     symbol: "$",
     decimals: 2,
@@ -82,7 +88,7 @@ export const CURRENCY_PRESETS: CurrencyPreset[] = [
     mobileMoneyLabel: { fr: "Virement / autre", en: "Transfer / other" },
   },
   {
-    code: "GBP",
+    code: "GBP", coinsUpTo: 2, denominations: [50, 20, 10, 5, 2, 1], spokenName: { fr: "livres sterling", en: "pounds" },
     cashQuickAmounts: [5, 10, 20, 50],
     symbol: "£",
     decimals: 2,

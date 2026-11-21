@@ -1,3 +1,4 @@
+import { cleanProductImage } from "../domain/productImage";
 import type { Database } from "@gestion-boutique/database";
 import { schema, withTransaction } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
@@ -80,6 +81,8 @@ export interface ProductInput {
   dosageForm?: string | null;
   laboratory?: string | null;
   requiresPrescription?: boolean;
+  // Vignette (URL de données) ; vide/null = pas de photo.
+  imageDataUrl?: string | null;
 }
 
 // Texte facultatif : vide ou espaces → NULL (jamais une chaîne vide en base).
@@ -122,6 +125,7 @@ async function createProductUnsafe(
       dosageForm: cleanText(input.dosageForm),
       laboratory: cleanText(input.laboratory),
       requiresPrescription: input.requiresPrescription ?? false,
+      imageDataUrl: cleanProductImage(input.imageDataUrl),
     })
     .returning()
     .get();
@@ -165,6 +169,7 @@ export interface UpdateProductInput {
   dosageForm?: string | null;
   laboratory?: string | null;
   requiresPrescription?: boolean;
+  imageDataUrl?: string | null;
 }
 
 // Produit + variante par défaut + trace d'audit : tout ou rien (un produit sans
@@ -208,6 +213,7 @@ export async function updateProduct(
   if (input.dosageForm !== undefined) updates.dosageForm = cleanText(input.dosageForm);
   if (input.laboratory !== undefined) updates.laboratory = cleanText(input.laboratory);
   if (input.requiresPrescription !== undefined) updates.requiresPrescription = input.requiresPrescription;
+  if (input.imageDataUrl !== undefined) updates.imageDataUrl = cleanProductImage(input.imageDataUrl);
 
   const updated = await db
     .update(schema.products)

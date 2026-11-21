@@ -61,5 +61,8 @@ export const users = sqliteTable("users", {
   // Montant maximal que cette personne peut approuver (elle-même ou chez les
   // autres) ; au-dessus, il faut un responsable de niveau supérieur. NULL = illimité.
   limitApprove: real("limit_approve"),
+  // Employé « assisté » : sa caisse est verrouillée sur l'écran simplifié (grosses tuiles, espèces ou mobile
+  // uniquement, pas de remise/crédit/points). Réglé par le patron dans Utilisateurs.
+  simpleCashOnly: integer("simple_cash_only", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
