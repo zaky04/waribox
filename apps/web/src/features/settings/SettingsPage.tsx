@@ -1,3 +1,6 @@
+import { BackToHomeButton } from "../../components/BackToHomeButton";
+import { hasGenericPack, SectorPackBlock } from "./SectorPackBlock";
+import { AlertsSettingsCard } from "../alerts/AlertsSettingsCard";
 import { FocusCodeSection } from "../focus/FocusCodeSection";
 import {
   BackupDecryptionError,
@@ -52,7 +55,7 @@ import { certifyInvoice, FneApiError, resolveFneBaseUrl } from "../fne/fneHttp";
 import { NetworkSection } from "../network/NetworkSection";
 import type { AppearanceOptions } from "../../lib/appearance";
 import { StoresSection } from "../stores/StoresSection";
-import { runGoogleDriveBackup, runLocalBackup } from "./backupRunner";
+import { createVerifiedBackupFile, recordBackupOutcome, runGoogleDriveBackup, runLocalBackup } from "./backupRunner";
 import { getBackupPassphrase, protectBackup, setBackupPassphrase } from "./backupPassphrase";
 import { resizeImageToDataUrl } from "./imageUtils";
 import { ServiceTariffsSection } from "./ServiceTariffsSection";
@@ -611,9 +614,9 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
     setDownloadBackupError(null);
     setDownloadingBackup(true);
     try {
-      const { bytes, filename } = await protectBackup(await exportDatabaseFile());
-      await saveGeneratedFile(new Blob([new Uint8Array(bytes)]), filename);
-      await recordBackup(db, { destination: "local", fileRef: filename, status: "success" });
+      const { file, verdict } = await createVerifiedBackupFile();
+      await saveGeneratedFile(new Blob([new Uint8Array(file.bytes)]), file.filename);
+      await recordBackupOutcome(db, "local", file.filename, verdict);
       await refresh();
     } catch (err) {
       setDownloadBackupError(describeError(err, t("settings.errors.downloadBackup")));
@@ -906,6 +909,7 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
               <button style={primaryButtonStyle} type="submit" disabled={!gateCode.trim()}>
                 {t("settings.modulesGate.unlock")}
               </button>
+              <BackToHomeButton />
             </form>
           </div>
         )}
@@ -1099,6 +1103,8 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
             {t("settings.business.sectorTypeHint")}
           </div>
         </label>
+
+        {hasGenericPack(sectorType) && <SectorPackBlock sector={sectorType} />}
 
         {sectorType === "pharmacie" && (
           <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: 12, display: "grid", gap: 8 }}>
@@ -1400,6 +1406,10 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
         <NetworkSection />
       </div>
 
+      </div>
+
+      <div style={vis("config")}>
+      <AlertsSettingsCard />
       </div>
 
       <div style={vis("config")}>
@@ -1921,8 +1931,14 @@ export function SettingsPage({ section = "config" }: { section?: SettingsSection
                   <td style={tdStyle}>{formatDateTime(b.createdAt)}</td>
                   <td style={tdStyle}>{DESTINATION_LABELS[b.destination as BackupDestination] ?? b.destination}</td>
                   <td style={tdStyle}>
-                    <span style={badgeStyle(b.status === "success" ? "ok" : "warning")}>
-                      {b.status === "success" ? t("settings.backups.success") : t("settings.backups.failure")}
+                    <span style={badgeStyle(b.status === "success" || b.status === "verified" ? "ok" : b.status === "verify_failed" ? "danger" : "warning")}>
+                      {b.status === "verified"
+                        ? t("settings.backups.verified")
+                        : b.status === "verify_failed"
+                          ? t("settings.backups.verifyFailed")
+                          : b.status === "success"
+                            ? t("settings.backups.success")
+                            : t("settings.backups.failure")}
                     </span>
                   </td>
                   <td style={tdStyle}>{b.fileRef ?? "—"}</td>

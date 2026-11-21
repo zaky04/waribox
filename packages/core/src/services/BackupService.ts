@@ -1,10 +1,16 @@
 import { exportDatabaseFile, importDatabaseFile, schema, type Database } from "@gestion-boutique/database";
 import { t } from "@gestion-boutique/i18n";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { requirePermission, type PermissionSet } from "../domain/permissions";
 
 export type BackupDestination = "local" | "google_drive";
-export type BackupStatus = "success" | "error";
+// « verified » : sauvegarde écrite ET rouverte avec succès (test de restauration) ; « verify_failed » : écrite mais
+// le test de restauration a échoué — elle ne compte pas comme une sauvegarde réussie. « success » : anciennes
+// sauvegardes, jamais testées.
+export type BackupStatus = "success" | "verified" | "verify_failed" | "error";
+
+/** Les statuts d'une sauvegarde utilisable. */
+export const SUCCESSFUL_BACKUP_STATUSES: BackupStatus[] = ["success", "verified"];
 
 export interface RecordBackupInput {
   destination: BackupDestination;
@@ -28,7 +34,7 @@ export async function getLastSuccessfulBackup(db: Database, destination: BackupD
   return db
     .select()
     .from(schema.backups)
-    .where(and(eq(schema.backups.destination, destination), eq(schema.backups.status, "success")))
+    .where(and(eq(schema.backups.destination, destination), inArray(schema.backups.status, SUCCESSFUL_BACKUP_STATUSES)))
     .orderBy(desc(schema.backups.id))
     .get();
 }

@@ -13,7 +13,7 @@ import {
   type StockCountVariance,
 } from "@gestion-boutique/core";
 import { schema } from "@gestion-boutique/database";
-import { getLocationDisplayName } from "@gestion-boutique/core";
+import { cancelStockCount, getLocationDisplayName } from "@gestion-boutique/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
@@ -165,6 +165,24 @@ export function InventoryPage() {
     }
   };
 
+  // Abandonne le comptage en cours (rien n'a été régularisé : le stock n'est pas touché).
+  const handleCancelCount = async () => {
+    if (!user || !openCount) return;
+    if (!window.confirm(t("inventory.cancelCountConfirm"))) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await cancelStockCount(db, { countId: openCount.id, userId: user.id }, user.permissions);
+      setInputs({});
+      setNote("");
+      await loadCount();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("inventory.errors.generic"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const openReport = async (countId: number) => {
     const r = await getStockCountReport(db, countId);
     setReport(r);
@@ -239,12 +257,27 @@ export function InventoryPage() {
             {busy ? t("inventory.closing") : t("inventory.close")}
           </button>
           <p style={{ color: "var(--color-text-muted)", fontSize: 12.5, margin: 0 }}>{t("inventory.closeHint")}</p>
+          <button
+            style={{ ...primaryButtonStyle, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)", alignSelf: "flex-start" }}
+            disabled={busy}
+            onClick={() => void handleCancelCount()}
+          >
+            {t("inventory.cancelCount")}
+          </button>
         </div>
       )}
 
       {report && (
         <div style={cardStyle}>
-          <strong>{t("inventory.reportTitle", { id: report.count.id })}</strong>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <strong>{t("inventory.reportTitle", { id: report.count.id })}</strong>
+            <button
+              style={{ ...primaryButtonStyle, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)", padding: "6px 12px" }}
+              onClick={() => setReport(null)}
+            >
+              {t("inventory.closeReport")}
+            </button>
+          </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 24 }}>
             <div>
               <div style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("inventory.missingValue")}</div>

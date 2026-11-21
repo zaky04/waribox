@@ -9,6 +9,8 @@ import {
   priceIncreasePercent,
   receivePurchase,
   getSalesVelocity,
+  seasonalOutlook,
+  suggestRestockQuantity,
   listAllVariants,
   listProducts,
   listPurchases,
@@ -18,7 +20,7 @@ import {
 } from "@gestion-boutique/core";
 import { buildLabelSheetPdf } from "@gestion-boutique/printer";
 import { schema } from "@gestion-boutique/database";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { SearchableSelect } from "../../components/SearchableSelect";
@@ -65,6 +67,11 @@ interface CartLine {
 // symétriques et faciles à expliquer.
 const REORDER_WINDOW_DAYS = 30;
 
+function todayLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function PurchasesPage() {
   const db = useDatabase();
   const { user, currentStoreId } = useAuth();
@@ -84,6 +91,9 @@ export function PurchasesPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [lowStockEntries, setLowStockEntries] = useState<LowStockEntry[]>([]);
   const [salesVelocity, setSalesVelocity] = useState<Map<number, number>>(new Map());
+  // Fêtes à venir : la demande monte avant Tabaski, l'Aïd, Noël... (voir domain/seasonality.ts). Désactivable.
+  const [useSeasons, setUseSeasons] = useState(true);
+  const outlook = useMemo(() => seasonalOutlook(todayLocal(), REORDER_WINDOW_DAYS), []);
 
   const [supplierId, setSupplierId] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -232,13 +242,14 @@ export function PurchasesPage() {
   // (vitesse nulle, ex. produit tout juste ajouté au catalogue), pour rester
   // utile même sans historique. Dans les deux cas, un simple repère que le
   // commerçant reste libre d'ajuster avant de valider l'achat.
-  const suggestedReorderQuantity = (entry: LowStockEntry): number => {
-    const dailyVelocity = productDailyVelocity(entry.product.id);
-    if (dailyVelocity > 0) {
-      return Math.max(1, Math.ceil(dailyVelocity * REORDER_WINDOW_DAYS - entry.totalStock));
-    }
-    return Math.max(1, Math.ceil(entry.product.lowStockThreshold * 2 - entry.totalStock));
-  };
+  const suggestedReorderQuantity = (entry: LowStockEntry): number =>
+    suggestRestockQuantity({
+      dailyVelocity: productDailyVelocity(entry.product.id),
+      stock: entry.totalStock,
+      horizonDays: REORDER_WINDOW_DAYS,
+      lowStockThreshold: entry.product.lowStockThreshold,
+      seasonFactor: useSeasons ? outlook.factor : 1,
+    });
 
   const isPredictedSuggestion = (entry: LowStockEntry): boolean => productDailyVelocity(entry.product.id) > 0;
 
@@ -402,6 +413,16 @@ export function PurchasesPage() {
           <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>
             {t("purchases.reorderHint", { days: REORDER_WINDOW_DAYS })}
           </p>
+          {outlook.events.length > 0 && (
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13.5 }}>
+              <input type="checkbox" checked={useSeasons} onChange={(e) => setUseSeasons(e.target.checked)} style={{ marginTop: 3 }} />
+              <span>
+                <strong>{t("seasons.title", { factor: String(outlook.factor).replace(".", ",") })}</strong>{" "}
+                {outlook.events.map((e) => t("seasons.upcoming", { name: t(`seasons.events.${e.key}`), days: e.daysUntil })).join(" · ")}
+                <span style={{ display: "block", color: "var(--color-text-muted)", fontSize: 12.5 }}>{t("seasons.hint")}</span>
+              </span>
+            </label>
+          )}
           <div className="table-scroll">
             <table style={tableStyle}>
               <thead>

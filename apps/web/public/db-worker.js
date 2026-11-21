@@ -22,7 +22,7 @@ function getDb() {
       // documentaires (une ligne pouvait pointer vers un parent inexistant). Activé à chaque ouverture — le
       // réglage est par connexion. Les tests du cœur tournent déjà avec les clés étrangères actives.
       db.exec("PRAGMA foreign_keys = ON");
-      return { db, poolUtil };
+      return { db, poolUtil, sqlite3 };
     })();
   }
   return dbPromise;
@@ -31,7 +31,7 @@ function getDb() {
 self.onmessage = async (event) => {
   const { id, type, sql, bind, bytes: importBytes } = event.data;
   try {
-    const { db, poolUtil } = await getDb();
+    const { db, poolUtil, sqlite3 } = await getDb();
     if (type === "exec") {
       const resultRows = db.exec({ sql, bind, rowMode: "array", returnValue: "resultRows" });
       self.postMessage({ id, resultRows });
@@ -47,6 +47,34 @@ self.onmessage = async (event) => {
       poolUtil.importDb(DB_FILENAME, importBytes);
       dbPromise = null;
       self.postMessage({ id });
+    } else if (type === "verify") {
+      // Test de restauration : ouvre les octets reçus dans une base SÉPARÉE, en mémoire (la vraie base n'est pas
+      // touchée), et la contrôle. Les tables essentielles sont comptées ; une table absente donne null.
+      const probe = new sqlite3.oo1.DB(":memory:", "c");
+      try {
+        const pointer = sqlite3.wasm.allocFromTypedArray(importBytes);
+        const rc = sqlite3.capi.sqlite3_deserialize(
+          probe.pointer,
+          "main",
+          pointer,
+          importBytes.length,
+          importBytes.length,
+          sqlite3.capi.SQLITE_DESERIALIZE_FREEONCLOSE | sqlite3.capi.SQLITE_DESERIALIZE_RESIZEABLE,
+        );
+        probe.checkRc(rc);
+        const integrity = String(probe.selectValue("PRAGMA integrity_check"));
+        const counts = {};
+        for (const table of ["users", "products", "sales", "business_settings", "customers", "stock_movements"]) {
+          try {
+            counts[table] = Number(probe.selectValue(`SELECT count(*) FROM ${table}`));
+          } catch {
+            counts[table] = null;
+          }
+        }
+        self.postMessage({ id, probe: { integrity, counts } });
+      } finally {
+        probe.close();
+      }
     } else {
       self.postMessage({ id, error: `Type de message inconnu : ${type}` });
     }

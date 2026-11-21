@@ -194,7 +194,7 @@ export function DashboardPage({ onNavigate }: { onNavigate?: (tab: NavTab) => vo
       const [backups, settings] = await Promise.all([listBackups(db), getSettings(db)]);
       // La plus récente réussie, tous destinations confondues (dossier local
       // ou Google Drive) — l'une ou l'autre suffit à protéger les données.
-      const lastSuccess = backups.find((b) => b.status === "success");
+      const lastSuccess = backups.find((b) => b.status === "success" || b.status === "verified");
       setLastBackupAt(lastSuccess?.createdAt ?? null);
       setBackupOverdue(isBackupDue(lastSuccess?.createdAt ?? null, settings.backupFrequency));
     }

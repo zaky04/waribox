@@ -1,3 +1,4 @@
+import { checkAlertChannelUrl, isAlertSeverity, isValidSummaryTime, type AlertSeverity } from "../domain/alertChannel";
 import type { Database } from "@gestion-boutique/database";
 import { schema } from "@gestion-boutique/database";
 import { eq } from "drizzle-orm";
@@ -123,6 +124,10 @@ export interface UpdateSettingsInput {
   priceAlertPercent?: number;
   requirePurchaseReceipt?: boolean;
   defaultCreditLimit?: number | null;
+  // Alertes au patron : adresse d'envoi automatique, gravité minimale, heure du résumé du jour.
+  alertChannelUrl?: string | null;
+  alertMinSeverity?: AlertSeverity;
+  dailySummaryTime?: string | null;
   // Preuve (code de maintenance) exigée pour modifier les réglages avancés
   // ci-dessous quand un code est défini. Jamais enregistrée.
   advancedCode?: string;
@@ -188,6 +193,20 @@ export async function updateSettings(db: Database, input: UpdateSettingsInput, a
         throw new Error(t("coreErrors.settings.advancedCodeWrong"));
       }
     }
+  }
+
+  if (values.alertChannelUrl !== undefined) {
+    const check = checkAlertChannelUrl(values.alertChannelUrl);
+    if (check !== "ok" && check !== "empty") throw new Error(t(`coreErrors.settings.alertUrl.${check}`));
+    values.alertChannelUrl = check === "empty" ? null : values.alertChannelUrl!.trim();
+  }
+  if (values.dailySummaryTime !== undefined) {
+    const time = values.dailySummaryTime?.trim() || null;
+    if (time !== null && !isValidSummaryTime(time)) throw new Error(t("coreErrors.settings.summaryTime"));
+    values.dailySummaryTime = time;
+  }
+  if (values.alertMinSeverity !== undefined && !isAlertSeverity(values.alertMinSeverity)) {
+    throw new Error(t("coreErrors.settings.alertSeverity"));
   }
 
   return db

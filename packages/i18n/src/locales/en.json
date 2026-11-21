@@ -18,7 +18,10 @@
       "settled": "Settled"
     },
     "noChartData": "No data for this period.",
-    "noResults": "No results"
+    "noResults": "No results",
+    "backHome": "Back to home",
+    "close": "Close",
+    "cancel": "Cancel"
   },
   "nav": {
     "dashboard": "Home",
@@ -270,7 +273,9 @@
         "GBP": "Pound sterling"
       },
       "country": "Business country (dialling code added to phone numbers)",
-      "countryNone": "— Choose a country —"
+      "countryNone": "— Choose a country —",
+      "sectorBoulangerie": "Bakery / pastry",
+      "sectorQuincaillerie": "Hardware / building materials"
     },
     "appearance": {
       "heading": "Appearance",
@@ -394,6 +399,16 @@
         "importPassphrase": "This backup is encrypted. Password",
         "decryptAndRestore": "Decrypt and restore",
         "wrongPassphrase": "Wrong password, or the file is damaged."
+      },
+      "verified": "Verified (restorable)",
+      "verifyFailed": "Written, but NOT restorable",
+      "verifyReasons": {
+        "integrity": "damaged file",
+        "noUsers": "no account in the backup",
+        "missing": "missing table: {{table}}",
+        "decrypt": "cannot be decrypted",
+        "reread": "the written file is not identical",
+        "probe": "cannot be reopened"
       }
     },
     "maintenance": {
@@ -1661,7 +1676,14 @@
     },
     "settings": {
       "advancedCodeRequired": "The maintenance code is required to change these settings.",
-      "advancedCodeWrong": "Incorrect maintenance code."
+      "advancedCodeWrong": "Incorrect maintenance code.",
+      "alertUrl": {
+        "notHttps": "The alert address must start with https:// (the text must not travel in clear).",
+        "noTextPlaceholder": "The alert address must contain {text} where the message is inserted.",
+        "invalid": "The alert address is not valid."
+      },
+      "summaryTime": "The daily summary time must be in HH:MM format (24 h).",
+      "alertSeverity": "Unknown alert severity."
     },
     "approval": {
       "required": "This action ({{kind}} of {{amount}}) exceeds the limit of {{threshold}}: a manager's approval is required.",
@@ -2116,7 +2138,10 @@
     "viewReport": "View report",
     "errors": {
       "generic": "The stock count operation failed."
-    }
+    },
+    "cancelCount": "Abandon this stock count",
+    "cancelCountConfirm": "Abandon this stock count? The counted quantities will be lost; stock is not changed.",
+    "closeReport": "Close the report"
   },
   "controls": {
     "title": "Management controls",
@@ -2678,5 +2703,596 @@
     "sayExact": "Exact amount",
     "thanks": "Thank you",
     "voiceOnPhrase": "Voice is on"
+  },
+  "alerts": {
+    "someone": "someone",
+    "subject": {
+      "employee": "employee",
+      "supplier": "supplier",
+      "shop": "shop"
+    },
+    "aggregate": "Signal — {{subject}} {{name}}: {{flag}}",
+    "aggregateShop": "Signal — {{flag}}",
+    "event": {
+      "discount": "Off-promotion discount of {{amount}} on {{number}} by {{who}}.",
+      "discountApproved": "Off-promotion discount of {{amount}} on {{number}} by {{who}}, approved by {{approver}}.",
+      "ticketCancelled": "Ticket {{number}} cancelled ({{amount}}) by {{who}}. Reason: {{reason}}.",
+      "refund": "Refund of {{amount}} on {{number}} by {{who}}. Reason: {{reason}}.",
+      "cashVariance": "Cash variance of {{difference}} (expected {{expected}}, counted {{counted}}) — {{who}}.",
+      "stockLoss": "Stock loss of {{value}} ({{reason}}) declared by {{who}}."
+    },
+    "test": "WariBox alert test: if you read this message, automatic sending works.",
+    "backupNotRestorable": "WARNING: backup {{file}} was written but the restore test failed ({{reason}}). Do not rely on it; run another backup."
+  },
+  "alertsSettings": {
+    "title": "Owner alerts",
+    "hint": "When you are away from the counter, WariBox can message you as soon as an off-promotion discount, refund, cancellation, stock loss or cash variance is found, and send you the daily summary. Messages are sent while the app is open on the shop's computer.",
+    "url": "Automatic sending address (optional)",
+    "urlHint": "An https address containing {text} where the message goes. Example with a (free) Telegram bot: https://api.telegram.org/bot<key>/sendMessage?chat_id=<id>&text={text}. The alert text is sent to the service you choose; with no address, alerts stay in Controls and can be sent by WhatsApp in one tap (phone to notify, in Business).",
+    "severity": "Alerts to send",
+    "severityInfo": "Everything",
+    "severityWarning": "Warnings and serious ones",
+    "severityDanger": "Serious only",
+    "summaryTime": "Daily summary time (empty = no summary)",
+    "summaryHint": "The summary is sent once a day, from this time, if the app is open.",
+    "save": "Save alerts",
+    "test": "Send a test message",
+    "saved": "Alert settings saved.",
+    "testSent": "Message sent to the address. Check that it arrived (a browser cannot confirm delivery).",
+    "testFailed": "Sending failed: {{error}}"
+  },
+  "alertsPanel": {
+    "title": "Owner alerts ({{count}} waiting)",
+    "hintAuto": "They are sent automatically while the app is open; if sending fails, you can send them by WhatsApp.",
+    "hintManual": "No automatic sending set up: send them by WhatsApp in one tap, or set an address in Configuration.",
+    "none": "No alerts yet.",
+    "sentAuto": "Sent",
+    "sentWhatsApp": "Sent (WhatsApp)",
+    "waiting": "Waiting",
+    "failed": "Failed",
+    "sendWhatsApp": "WhatsApp",
+    "sendAll": "Send all by WhatsApp ({{count}})",
+    "retry": "Retry automatic sending",
+    "noPhone": "Set the \"Phone to notify\" in Configuration → Business to send by WhatsApp."
+  },
+  "reminders": {
+    "gentle": "Hello {{customerName}}, a friendly reminder from {{business}}: {{amount}} is still due for {{reference}} (due {{dueDate}}). Please drop by when you can.",
+    "firm": "Hello {{customerName}}, {{business}} is following up: {{amount}} is still due for {{reference}}, overdue by {{daysLate}} days. Please settle soon or contact us.",
+    "final": "Hello {{customerName}}, final notice from {{business}}: {{amount}} is still due for {{reference}}, unpaid for {{daysLate}} days. Please pay this week, or call us to agree on a plan.",
+    "digest": "{{count}} credit reminder(s) to send today, {{total}} in total."
+  },
+  "remindersPanel": {
+    "title": "Reminders to send ({{count}})",
+    "hint": "WariBox suggests each reminder at the right time (1, 7, 15 and 30 days after the due date); once sent, the next one only appears when its time comes.",
+    "send": "Remind by WhatsApp",
+    "noPhone": "No phone number",
+    "late": "{{days}} day(s) late",
+    "tone_gentle": "Friendly reminder",
+    "tone_firm": "Follow-up",
+    "tone_final": "Final notice",
+    "none": "No reminders to send today."
+  },
+  "sectorPacks": {
+    "boutique": {
+      "categories": [
+        "Drinks",
+        "Groceries",
+        "Fresh food",
+        "Hygiene and cleaning",
+        "Snacks",
+        "Phones and accessories"
+      ],
+      "products": [
+        {
+          "name": "Mineral water 1.5 L",
+          "category": "Drinks",
+          "unit": "unit"
+        },
+        {
+          "name": "Soda 33 cl",
+          "category": "Drinks",
+          "unit": "unit"
+        },
+        {
+          "name": "Fruit juice 1 L",
+          "category": "Drinks",
+          "unit": "unit"
+        },
+        {
+          "name": "Rice 1 kg",
+          "category": "Groceries",
+          "unit": "kg"
+        },
+        {
+          "name": "Sugar 1 kg",
+          "category": "Groceries",
+          "unit": "kg"
+        },
+        {
+          "name": "Vegetable oil 1 L",
+          "category": "Groceries",
+          "unit": "litre"
+        },
+        {
+          "name": "Pasta 500 g",
+          "category": "Groceries",
+          "unit": "unit"
+        },
+        {
+          "name": "Tomato paste",
+          "category": "Groceries",
+          "unit": "unit"
+        },
+        {
+          "name": "Fine salt 1 kg",
+          "category": "Groceries",
+          "unit": "unit"
+        },
+        {
+          "name": "Powdered milk 400 g",
+          "category": "Groceries",
+          "unit": "unit"
+        },
+        {
+          "name": "Eggs (tray of 30)",
+          "category": "Fresh food",
+          "unit": "unit"
+        },
+        {
+          "name": "Bath soap",
+          "category": "Hygiene and cleaning",
+          "unit": "unit"
+        },
+        {
+          "name": "Laundry detergent 1 kg",
+          "category": "Hygiene and cleaning",
+          "unit": "unit"
+        },
+        {
+          "name": "Toilet paper (4 rolls)",
+          "category": "Hygiene and cleaning",
+          "unit": "unit"
+        },
+        {
+          "name": "Biscuits",
+          "category": "Snacks",
+          "unit": "unit"
+        },
+        {
+          "name": "Candies (bag)",
+          "category": "Snacks",
+          "unit": "unit"
+        },
+        {
+          "name": "Phone credit",
+          "category": "Phones and accessories",
+          "unit": "unit"
+        },
+        {
+          "name": "Phone charger",
+          "category": "Phones and accessories",
+          "unit": "unit"
+        }
+      ]
+    },
+    "boulangerie": {
+      "categories": [
+        "Bread",
+        "Pastries",
+        "Cakes",
+        "Drinks",
+        "Sandwiches and snacks",
+        "Ingredients"
+      ],
+      "products": [
+        {
+          "name": "Baguette",
+          "category": "Bread",
+          "unit": "unit"
+        },
+        {
+          "name": "Sliced bread",
+          "category": "Bread",
+          "unit": "unit"
+        },
+        {
+          "name": "Wholemeal bread",
+          "category": "Bread",
+          "unit": "unit"
+        },
+        {
+          "name": "Bread roll",
+          "category": "Bread",
+          "unit": "unit"
+        },
+        {
+          "name": "Croissant",
+          "category": "Pastries",
+          "unit": "unit"
+        },
+        {
+          "name": "Chocolate croissant",
+          "category": "Pastries",
+          "unit": "unit"
+        },
+        {
+          "name": "Brioche",
+          "category": "Pastries",
+          "unit": "unit"
+        },
+        {
+          "name": "Cake (slice)",
+          "category": "Cakes",
+          "unit": "unit"
+        },
+        {
+          "name": "Whole cake",
+          "category": "Cakes",
+          "unit": "unit"
+        },
+        {
+          "name": "Doughnut",
+          "category": "Cakes",
+          "unit": "unit"
+        },
+        {
+          "name": "Sandwich",
+          "category": "Sandwiches and snacks",
+          "unit": "unit"
+        },
+        {
+          "name": "Pizza (slice)",
+          "category": "Sandwiches and snacks",
+          "unit": "unit"
+        },
+        {
+          "name": "Coffee",
+          "category": "Drinks",
+          "unit": "unit"
+        },
+        {
+          "name": "Fruit juice",
+          "category": "Drinks",
+          "unit": "unit"
+        },
+        {
+          "name": "Mineral water",
+          "category": "Drinks",
+          "unit": "unit"
+        },
+        {
+          "name": "Flour (25 kg bag)",
+          "category": "Ingredients",
+          "unit": "unit"
+        },
+        {
+          "name": "Yeast",
+          "category": "Ingredients",
+          "unit": "unit"
+        },
+        {
+          "name": "Sugar (bag)",
+          "category": "Ingredients",
+          "unit": "unit"
+        }
+      ]
+    },
+    "quincaillerie": {
+      "categories": [
+        "Tools",
+        "Plumbing",
+        "Electrical",
+        "Paint",
+        "Screws and fixings",
+        "Building materials",
+        "Security"
+      ],
+      "products": [
+        {
+          "name": "Hammer",
+          "category": "Tools",
+          "unit": "unit"
+        },
+        {
+          "name": "Screwdriver set",
+          "category": "Tools",
+          "unit": "unit"
+        },
+        {
+          "name": "Pliers",
+          "category": "Tools",
+          "unit": "unit"
+        },
+        {
+          "name": "Tape measure",
+          "category": "Tools",
+          "unit": "unit"
+        },
+        {
+          "name": "PVC pipe",
+          "category": "Plumbing",
+          "unit": "metre"
+        },
+        {
+          "name": "Tap",
+          "category": "Plumbing",
+          "unit": "unit"
+        },
+        {
+          "name": "PVC glue",
+          "category": "Plumbing",
+          "unit": "unit"
+        },
+        {
+          "name": "Electric cable 2.5 mm²",
+          "category": "Electrical",
+          "unit": "metre"
+        },
+        {
+          "name": "Switch",
+          "category": "Electrical",
+          "unit": "unit"
+        },
+        {
+          "name": "Power socket",
+          "category": "Electrical",
+          "unit": "unit"
+        },
+        {
+          "name": "LED bulb",
+          "category": "Electrical",
+          "unit": "unit"
+        },
+        {
+          "name": "Paint 20 L",
+          "category": "Paint",
+          "unit": "unit"
+        },
+        {
+          "name": "Paintbrush",
+          "category": "Paint",
+          "unit": "unit"
+        },
+        {
+          "name": "Screws (box)",
+          "category": "Screws and fixings",
+          "unit": "unit"
+        },
+        {
+          "name": "Nails 1 kg",
+          "category": "Screws and fixings",
+          "unit": "kg"
+        },
+        {
+          "name": "Cement (50 kg bag)",
+          "category": "Building materials",
+          "unit": "unit"
+        },
+        {
+          "name": "Rebar",
+          "category": "Building materials",
+          "unit": "unit"
+        },
+        {
+          "name": "Padlock",
+          "category": "Security",
+          "unit": "unit"
+        },
+        {
+          "name": "Lock",
+          "category": "Security",
+          "unit": "unit"
+        }
+      ]
+    },
+    "restaurant": {
+      "categories": [
+        "Starters",
+        "Main dishes",
+        "Grills",
+        "Sides",
+        "Desserts",
+        "Drinks",
+        "Hot drinks"
+      ],
+      "products": [
+        {
+          "name": "Salad",
+          "category": "Starters",
+          "unit": "unit"
+        },
+        {
+          "name": "Soup of the day",
+          "category": "Starters",
+          "unit": "unit"
+        },
+        {
+          "name": "Attieke with fish",
+          "category": "Main dishes",
+          "unit": "unit"
+        },
+        {
+          "name": "Rice with sauce",
+          "category": "Main dishes",
+          "unit": "unit"
+        },
+        {
+          "name": "Grilled chicken",
+          "category": "Grills",
+          "unit": "unit"
+        },
+        {
+          "name": "Grilled fish",
+          "category": "Grills",
+          "unit": "unit"
+        },
+        {
+          "name": "Skewers",
+          "category": "Grills",
+          "unit": "unit"
+        },
+        {
+          "name": "Fried plantain",
+          "category": "Sides",
+          "unit": "unit"
+        },
+        {
+          "name": "Fries",
+          "category": "Sides",
+          "unit": "unit"
+        },
+        {
+          "name": "Fruit salad",
+          "category": "Desserts",
+          "unit": "unit"
+        },
+        {
+          "name": "Mineral water",
+          "category": "Drinks",
+          "unit": "unit"
+        },
+        {
+          "name": "Soda",
+          "category": "Drinks",
+          "unit": "unit"
+        },
+        {
+          "name": "Beer",
+          "category": "Drinks",
+          "unit": "unit"
+        },
+        {
+          "name": "Fresh juice",
+          "category": "Drinks",
+          "unit": "unit"
+        },
+        {
+          "name": "Coffee",
+          "category": "Hot drinks",
+          "unit": "unit"
+        },
+        {
+          "name": "Tea",
+          "category": "Hot drinks",
+          "unit": "unit"
+        }
+      ]
+    }
+  },
+  "sectorPackUi": {
+    "title": "Starter pack",
+    "hint": "Install the usual categories for your trade, or download a pre-filled catalogue template (names and units, no prices): fill in the prices in your spreadsheet, then import it from Products → Import a catalogue. No barcodes are provided: scan your products or type them in.",
+    "installCategories": "Install the categories",
+    "downloadTemplate": "Download the catalogue template",
+    "categoriesDone": "{{count}} categor(ies) added.",
+    "categoriesNone": "This pack's categories already exist."
+  },
+  "catalogImport": {
+    "title": "Import a catalogue",
+    "hint": "A CSV or Excel (.xlsx) file, one product per row. Recognised columns: name, sale price (required), category, unit, purchase price, stock, barcode, VAT, alert threshold. Products already present (same name or barcode) are skipped, never overwritten.",
+    "button": "Import a catalogue",
+    "choose": "Choose a file",
+    "template": {
+      "name": "Name",
+      "category": "Category",
+      "unit": "Unit",
+      "salePrice": "Sale price",
+      "purchasePrice": "Purchase price",
+      "stock": "Stock",
+      "barcode": "Barcode"
+    },
+    "reading": "Reading the file…",
+    "recognized": "Recognised columns: {{columns}}",
+    "summary": "{{create}} product(s) to create · {{dup}} already present (skipped) · {{err}} row(s) rejected",
+    "problems": "Rows to fix",
+    "line": "Row {{line}}",
+    "confirm": "Import {{count}} product(s)",
+    "stockHere": "Starting stock goes to: {{location}}",
+    "done": "{{created}} product(s) created, {{stock}} starting stock(s) recorded.",
+    "failedSome": "{{count}} row(s) could not be imported:",
+    "readFailed": "Could not read this file: {{error}}",
+    "duplicateName": "already in the catalogue (same name)",
+    "duplicateBarcode": "already in the catalogue (barcode {{barcode}})",
+    "stockNote": "Catalogue import",
+    "stockFailed": "product created, but starting stock not recorded: {{error}}",
+    "errors": {
+      "empty": "The file is empty.",
+      "noNameColumn": "\"Name\" column not found on the first row.",
+      "noPriceColumn": "\"Sale price\" column not found on the first row.",
+      "tooManyRows": "The file has more than {{max}} rows: split it into several files.",
+      "nameMissing": "name missing",
+      "nameTooLong": "name too long (120 characters max)",
+      "priceMissing": "sale price missing",
+      "priceInvalid": "unreadable sale price: \"{{value}}\"",
+      "priceNegative": "negative sale price",
+      "purchaseInvalid": "unreadable purchase price: \"{{value}}\"",
+      "stockInvalid": "unreadable stock: \"{{value}}\"",
+      "taxInvalid": "unreadable VAT (0 to 100): \"{{value}}\"",
+      "thresholdInvalid": "unreadable threshold: \"{{value}}\""
+    },
+    "templateDownload": "Download an empty template"
+  },
+  "accountantExport": {
+    "title": "Accountant package",
+    "hint": "An Excel workbook with every document of the period — sales, refunds, purchases, expenses, credit repayments, open credits, VAT — one row per transaction, that your accountant can load into their own software.",
+    "button": "Download the package (Excel)",
+    "cancelled": "Cancelled",
+    "sheets": {
+      "summary": "Summary",
+      "sales": "Sales",
+      "refunds": "Refunds",
+      "purchases": "Purchases",
+      "expenses": "Expenses",
+      "repayments": "Customer repayments",
+      "openCredits": "Open credits",
+      "tax": "VAT by day"
+    },
+    "summary": {
+      "period": "Period",
+      "sales": "Sales (incl. tax)",
+      "refunds": "Refunds",
+      "netSales": "Net sales",
+      "tax": "Net VAT collected",
+      "purchases": "Purchases",
+      "expenses": "Expenses",
+      "repayments": "Credit repayments received",
+      "creditsOpen": "Customer credits still owed (today)"
+    },
+    "columns": {
+      "label": "Label",
+      "amount": "Amount",
+      "date": "Date",
+      "number": "Number",
+      "customer": "Customer",
+      "total": "Total incl. tax",
+      "tax": "VAT",
+      "discount": "Discount",
+      "status": "Status",
+      "method": "Payment method",
+      "fneReference": "FNE reference",
+      "sale": "Sale",
+      "reason": "Reason",
+      "invoice": "Supplier invoice no.",
+      "supplier": "Supplier",
+      "paid": "Paid",
+      "category": "Category",
+      "note": "Note",
+      "dueDate": "Due date",
+      "original": "Original amount",
+      "remaining": "Remaining"
+    }
+  },
+  "seasons": {
+    "title": "Upcoming holidays: quantities × {{factor}}",
+    "upcoming": "{{name}} in {{days}} day(s)",
+    "hint": "Suggestions factor in the usual sales rise before holidays (indicative values, quantities editable). Untick to go back to the normal pace.",
+    "events": {
+      "ramadan": "Ramadan",
+      "eidFitr": "Eid al-Fitr",
+      "tabaski": "Tabaski (Eid al-Adha)",
+      "christmas": "Christmas",
+      "newYear": "New Year",
+      "backToSchool": "Back to school"
+    }
   }
 }

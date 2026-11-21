@@ -18,6 +18,7 @@ import { buildLabelSheetPdf } from "@gestion-boutique/printer";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { fileToThumbnail } from "../../lib/imageThumb";
+import { CatalogImportPanel } from "./CatalogImportPanel";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
@@ -63,6 +64,7 @@ export function ProductsPage() {
   );
 
   const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
   const [name, setName] = useState("");
   const [categoryId, setCategoryId] = useState<string>("");
@@ -328,6 +330,14 @@ export function ProductsPage() {
             {printingLabels ? t("products.printingLabels") : t("products.printLabels")}
           </button>
           {canManage && (
+            <button
+              style={{ ...primaryButtonStyle, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)" }}
+              onClick={() => setShowImport((v) => !v)}
+            >
+              {t("catalogImport.button")}
+            </button>
+          )}
+          {canManage && (
             <button style={primaryButtonStyle} onClick={() => (showForm ? resetForm() : openNewForm())}>
               {showForm ? t("products.cancel") : t("products.new")}
             </button>
@@ -335,6 +345,8 @@ export function ProductsPage() {
         </div>
       </div>
       {labelsError && <p style={{ color: "var(--color-danger)" }}>{labelsError}</p>}
+
+      {showImport && canManage && <CatalogImportPanel onDone={() => void refresh()} onClose={() => setShowImport(false)} />}
 
       {showForm && (
         <div style={cardStyle}>

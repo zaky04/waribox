@@ -181,4 +181,9 @@ export const businessSettings = sqliteTable("business_settings", {
   // Dernier « contrôle effectué » du propriétaire (repère pour ne revoir que le neuf).
   controlsReviewedAt: text("controls_reviewed_at"),
   controlsReviewedBy: integer("controls_reviewed_by"),
+  // Alertes au patron (voir AlertService) : adresse appelée avec le texte (`{text}`), gravité minimale envoyée
+  // ('info' | 'warning' | 'danger') et heure « HH:MM » du résumé du jour (NULL = pas de résumé programmé).
+  alertChannelUrl: text("alert_channel_url"),
+  alertMinSeverity: text("alert_min_severity").notNull().default("warning"),
+  dailySummaryTime: text("daily_summary_time"),
 });

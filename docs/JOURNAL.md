@@ -4204,6 +4204,27 @@ Idée issue de l'analyse du marché (voir l'échange du 2026-11-20) : un écran 
 - **Preuves** : 12 tests (`SimpleCash.test.ts` : décomposition de monnaie, flottants, reste, toutes les devises, montants dits, photo valide/refusée, photo conservée/retirée, copie sur appareil relié, réglage employé) ; build + 344 tests. Dans le navigateur : photo de 1,4 Mo réduite à 2,7 Ko ; deux ventes réelles (espèces 5 000 pour 2 350 → rendu 2 000+500+100+50 ; mobile) enregistrées dans l'historique avec le bon mode de paiement ; voix interceptée (« Total : 2350 francs CFA », « À rendre : 2650 francs CFA », « Merci ») ; montant insuffisant refusé ; employée assistée sans sélecteur de mode ; mobile 375 px sans débordement ; anglais ; aucune erreur console.
 - **Non testé / limites** : la voix réelle (seul l'appel à la synthèse a été vérifié, pas le son), la prise de photo avec la caméra d'un téléphone (champ fichier générique), l'écran sur Android, un produit sur ordonnance en mode simple. La caisse normale n'affiche pas encore les photos. L'employé assisté garde l'accès au bouton « Fermer la caisse » (comptage).
 
+### 2026-11-22 — Pack « patron absent » : alertes, relances, sauvegardes testées, import, saisonnalité (EN COURS)
+
+**Livré et testé (tests du cœur, vérifié dans le navigateur pour les 4 premiers)** :
+- **Alertes proactives** ([AlertService.ts](packages/core/src/services/AlertService.ts), [useAlertDispatcher.ts](apps/web/src/features/alerts/useAlertDispatcher.ts)) : événements du journal d'audit (remise hors promotion, ticket annulé, remboursement, perte de stock, écart de caisse) + signaux de Contrôles + résumé du jour à l'heure choisie, mis en file (`__alert_outbox`, migration 24) puis envoyés par une adresse https choisie par le patron (`{text}` : robot Telegram, CallMeBot...) ou, sans adresse, par WhatsApp en un geste depuis Contrôles. **Limite assumée : WariBox n'a pas de serveur, l'envoi automatique n'a lieu que si l'application est ouverte.**
+- **Relances de créances échelonnées** (J+1/7/15/30, ton qui monte, [ReminderService.ts](packages/core/src/services/ReminderService.ts), panneau dans Créances) + une alerte par jour au patron.
+- **Test de restauration des sauvegardes** : chaque sauvegarde est rouverte dans une base séparée en mémoire (commande `verify` du worker), déchiffrée si chiffrée, relue si écrite dans un dossier ; statuts `verified` / `verify_failed` (alerte au patron).
+- **Import de catalogue** CSV/Excel (lecteur .xlsx maison sans dépendance vulnérable), packs de démarrage boulangerie/quincaillerie/restaurant/boutique (noms et unités, aucun prix ni code-barres inventé), **dossier expert-comptable** (Excel multi-onglets, Comptabilité).
+- **Réappro saisonnière** (Ramadan, Aïd, Tabaski, Noël, Nouvel An, rentrée ; coefficients indicatifs affichés et désactivables, page Achats).
+- Socle IA : contexte de l'assistant SANS nom de client/employé/téléphone, rapprochement de lignes de bon de livraison (testés). SDK `@anthropic-ai/sdk` ajouté à apps/web.
+
+**Reste à faire (non commencé côté interface)** : écrans IA (réglage clé/modèle stockés sur l'appareil, question en langage naturel sur l'Accueil, lecture d'un bon de livraison par photo avec confirmation ligne à ligne), CSP Tauri `https://api.anthropic.com` ; chiffrement des trames du mode réseau avec la clé du jeton ; verrouillage/révocation d'un appareil volé ; approbations à distance par notification ; chiffrement de la base au repos (SQLite WASM n'a pas de chiffrement natif : piste sqlite3mc à étudier) ; tests d'intégration du navigateur pour l'import et l'export comptable.
+
+### 2026-11-22 — Audit des « cul-de-sac » : boutons retour manquants
+
+Retour utilisateur : certaines fonctions n'avaient pas de sortie. Revue de tous les écrans, panneaux, étapes et modales ; ajouts :
+- **Ouverture de caisse** et **porte de la Configuration avancée** (écrans qui remplacent la page) : bouton « Retour à l'accueil » ([BackToHomeButton](apps/web/src/components/BackToHomeButton.tsx), `NavigationContext` fourni par App).
+- **Rôles et permissions** : l'éditeur n'avait aucun bouton de sortie (aucun du tout pour le rôle Admin verrouillé) → Annuler / Fermer.
+- **Inventaire** : le rapport n'avait pas de « Fermer » ; un comptage en cours ne pouvait être que clôturé → « Abandonner cet inventaire » (`cancelStockCount`, sans effet sur le stock puisqu'une régularisation n'est écrite qu'à la clôture ; testé).
+- Déjà conformes (vérifiés) : étape Payer de la caisse simplifiée (Modifier), scanner caméra, import de catalogue (✕), formulaires Produits/Clients/Fournisseurs/Dépenses/Utilisateurs/Créances/Dettes, panneau de réception des achats, conversion des devis, modales (mot de passe, remboursements, approbation, code du mode focus), écran PIN (Se déconnecter), mode réseau (Quitter le rôle). Écrans de premier démarrage (création du compte, modules) : rien en amont où revenir, volontairement inchangés.
+- Vérifié dans le navigateur : retour depuis l'ouverture de caisse, retour depuis la porte avancée (code défini), abandon d'un inventaire, fermeture de l'éditeur de rôle Admin. Convention ajoutée à CLAUDE.md.
+
 ## Prochaines pistes suggérées
 
 1. Décider d'installer ESLint ou de retirer le script `lint` du

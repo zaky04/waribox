@@ -29,6 +29,7 @@ import { useTranslation } from "react-i18next";
 import { useDatabase } from "../../app/DatabaseProvider";
 import { cardStyle, inputStyle, pageStyle, primaryButtonStyle, tableStyle, tdStyle, thStyle } from "../../components/sharedStyles";
 import { saveGeneratedFile } from "../../lib/saveFile";
+import { AccountantExportCard } from "./AccountantExportCard";
 
 type SubTab = "income" | "balance" | "syscohada";
 type SyscohadaView = "ventes" | "achats" | "tresorerie" | "balance";
@@ -189,6 +190,8 @@ export function AccountingPage() {
       </div>
 
       <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("accounting.hint")}</p>
+
+      <AccountantExportCard />
 
       {subTab === "income" && (
         <>

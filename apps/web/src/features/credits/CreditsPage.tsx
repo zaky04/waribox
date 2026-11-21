@@ -26,6 +26,7 @@ import {
 import { openExternalUrl } from "../../lib/openExternalUrl";
 import { openWhatsApp } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
+import { RemindersPanel } from "./RemindersPanel";
 import { formatDateTime } from "../../lib/dateTime";
 
 type Credit = typeof schema.customerCredits.$inferSelect;
@@ -188,6 +189,8 @@ export function CreditsPage() {
           {showSettled ? t("credits.hideSettled") : t("credits.showSettled")}
         </button>
       </div>
+
+      <RemindersPanel />
 
       <div className="table-scroll">
         <table style={tableStyle}>

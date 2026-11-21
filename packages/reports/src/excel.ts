@@ -18,6 +18,11 @@ function buildWorkbookBlob(sheets: { name: string; rows: Record<string, unknown>
   });
 }
 
+/** Classeur à plusieurs onglets pour l'expert-comptable (une ligne par opération, voir AccountantExportService). */
+export function buildAccountantWorkbook(sheets: { name: string; rows: Record<string, unknown>[] }[]): Blob {
+  return buildWorkbookBlob(sheets);
+}
+
 export function buildSalesReportExcel(data: SalesReportData): Blob {
   return buildWorkbookBlob([
     {

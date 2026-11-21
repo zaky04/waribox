@@ -9,15 +9,17 @@
 // l'instant. Aucune option "Autre" : une valeur vide/`null` équivaut déjà à
 // "pas de secteur choisi" et garde l'icône/libellé par défaut — pas besoin
 // de la lister explicitement.
-export type SectorType = "boutique" | "pharmacie" | "restaurant" | "pressing";
+export type SectorType = "boutique" | "pharmacie" | "restaurant" | "pressing" | "boulangerie" | "quincaillerie";
 
 export const SECTOR_OPTIONS: { value: SectorType; labelKey: string }[] = [
   { value: "boutique", labelKey: "settings.business.sectorBoutique" },
   { value: "pharmacie", labelKey: "settings.business.sectorPharmacie" },
   { value: "restaurant", labelKey: "settings.business.sectorRestaurant" },
   { value: "pressing", labelKey: "settings.business.sectorPressing" },
+  { value: "boulangerie", labelKey: "settings.business.sectorBoulangerie" },
+  { value: "quincaillerie", labelKey: "settings.business.sectorQuincaillerie" },
 ];
 
 export function isSectorType(value: string | null | undefined): value is SectorType {
-  return value === "boutique" || value === "pharmacie" || value === "restaurant" || value === "pressing";
+  return SECTOR_OPTIONS.some((option) => option.value === value);
 }

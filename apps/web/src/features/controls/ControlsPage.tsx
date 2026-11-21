@@ -25,6 +25,7 @@ import { formatAmount, formatMoney } from "../../lib/format";
 import { buildWhatsAppLink, isWhatsAppNumberUsable } from "../../lib/whatsapp";
 import { useAuth } from "../auth/useAuth";
 import { formatDateTime } from "../../lib/dateTime";
+import { AlertsPanel } from "../alerts/AlertsPanel";
 
 function isoDay(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -173,6 +174,8 @@ export function ControlsPage() {
           </div>
         </div>
       )}
+
+      <AlertsPanel />
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
         <label>

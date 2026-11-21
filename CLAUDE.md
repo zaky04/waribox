@@ -133,6 +133,11 @@ promotions, etc.), miroir des services de `packages/core`.
   l'ANCIEN code sur un jeu de données varié, puis comparer (voir `MarginsReports.test.ts`,
   `ControlsReport.test.ts`, `TaxAndDailyReads.test.ts`), et vérifier par mutation que le test échoue si on casse un filtre.
 
+- **Pas d'écran sans sortie** : tout écran, étape, panneau ou modale doit offrir un retour visible (Annuler / Fermer /
+  « Retour à l'accueil »). Pour un écran qui bloque la page (ouverture de caisse, porte du code avancé), utiliser
+  [BackToHomeButton](apps/web/src/components/BackToHomeButton.tsx) (via `NavigationContext`) ; pour un panneau ou
+  un éditeur, un bouton Annuler/Fermer dans le panneau. À vérifier dans le navigateur à chaque nouvel écran.
+
 ## Base de données / migrations
 
 Le schéma vit dans [packages/database/src/schema/*.ts](packages/database/src/schema).

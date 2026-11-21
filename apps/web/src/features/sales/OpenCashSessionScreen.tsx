@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { BackToHomeButton } from "../../components/BackToHomeButton";
 import { cardStyle, inputStyle, pageStyle, primaryButtonStyle } from "../../components/sharedStyles";
 
 export function OpenCashSessionScreen({ onOpen }: { onOpen: (amount: number) => Promise<void> }) {
@@ -33,6 +34,7 @@ export function OpenCashSessionScreen({ onOpen }: { onOpen: (amount: number) => 
         <button style={primaryButtonStyle} onClick={handleOpen} disabled={loading}>
           {loading ? t("sales.openSession.opening") : t("sales.openSession.open")}
         </button>
+        <BackToHomeButton />
       </div>
     </main>
   );

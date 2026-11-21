@@ -20,8 +20,10 @@ import { useIdleLock } from "../features/auth/useIdleLock";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { useBackupScheduler } from "../features/settings/useBackupScheduler";
 import { useFneQueue } from "../features/fne/useFneQueue";
+import { useAlertDispatcher } from "../features/alerts/useAlertDispatcher";
 import { DatabaseProvider, useDatabase } from "./DatabaseProvider";
 import { Nav, type ModuleTab, type NavTab } from "./Nav";
+import { NavigationContext } from "./NavigationContext";
 
 // Chaque page est chargée à la demande : le premier affichage n'embarque plus
 // tout le code de l'application (2,3 Mo d'un seul bloc), ce qui compte sur un
@@ -81,6 +83,7 @@ function MainContent() {
   const headerRef = useRef<HTMLDivElement>(null);
   useBackupScheduler();
   useFneQueue(db);
+  useAlertDispatcher(db);
   useIdleLock(autoLockMinutes);
 
   // Repart sur Accueil à chaque changement d'identité (connexion normale,
@@ -147,6 +150,7 @@ function MainContent() {
   }, [appearanceAccentColor, appearanceShape, appearanceBackground, appearanceFont, theme]);
 
   return (
+    <NavigationContext.Provider value={{ goTo: setTab }}>
     <ApprovalProvider>
       {/* top en env(safe-area-inset-top) et pas 0 : un élément sticky se
           bloque à sa propre valeur `top`, indépendamment du padding-top déjà
@@ -203,6 +207,7 @@ function MainContent() {
         </div>
       </div>
     </ApprovalProvider>
+    </NavigationContext.Provider>
   );
 }
 

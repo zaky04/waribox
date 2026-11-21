@@ -18,7 +18,10 @@
       "settled": "Soldée"
     },
     "noChartData": "Aucune donnée pour cette période.",
-    "noResults": "Aucun résultat"
+    "noResults": "Aucun résultat",
+    "backHome": "Retour à l'accueil",
+    "close": "Fermer",
+    "cancel": "Annuler"
   },
   "nav": {
     "dashboard": "Accueil",
@@ -270,7 +273,9 @@
         "GBP": "Livre sterling"
       },
       "country": "Pays du commerce (indicatif ajouté aux numéros de téléphone)",
-      "countryNone": "— Choisir un pays —"
+      "countryNone": "— Choisir un pays —",
+      "sectorBoulangerie": "Boulangerie / pâtisserie",
+      "sectorQuincaillerie": "Quincaillerie / matériaux"
     },
     "appearance": {
       "heading": "Apparence",
@@ -394,6 +399,16 @@
         "importPassphrase": "Cette sauvegarde est chiffrée. Mot de passe",
         "decryptAndRestore": "Déchiffrer et restaurer",
         "wrongPassphrase": "Mot de passe incorrect, ou fichier abîmé."
+      },
+      "verified": "Vérifiée (restaurable)",
+      "verifyFailed": "Écrite, mais NON restaurable",
+      "verifyReasons": {
+        "integrity": "fichier abîmé",
+        "noUsers": "aucun compte dans la sauvegarde",
+        "missing": "table manquante : {{table}}",
+        "decrypt": "impossible de la déchiffrer",
+        "reread": "le fichier écrit n'est pas identique",
+        "probe": "impossible de la rouvrir"
       }
     },
     "maintenance": {
@@ -1661,7 +1676,14 @@
     },
     "settings": {
       "advancedCodeRequired": "Le code de maintenance est requis pour modifier ces réglages.",
-      "advancedCodeWrong": "Code de maintenance incorrect."
+      "advancedCodeWrong": "Code de maintenance incorrect.",
+      "alertUrl": {
+        "notHttps": "L'adresse d'envoi des alertes doit commencer par https:// (le texte ne doit pas circuler en clair).",
+        "noTextPlaceholder": "L'adresse d'envoi des alertes doit contenir {text} à l'endroit où le message est inséré.",
+        "invalid": "L'adresse d'envoi des alertes n'est pas valide."
+      },
+      "summaryTime": "L'heure du résumé du jour doit être au format HH:MM (24 h).",
+      "alertSeverity": "Gravité d'alerte inconnue."
     },
     "approval": {
       "required": "Cette action ({{kind}} de {{amount}}) dépasse le plafond de {{threshold}} : l'approbation d'un responsable est requise.",
@@ -2116,7 +2138,10 @@
     "viewReport": "Voir le rapport",
     "errors": {
       "generic": "L'opération d'inventaire a échoué."
-    }
+    },
+    "cancelCount": "Abandonner cet inventaire",
+    "cancelCountConfirm": "Abandonner cet inventaire ? Les quantités comptées seront perdues ; le stock n'est pas modifié.",
+    "closeReport": "Fermer le rapport"
   },
   "controls": {
     "title": "Contrôles de gestion",
@@ -2678,5 +2703,596 @@
     "sayExact": "Le compte est bon",
     "thanks": "Merci",
     "voiceOnPhrase": "La voix est activée"
+  },
+  "alerts": {
+    "someone": "quelqu'un",
+    "subject": {
+      "employee": "employé",
+      "supplier": "fournisseur",
+      "shop": "boutique"
+    },
+    "aggregate": "Signal — {{subject}} {{name}} : {{flag}}",
+    "aggregateShop": "Signal — {{flag}}",
+    "event": {
+      "discount": "Remise hors promotion de {{amount}} sur {{number}} par {{who}}.",
+      "discountApproved": "Remise hors promotion de {{amount}} sur {{number}} par {{who}}, approuvée par {{approver}}.",
+      "ticketCancelled": "Ticket {{number}} annulé ({{amount}}) par {{who}}. Motif : {{reason}}.",
+      "refund": "Remboursement de {{amount}} sur {{number}} par {{who}}. Motif : {{reason}}.",
+      "cashVariance": "Écart de caisse de {{difference}} (attendu {{expected}}, compté {{counted}}) — {{who}}.",
+      "stockLoss": "Perte de stock de {{value}} ({{reason}}) déclarée par {{who}}."
+    },
+    "test": "Test d'alerte WariBox : si vous lisez ce message, l'envoi automatique fonctionne.",
+    "backupNotRestorable": "ATTENTION : la sauvegarde {{file}} a été écrite mais le test de restauration a échoué ({{reason}}). Ne comptez pas dessus ; relancez une sauvegarde."
+  },
+  "alertsSettings": {
+    "title": "Alertes au patron",
+    "hint": "Quand vous n'êtes pas au comptoir, WariBox peut vous écrire dès qu'une remise hors promotion, un remboursement, une annulation, une perte de stock ou un écart de caisse est constaté, et vous envoyer le résumé de la journée. L'envoi se fait tant que l'application est ouverte sur le poste du commerce.",
+    "url": "Adresse d'envoi automatique (facultatif)",
+    "urlHint": "Une adresse https qui contient {text} à l'endroit du message. Exemple avec un robot Telegram (gratuit) : https://api.telegram.org/bot<clé>/sendMessage?chat_id=<identifiant>&text={text}. Le texte des alertes est transmis à ce service que vous choisissez ; sans adresse, les alertes restent dans Contrôles et s'envoient par WhatsApp en un geste (téléphone à notifier, dans Entreprise).",
+    "severity": "Alertes à envoyer",
+    "severityInfo": "Tout",
+    "severityWarning": "Avertissements et graves",
+    "severityDanger": "Graves seulement",
+    "summaryTime": "Heure du résumé de la journée (vide = pas de résumé)",
+    "summaryHint": "Le résumé part une fois par jour, à partir de cette heure, si l'application est ouverte.",
+    "save": "Enregistrer les alertes",
+    "test": "Envoyer un message de test",
+    "saved": "Réglages d'alertes enregistrés.",
+    "testSent": "Message envoyé à l'adresse. Vérifiez qu'il est bien arrivé (la réception ne peut pas être contrôlée depuis un navigateur).",
+    "testFailed": "Échec de l'envoi : {{error}}"
+  },
+  "alertsPanel": {
+    "title": "Alertes pour le patron ({{count}} en attente)",
+    "hintAuto": "Elles partent automatiquement tant que l'application est ouverte ; en cas d'échec, vous pouvez les envoyer par WhatsApp.",
+    "hintManual": "Pas d'envoi automatique configuré : envoyez-les par WhatsApp en un geste, ou configurez une adresse d'envoi dans Configuration.",
+    "none": "Aucune alerte pour l'instant.",
+    "sentAuto": "Envoyée",
+    "sentWhatsApp": "Envoyée (WhatsApp)",
+    "waiting": "En attente",
+    "failed": "Échec",
+    "sendWhatsApp": "WhatsApp",
+    "sendAll": "Tout envoyer par WhatsApp ({{count}})",
+    "retry": "Réessayer l'envoi automatique",
+    "noPhone": "Renseignez le « Téléphone à notifier » dans Configuration → Entreprise pour envoyer par WhatsApp."
+  },
+  "reminders": {
+    "gentle": "Bonjour {{customerName}}, petit rappel de {{business}} : il reste {{amount}} à régler pour {{reference}} (échéance {{dueDate}}). Merci de passer quand vous pouvez.",
+    "firm": "Bonjour {{customerName}}, {{business}} vous relance : {{amount}} restent dus pour {{reference}}, échu depuis {{daysLate}} jours. Merci de régulariser rapidement ou de nous contacter.",
+    "final": "Bonjour {{customerName}}, dernier avis de {{business}} : {{amount}} restent dus pour {{reference}}, impayé depuis {{daysLate}} jours. Merci de régler cette semaine, ou de nous appeler pour convenir d'un arrangement.",
+    "digest": "{{count}} relance(s) de créances à envoyer aujourd'hui, pour {{total}} au total."
+  },
+  "remindersPanel": {
+    "title": "Relances à faire ({{count}})",
+    "hint": "WariBox propose chaque relance au bon moment (1, 7, 15 et 30 jours après l'échéance) ; une fois envoyée, la suivante n'apparaît qu'à son échéance.",
+    "send": "Relancer par WhatsApp",
+    "noPhone": "Pas de téléphone",
+    "late": "{{days}} jour(s) de retard",
+    "tone_gentle": "Rappel aimable",
+    "tone_firm": "Relance",
+    "tone_final": "Dernier avis",
+    "none": "Aucune relance à faire aujourd'hui."
+  },
+  "sectorPacks": {
+    "boutique": {
+      "categories": [
+        "Boissons",
+        "Épicerie",
+        "Produits frais",
+        "Hygiène et entretien",
+        "Snacking",
+        "Téléphonie et accessoires"
+      ],
+      "products": [
+        {
+          "name": "Eau minérale 1,5 L",
+          "category": "Boissons",
+          "unit": "unité"
+        },
+        {
+          "name": "Soda 33 cl",
+          "category": "Boissons",
+          "unit": "unité"
+        },
+        {
+          "name": "Jus de fruit 1 L",
+          "category": "Boissons",
+          "unit": "unité"
+        },
+        {
+          "name": "Riz 1 kg",
+          "category": "Épicerie",
+          "unit": "kg"
+        },
+        {
+          "name": "Sucre 1 kg",
+          "category": "Épicerie",
+          "unit": "kg"
+        },
+        {
+          "name": "Huile végétale 1 L",
+          "category": "Épicerie",
+          "unit": "litre"
+        },
+        {
+          "name": "Pâtes alimentaires 500 g",
+          "category": "Épicerie",
+          "unit": "unité"
+        },
+        {
+          "name": "Concentré de tomate",
+          "category": "Épicerie",
+          "unit": "unité"
+        },
+        {
+          "name": "Sel fin 1 kg",
+          "category": "Épicerie",
+          "unit": "unité"
+        },
+        {
+          "name": "Lait en poudre 400 g",
+          "category": "Épicerie",
+          "unit": "unité"
+        },
+        {
+          "name": "Œufs (plateau de 30)",
+          "category": "Produits frais",
+          "unit": "unité"
+        },
+        {
+          "name": "Savon de toilette",
+          "category": "Hygiène et entretien",
+          "unit": "unité"
+        },
+        {
+          "name": "Lessive 1 kg",
+          "category": "Hygiène et entretien",
+          "unit": "unité"
+        },
+        {
+          "name": "Papier toilette (4 rouleaux)",
+          "category": "Hygiène et entretien",
+          "unit": "unité"
+        },
+        {
+          "name": "Biscuits",
+          "category": "Snacking",
+          "unit": "unité"
+        },
+        {
+          "name": "Bonbons (sachet)",
+          "category": "Snacking",
+          "unit": "unité"
+        },
+        {
+          "name": "Crédit de communication",
+          "category": "Téléphonie et accessoires",
+          "unit": "unité"
+        },
+        {
+          "name": "Chargeur de téléphone",
+          "category": "Téléphonie et accessoires",
+          "unit": "unité"
+        }
+      ]
+    },
+    "boulangerie": {
+      "categories": [
+        "Pains",
+        "Viennoiseries",
+        "Pâtisseries",
+        "Boissons",
+        "Sandwichs et snacks",
+        "Ingrédients"
+      ],
+      "products": [
+        {
+          "name": "Baguette",
+          "category": "Pains",
+          "unit": "unité"
+        },
+        {
+          "name": "Pain de mie",
+          "category": "Pains",
+          "unit": "unité"
+        },
+        {
+          "name": "Pain complet",
+          "category": "Pains",
+          "unit": "unité"
+        },
+        {
+          "name": "Petit pain",
+          "category": "Pains",
+          "unit": "unité"
+        },
+        {
+          "name": "Croissant",
+          "category": "Viennoiseries",
+          "unit": "unité"
+        },
+        {
+          "name": "Pain au chocolat",
+          "category": "Viennoiseries",
+          "unit": "unité"
+        },
+        {
+          "name": "Brioche",
+          "category": "Viennoiseries",
+          "unit": "unité"
+        },
+        {
+          "name": "Gâteau (part)",
+          "category": "Pâtisseries",
+          "unit": "unité"
+        },
+        {
+          "name": "Gâteau entier",
+          "category": "Pâtisseries",
+          "unit": "unité"
+        },
+        {
+          "name": "Beignet",
+          "category": "Pâtisseries",
+          "unit": "unité"
+        },
+        {
+          "name": "Sandwich",
+          "category": "Sandwichs et snacks",
+          "unit": "unité"
+        },
+        {
+          "name": "Pizza (part)",
+          "category": "Sandwichs et snacks",
+          "unit": "unité"
+        },
+        {
+          "name": "Café",
+          "category": "Boissons",
+          "unit": "unité"
+        },
+        {
+          "name": "Jus de fruit",
+          "category": "Boissons",
+          "unit": "unité"
+        },
+        {
+          "name": "Eau minérale",
+          "category": "Boissons",
+          "unit": "unité"
+        },
+        {
+          "name": "Farine (sac de 25 kg)",
+          "category": "Ingrédients",
+          "unit": "unité"
+        },
+        {
+          "name": "Levure",
+          "category": "Ingrédients",
+          "unit": "unité"
+        },
+        {
+          "name": "Sucre (sac)",
+          "category": "Ingrédients",
+          "unit": "unité"
+        }
+      ]
+    },
+    "quincaillerie": {
+      "categories": [
+        "Outillage",
+        "Plomberie",
+        "Électricité",
+        "Peinture",
+        "Visserie et fixation",
+        "Matériaux",
+        "Sécurité"
+      ],
+      "products": [
+        {
+          "name": "Marteau",
+          "category": "Outillage",
+          "unit": "unité"
+        },
+        {
+          "name": "Tournevis (jeu)",
+          "category": "Outillage",
+          "unit": "unité"
+        },
+        {
+          "name": "Pince",
+          "category": "Outillage",
+          "unit": "unité"
+        },
+        {
+          "name": "Mètre ruban",
+          "category": "Outillage",
+          "unit": "unité"
+        },
+        {
+          "name": "Tuyau PVC",
+          "category": "Plomberie",
+          "unit": "mètre"
+        },
+        {
+          "name": "Robinet",
+          "category": "Plomberie",
+          "unit": "unité"
+        },
+        {
+          "name": "Colle PVC",
+          "category": "Plomberie",
+          "unit": "unité"
+        },
+        {
+          "name": "Câble électrique 2,5 mm²",
+          "category": "Électricité",
+          "unit": "mètre"
+        },
+        {
+          "name": "Interrupteur",
+          "category": "Électricité",
+          "unit": "unité"
+        },
+        {
+          "name": "Prise de courant",
+          "category": "Électricité",
+          "unit": "unité"
+        },
+        {
+          "name": "Ampoule LED",
+          "category": "Électricité",
+          "unit": "unité"
+        },
+        {
+          "name": "Peinture 20 L",
+          "category": "Peinture",
+          "unit": "unité"
+        },
+        {
+          "name": "Pinceau",
+          "category": "Peinture",
+          "unit": "unité"
+        },
+        {
+          "name": "Vis (boîte)",
+          "category": "Visserie et fixation",
+          "unit": "unité"
+        },
+        {
+          "name": "Clous 1 kg",
+          "category": "Visserie et fixation",
+          "unit": "kg"
+        },
+        {
+          "name": "Ciment (sac de 50 kg)",
+          "category": "Matériaux",
+          "unit": "unité"
+        },
+        {
+          "name": "Fer à béton",
+          "category": "Matériaux",
+          "unit": "unité"
+        },
+        {
+          "name": "Cadenas",
+          "category": "Sécurité",
+          "unit": "unité"
+        },
+        {
+          "name": "Serrure",
+          "category": "Sécurité",
+          "unit": "unité"
+        }
+      ]
+    },
+    "restaurant": {
+      "categories": [
+        "Entrées",
+        "Plats",
+        "Grillades",
+        "Accompagnements",
+        "Desserts",
+        "Boissons",
+        "Boissons chaudes"
+      ],
+      "products": [
+        {
+          "name": "Salade",
+          "category": "Entrées",
+          "unit": "unité"
+        },
+        {
+          "name": "Soupe du jour",
+          "category": "Entrées",
+          "unit": "unité"
+        },
+        {
+          "name": "Attiéké poisson",
+          "category": "Plats",
+          "unit": "unité"
+        },
+        {
+          "name": "Riz sauce",
+          "category": "Plats",
+          "unit": "unité"
+        },
+        {
+          "name": "Poulet braisé",
+          "category": "Grillades",
+          "unit": "unité"
+        },
+        {
+          "name": "Poisson braisé",
+          "category": "Grillades",
+          "unit": "unité"
+        },
+        {
+          "name": "Brochettes",
+          "category": "Grillades",
+          "unit": "unité"
+        },
+        {
+          "name": "Alloco",
+          "category": "Accompagnements",
+          "unit": "unité"
+        },
+        {
+          "name": "Frites",
+          "category": "Accompagnements",
+          "unit": "unité"
+        },
+        {
+          "name": "Salade de fruits",
+          "category": "Desserts",
+          "unit": "unité"
+        },
+        {
+          "name": "Eau minérale",
+          "category": "Boissons",
+          "unit": "unité"
+        },
+        {
+          "name": "Soda",
+          "category": "Boissons",
+          "unit": "unité"
+        },
+        {
+          "name": "Bière",
+          "category": "Boissons",
+          "unit": "unité"
+        },
+        {
+          "name": "Jus naturel",
+          "category": "Boissons",
+          "unit": "unité"
+        },
+        {
+          "name": "Café",
+          "category": "Boissons chaudes",
+          "unit": "unité"
+        },
+        {
+          "name": "Thé",
+          "category": "Boissons chaudes",
+          "unit": "unité"
+        }
+      ]
+    }
+  },
+  "sectorPackUi": {
+    "title": "Pack de démarrage",
+    "hint": "Installe les catégories habituelles de ton activité, ou télécharge un modèle de catalogue prérempli (noms et unités, sans prix) : remplis les prix dans ton tableur puis importe-le depuis Produits → Importer un catalogue. Aucun code-barres n'est fourni : scanne tes produits ou saisis-les.",
+    "installCategories": "Installer les catégories",
+    "downloadTemplate": "Télécharger le modèle de catalogue",
+    "categoriesDone": "{{count}} catégorie(s) ajoutée(s).",
+    "categoriesNone": "Les catégories de ce pack existent déjà."
+  },
+  "catalogImport": {
+    "title": "Importer un catalogue",
+    "hint": "Un fichier CSV ou Excel (.xlsx), une ligne par produit. Colonnes reconnues : nom, prix de vente (obligatoires), catégorie, unité, prix d'achat, stock, code-barres, TVA, seuil d'alerte. Les produits déjà présents (même nom ou même code-barres) sont ignorés, jamais écrasés.",
+    "button": "Importer un catalogue",
+    "choose": "Choisir un fichier",
+    "template": {
+      "name": "Nom",
+      "category": "Catégorie",
+      "unit": "Unité",
+      "salePrice": "Prix de vente",
+      "purchasePrice": "Prix d'achat",
+      "stock": "Stock",
+      "barcode": "Code-barres"
+    },
+    "reading": "Lecture du fichier…",
+    "recognized": "Colonnes reconnues : {{columns}}",
+    "summary": "{{create}} produit(s) à créer · {{dup}} déjà présent(s) (ignorés) · {{err}} ligne(s) refusée(s)",
+    "problems": "Lignes à corriger",
+    "line": "Ligne {{line}}",
+    "confirm": "Importer {{count}} produit(s)",
+    "stockHere": "Le stock de départ entre à : {{location}}",
+    "done": "{{created}} produit(s) créé(s), {{stock}} stock(s) de départ enregistré(s).",
+    "failedSome": "{{count}} ligne(s) n'ont pas pu être importées :",
+    "readFailed": "Impossible de lire ce fichier : {{error}}",
+    "duplicateName": "déjà dans le catalogue (même nom)",
+    "duplicateBarcode": "déjà dans le catalogue (code-barres {{barcode}})",
+    "stockNote": "Import du catalogue",
+    "stockFailed": "produit créé, mais stock de départ non enregistré : {{error}}",
+    "errors": {
+      "empty": "Le fichier est vide.",
+      "noNameColumn": "Colonne « Nom » introuvable sur la première ligne.",
+      "noPriceColumn": "Colonne « Prix de vente » introuvable sur la première ligne.",
+      "tooManyRows": "Le fichier dépasse {{max}} lignes : découpe-le en plusieurs fichiers.",
+      "nameMissing": "nom manquant",
+      "nameTooLong": "nom trop long (120 caractères maximum)",
+      "priceMissing": "prix de vente manquant",
+      "priceInvalid": "prix de vente illisible : « {{value}} »",
+      "priceNegative": "prix de vente négatif",
+      "purchaseInvalid": "prix d'achat illisible : « {{value}} »",
+      "stockInvalid": "stock illisible : « {{value}} »",
+      "taxInvalid": "TVA illisible (0 à 100) : « {{value}} »",
+      "thresholdInvalid": "seuil illisible : « {{value}} »"
+    },
+    "templateDownload": "Télécharger un modèle vide"
+  },
+  "accountantExport": {
+    "title": "Dossier pour l'expert-comptable",
+    "hint": "Un classeur Excel avec toutes les pièces de la période — ventes, remboursements, achats, dépenses, règlements de créances, créances ouvertes, TVA — une ligne par opération, que votre comptable peut reprendre dans son logiciel.",
+    "button": "Télécharger le dossier (Excel)",
+    "cancelled": "Annulée",
+    "sheets": {
+      "summary": "Résumé",
+      "sales": "Ventes",
+      "refunds": "Remboursements",
+      "purchases": "Achats",
+      "expenses": "Dépenses",
+      "repayments": "Règlements clients",
+      "openCredits": "Créances ouvertes",
+      "tax": "TVA par jour"
+    },
+    "summary": {
+      "period": "Période",
+      "sales": "Ventes (TTC)",
+      "refunds": "Remboursements",
+      "netSales": "Ventes nettes",
+      "tax": "TVA nette collectée",
+      "purchases": "Achats",
+      "expenses": "Dépenses",
+      "repayments": "Règlements de créances reçus",
+      "creditsOpen": "Créances clients restant dues (aujourd'hui)"
+    },
+    "columns": {
+      "label": "Libellé",
+      "amount": "Montant",
+      "date": "Date",
+      "number": "Numéro",
+      "customer": "Client",
+      "total": "Total TTC",
+      "tax": "TVA",
+      "discount": "Remise",
+      "status": "Statut",
+      "method": "Mode de paiement",
+      "fneReference": "Référence FNE",
+      "sale": "Vente",
+      "reason": "Motif",
+      "invoice": "N° de facture fournisseur",
+      "supplier": "Fournisseur",
+      "paid": "Payé",
+      "category": "Catégorie",
+      "note": "Note",
+      "dueDate": "Échéance",
+      "original": "Montant initial",
+      "remaining": "Reste dû"
+    }
+  },
+  "seasons": {
+    "title": "Fêtes à venir : quantités × {{factor}}",
+    "upcoming": "{{name}} dans {{days}} jour(s)",
+    "hint": "Les suggestions tiennent compte de la hausse habituelle des ventes avant les fêtes (valeurs indicatives, quantités modifiables). Décochez pour revenir au rythme normal.",
+    "events": {
+      "ramadan": "Ramadan",
+      "eidFitr": "Aïd el-Fitr",
+      "tabaski": "Tabaski",
+      "christmas": "Noël",
+      "newYear": "Nouvel An",
+      "backToSchool": "Rentrée scolaire"
+    }
   }
 }

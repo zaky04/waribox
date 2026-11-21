@@ -7,6 +7,7 @@ interface WorkerResponse {
   type?: string;
   resultRows?: unknown[][];
   bytes?: Uint8Array;
+  probe?: { integrity: string; counts: Record<string, number | null> };
   error?: string;
 }
 
@@ -480,6 +481,36 @@ export const MIGRATIONS: Migration[] = [
       "ALTER TABLE users ADD COLUMN simple_cash_only INTEGER NOT NULL DEFAULT 0",
     ],
   },
+  // Alertes proactives au patron : réglages, file/historique et repères (tables d'infrastructure `__`).
+  {
+    id: 24,
+    statements: [
+      "ALTER TABLE business_settings ADD COLUMN alert_channel_url TEXT",
+      "ALTER TABLE business_settings ADD COLUMN alert_min_severity TEXT NOT NULL DEFAULT 'warning'",
+      "ALTER TABLE business_settings ADD COLUMN daily_summary_time TEXT",
+      `CREATE TABLE IF NOT EXISTS __alert_outbox (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        text TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        sent_at TEXT,
+        channel TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT
+      )`,
+      "CREATE INDEX IF NOT EXISTS idx_alert_outbox_key ON __alert_outbox(key)",
+      "CREATE TABLE IF NOT EXISTS __alert_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+      `CREATE TABLE IF NOT EXISTS __credit_reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        credit_id INTEGER NOT NULL,
+        step INTEGER NOT NULL,
+        channel TEXT,
+        sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      "CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_reminders ON __credit_reminders(credit_id, step)",
+    ],
+  },
 ];
 
 async function runMigrations(): Promise<void> {
@@ -672,6 +703,15 @@ export async function exportDatabaseFile(
   await ensureBootstrapped();
   const response = await callWorker("export");
   return { bytes: response.bytes as Uint8Array, filename };
+}
+
+// Test de restauration : ouvre `bytes` (un fichier de sauvegarde SQLite en clair) dans une base séparée, en
+// mémoire, et renvoie son contrôle d'intégrité et le nombre de lignes des tables essentielles. La vraie base
+// n'est jamais touchée.
+export async function probeDatabaseFile(bytes: Uint8Array): Promise<{ integrity: string; counts: Record<string, number | null> }> {
+  await ensureBootstrapped();
+  const response = await callWorker("verify", { bytes });
+  return response.probe as { integrity: string; counts: Record<string, number | null> };
 }
 
 // Remplace intégralement le contenu de la base OPFS par les octets fournis

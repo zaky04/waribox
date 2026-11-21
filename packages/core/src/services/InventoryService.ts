@@ -94,6 +94,30 @@ export async function startStockCount(db: Database, input: StartStockCountInput,
   return count;
 }
 
+/**
+ * Abandonne un inventaire encore ouvert : ses lignes et lui-même sont supprimés. Sans risque pour le stock : une
+ * régularisation n'est écrite qu'à la CLÔTURE. Un inventaire clôturé ne s'annule jamais (ses mouvements existent).
+ */
+export async function cancelStockCount(db: Database, input: { countId: number; userId: number }, actingPermissions: PermissionSet): Promise<void> {
+  assertMasterOnly("operation");
+  requirePermission(actingPermissions, "manage_inventory");
+  const count = await withTransaction(async () => {
+    const fresh = await db.select().from(schema.stockCounts).where(eq(schema.stockCounts.id, input.countId)).get();
+    if (!fresh) throw new Error(t("coreErrors.inventory.notFound"));
+    if (fresh.status !== "open") throw new Error(t("coreErrors.inventory.notOpen"));
+    await db.delete(schema.stockCountLines).where(eq(schema.stockCountLines.countId, fresh.id)).run();
+    await db.delete(schema.stockCounts).where(eq(schema.stockCounts.id, fresh.id)).run();
+    return fresh;
+  });
+  await logAction(db, {
+    userId: input.userId,
+    action: "stock_count_cancel",
+    entity: "stock_count",
+    entityId: count.id,
+    metadata: { locationId: count.locationId },
+  });
+}
+
 export interface SaveCountedQuantityInput {
   countId: number;
   variantId: number;

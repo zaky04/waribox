@@ -185,6 +185,15 @@ export function RolesSection({ onChanged }: { onChanged: () => void }) {
                 {editingId === "new" ? t("approvalRoles.create") : t("approvalRoles.save")}
               </button>
             )}
+            <button
+              style={{ ...primaryButtonStyle, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text)" }}
+              onClick={() => {
+                setEditingId(null);
+                setError(null);
+              }}
+            >
+              {adminLocked ? t("common.close") : t("common.cancel")}
+            </button>
           </div>
         </div>
       )}

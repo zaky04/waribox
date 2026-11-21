@@ -14,7 +14,8 @@ import { t } from "@gestion-boutique/i18n";
 // drapeau reste faux et rien ne change. Contrôle côté service : l'interface n'est qu'un confort.
 
 // Réglages propres à CET appareil : modifiables même relié, jamais écrasés par le Maître.
-export const DEVICE_LOCAL_SETTINGS = ["backupFrequency", "googleDriveClientId", "receiptColumns"] as const;
+// L'adresse d'alerte contient souvent une clé secrète et c'est CET appareil qui envoie : elle ne voyage pas.
+export const DEVICE_LOCAL_SETTINGS = ["backupFrequency", "googleDriveClientId", "receiptColumns", "alertChannelUrl", "alertMinSeverity"] as const;
 
 let relay = false;
 
